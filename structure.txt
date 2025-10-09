@@ -1,0 +1,19 @@
+HexReconstruction/
+├── HexReconstruction.pro       <-- Qt项目文件
+└── src/                        <-- 所有源代码的根目录
+    ├── app/                    <-- 存放所有应用程序/UI相关的文件
+    │   ├── main.cpp
+    │   ├── mainwindow.h
+    │   ├── mainwindow.cpp
+    │   ├── glwidget.h
+    │   └── glwidget.cpp
+    │
+    └── core/                   <-- 存放所有核心算法逻辑
+        ├── common/             <-- 存放可被多个核心模块共享的头文件
+        │   └── common_types.h
+        │
+        ├── generation/         <-- 网格生成模块
+        │   └── mesh_generator.h
+        │
+        └── reconstruction/     <-- 网格重建模块
+            └── reconstruction_engine.h

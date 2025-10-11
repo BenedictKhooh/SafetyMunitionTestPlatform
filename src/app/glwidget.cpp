@@ -31,6 +31,16 @@ void GLWidget::initializeGL() {
     glEnable(GL_POINT_SMOOTH);            // Render points as circles
     glEnable(GL_BLEND);                   // Enable alpha blending for transparency
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // 2. Create VBO
+    m_pointVBO.create();
+    m_pointVBO.bind();
+
+    // 3. Set a default initial size (or wait to allocate in drawPoints)
+    // Here, we just allocate, but data will be sent later in drawPoints
+    m_pointVBO.allocate(nullptr, 0);
+
+    m_pointVBO.release();
 }
 
 void GLWidget::resizeGL(int w, int h) {
@@ -70,17 +80,24 @@ void GLWidget::paintGL() {
 
     // Draw scene elements
     drawAxes();
-    if (!m_points.empty()) {
-        drawPoints( m_points );
-        if (!m_adjGraph.empty()) {
-            drawGraph( m_adjGraph );
-            if (!m_faces.empty()) {
-                drawFaces( m_faces );
-                if (!m_hexahedra.empty()) {
-                    drawHexahedra( m_hexahedra );
-                }
-            }
-        }
+    //if (!m_points.empty()) {
+    //    drawPoints( m_points );
+    //    if (!m_adjGraph.empty()) {
+    //        drawGraph( m_adjGraph );
+    //        if (!m_faces.empty()) {
+    //            drawFaces( m_faces );
+    //            if (!m_hexahedra.empty()) {
+    //                drawHexahedra( m_hexahedra );
+    //            }
+    //        }
+    //    }
+    //}
+    if (!drawable_buffer.empty()) {
+    
+		for (const auto& instance : drawable_buffer) {
+			
+            drawPoints(instance.instance_points);
+		}
     }
 }
 
@@ -129,6 +146,9 @@ void GLWidget::drawPoints( std::vector<MeshPoint> points ) {
         glVertex3f(p.pos.x(), p.pos.y(), p.pos.z());
     }
     glEnd();
+
+    // Replace the line "updateGL();" with the following line to fix the error:
+    update(); // update() is the correct method to trigger a repaint in QOpenGLWidget
 }
 
 void GLWidget::drawGraph( AdjacencyGraph adjGraph ) {

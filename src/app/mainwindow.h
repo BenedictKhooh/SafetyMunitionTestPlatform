@@ -7,6 +7,7 @@
 #include "src/core/reconstruction/reconstruction_engine.h"
 #include "src/core/generation/sphere_projection.h"
 #include "src/core/generation/cylinder_projection.h"
+#include "src/core/common/common_types.h"
 #include "commandline.h"
 
 // Forward declaration
@@ -34,6 +35,8 @@ private:
     void showHelp();
     QTextEdit *commandHistoryEdit;
 
+    std::vector<Instance> drawables;
+
     // UI Widgets
     GLWidget *glWidget;
     QMenuBar *menuBar;
@@ -50,9 +53,12 @@ private:
     QTextEdit *propertiesEditor;
     QTreeWidget *layersTree;
     QTreeWidget *substanceTree;
+
     // Data containers for the reconstruction process
     std::vector<MeshPoint> m_points;
     std::vector<MeshPoint> m_points_sphere;
+
+    
 
     AdjacencyGraph m_adjGraph;
     AdjacencyGraph m_adjGraph_sphere;

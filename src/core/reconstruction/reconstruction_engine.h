@@ -267,13 +267,13 @@ namespace ReconstructionEngine {
             return finalHexahedra;
         }
 
-    inline QSet<Vector3> MeshSet(std::vector<MeshPoint> points){
+    inline QSet<QVector<float>> MeshSet(std::vector<MeshPoint> points){
 
-        QSet < Vector3 > return_set;
+        QSet < QVector<float> > return_set;
 
         for(const auto& point : points){
 
-            if( !return_set.contains( point.pos ) ) return_set.insert(point.pos);
+            if( !return_set.contains( {point.pos.x(), point.pos.y(), point.pos.z()}  )) return_set.insert({point.pos.x(), point.pos.y(), point.pos.z()});
         }
 
         return  return_set;

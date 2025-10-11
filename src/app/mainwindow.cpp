@@ -32,6 +32,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
         setWindowTitle("OpenGL CAD Demo");
         resize(1024, 768);
+
+        drawables.clear();
 }
 
 MainWindow::~MainWindow() {}
@@ -163,7 +165,28 @@ void MainWindow::onCommandEntered(const QString &command) {
        // startCircleDrawing();
     } else if (cmd == "rectangle") {
        // startRectangleDrawing();
-    } else if (cmd == "zoom") {
+    } else if (cmd == "cube"){
+    
+        if (cmd == "cube") {
+               if (args.size() > 1) {
+
+				   QString instance_name = args[1];
+                   float x = args[2].toFloat();
+                   float y = args[3].toFloat();
+                   float z = args[4].toFloat();
+                   std::vector<MeshPoint> cube_points = CubicBlock::building_basic_cubic_brick({0,0,0}, x, y, z);
+                   drawables.push_back( Instance( instance_name, cube_points ) );
+                   glWidget->setDrawableInstances(drawables);
+				   
+                   glWidget->update();
+                   
+               } 
+               else {
+                   logCommand(command, "Error: Missing argument for 'cube' command.");
+               }
+           }
+    }
+    else if (cmd == "zoom") {
         if (args.size() > 1 && args[1] == "in") {
             glWidget->scaleFactor *= 1.2f;
             logCommand(command, "Zoomed in.");
@@ -187,20 +210,20 @@ void MainWindow::onCommandEntered(const QString &command) {
     glWidget->update();
 }
 
-void MainWindow::startLineDrawing() {
-    glWidget->setDrawingMode(GLWidget::DrawingMode::Line);
-    logCommand("line", "Click to set the start point of the line.");
-}
-
-void MainWindow::startCircleDrawing() {
-    glWidget->setDrawingMode(GLWidget::DrawingMode::Circle);
-    logCommand("circle", "Click to set the center of the circle, then click to set the radius.");
-}
-
-void MainWindow::startRectangleDrawing() {
-    glWidget->setDrawingMode(GLWidget::DrawingMode::Rectangle);
-    logCommand("rectangle", "Click to set the first corner of the rectangle, then click to set the opposite corner.");
-}
+//void MainWindow::startLineDrawing() {
+//    glWidget->setDrawingMode(GLWidget::DrawingMode::Line);
+//    logCommand("line", "Click to set the start point of the line.");
+//}
+//
+//void MainWindow::startCircleDrawing() {
+//    glWidget->setDrawingMode(GLWidget::DrawingMode::Circle);
+//    logCommand("circle", "Click to set the center of the circle, then click to set the radius.");
+//}
+//
+//void MainWindow::startRectangleDrawing() {
+//    glWidget->setDrawingMode(GLWidget::DrawingMode::Rectangle);
+//    logCommand("rectangle", "Click to set the first corner of the rectangle, then click to set the opposite corner.");
+//}
 
 void MainWindow::onDrawingComplete() {
     statusBar->showMessage("Drawing completed.");

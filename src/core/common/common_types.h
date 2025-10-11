@@ -113,10 +113,15 @@ using Hexahedron = std::array<int, 8>;
 struct Instance {
 
     QString instance_name;
+
     std::vector< MeshPoint > instance_points;
     AdjacencyGraph instance_adjacenctgraph;
     std::vector< QuadFace > instance_quadface_list;
     std::vector< Hexahedron > instance_hexahedron_list;
+
+	explicit Instance(const QString& name, const std::vector< MeshPoint > & points)
+		: instance_name(name), instance_points(points){
+	}
 
 };
 
@@ -146,6 +151,7 @@ struct GeoLine {
             float x_section = start.pos.x() + i*(end.pos.x() - start.pos.x() )/resolu;
             float y_section = start.pos.y() + i*(end.pos.y() - start.pos.y() )/resolu;
             float z_section = start.pos.z() + i*(end.pos.z() - start.pos.z() )/resolu;
+            points.push_back(Vector3(x_section, y_section, z_section));
         }
 
     }

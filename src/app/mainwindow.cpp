@@ -33,7 +33,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         setWindowTitle("OpenGL CAD Demo");
         resize(1024, 768);
 
-        drawables.clear();
+        //clear()
+        clean();
+        
 }
 
 MainWindow::~MainWindow() {}
@@ -152,6 +154,7 @@ void MainWindow::createCommandLine() {
 }
 
 void MainWindow::onCommandEntered(const QString &command) {
+    
     logCommand(command);
 
     QStringList args = command.split(" ", Qt::SkipEmptyParts);
@@ -165,27 +168,38 @@ void MainWindow::onCommandEntered(const QString &command) {
        // startCircleDrawing();
     } else if (cmd == "rectangle") {
        // startRectangleDrawing();
-    } else if (cmd == "cube"){
-    
-        if (cmd == "cube") {
-               if (args.size() > 1) {
+    }  else if (cmd == "cube") {
+               if (args.size() == 11) {
 
 				   QString instance_name = args[1];
-                   float x = args[2].toFloat();
-                   float y = args[3].toFloat();
-                   float z = args[4].toFloat();
-                   std::vector<MeshPoint> cube_points = CubicBlock::building_basic_cubic_brick({0,0,0}, x, y, z);
+                   float x_division = args[2].toFloat();
+                   float y_division = args[3].toFloat();
+                   float z_division = args[4].toFloat();
+                   float x = args[5].toFloat();
+                   float y = args[6].toFloat();
+                   float z = args[7].toFloat();
+				   float x_scale = args[8].toFloat(); 
+				   float y_scale = args[9].toFloat();
+				   float z_scale = args[10].toFloat();
+
+                   std::vector<MeshPoint> cube_points = CubicBlock::building_basic_cubic_brick(x_division, y_division, z_division, x, y, z, x_scale, y_scale, z_scale);
                    drawables.push_back( Instance( instance_name, cube_points ) );
+                 
                    glWidget->setDrawableInstances(drawables);
+                   insert_points_vector(points, cube_points);
 				   
                    glWidget->update();
-                   
+				   logCommand(command, QString("Created cube '%1' with dimensions %2x%3x%4.").arg(instance_name).arg(x).arg(y).arg(z));
+
+                   QTreeWidgetItem* instance_generate = new QTreeWidgetItem(substanceTree);
+                   instance_generate->setText(0, instance_name);
+
                } 
                else {
                    logCommand(command, "Error: Missing argument for 'cube' command.");
                }
            }
-    }
+    
     else if (cmd == "zoom") {
         if (args.size() > 1 && args[1] == "in") {
             glWidget->scaleFactor *= 1.2f;
@@ -245,4 +259,11 @@ void MainWindow::showHelp() {
         logCommand("help", helpText);
 
     }
+}
+
+void MainWindow::clean() {
+
+    drawables.clear();
+    points.clear();
+
 }

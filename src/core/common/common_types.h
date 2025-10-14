@@ -123,6 +123,9 @@ struct Instance {
 		: instance_name(name), instance_points(points){
 	}
 
+    //std::vector<Boundaries> instance_boundaries;
+
+    //Instance() = default;
 };
 
 struct eos{
@@ -155,6 +158,11 @@ struct GeoLine {
         }
 
     }
+};
+
+struct Boundaries {
+
+    std::vector<MeshPoint> boundary_points;
 };
 
 #endif // COMMON_TYPES_H

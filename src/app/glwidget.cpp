@@ -80,6 +80,7 @@ void GLWidget::paintGL() {
 
     // Draw scene elements
     drawAxes();
+
     //if (!m_points.empty()) {
     //    drawPoints( m_points );
     //    if (!m_adjGraph.empty()) {
@@ -92,6 +93,7 @@ void GLWidget::paintGL() {
     //        }
     //    }
     //}
+
     if (!drawable_buffer.empty()) {
     
 		for (const auto& instance : drawable_buffer) {

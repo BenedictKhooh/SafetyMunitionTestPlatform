@@ -17,20 +17,17 @@
 
 namespace CubicBlock {
 
-inline std::vector<MeshPoint> building_basic_cubic_brick(Vector3 center_point, float x, float y, float z){
+inline std::vector<MeshPoint> building_basic_cubic_brick(int x_division, int y_division, int z_division, float x, float y, float z, float x_scale, float y_scale, float z_scale){
 
     std::vector<MeshPoint> block_points;
 
-    const int divisions = 2;
-    const int points_per_axis = divisions + 1;
-
-    for (int k = 0; k < points_per_axis; ++k) {
-        for (int j = 0; j < points_per_axis; ++j) {
-            for (int i = 0; i < points_per_axis; ++i) {
+    for (int k = 0; k < z_division + 1; ++k) {
+        for (int j = 0; j < y_division + 1; ++j) {
+            for (int i = 0; i < x_division + 1; ++i) {
                 // Determine if the point is on a boundary
-                bool on_x = (i == 0 || i == divisions);
-                bool on_y = (j == 0 || j == divisions);
-                bool on_z = (k == 0 || k == divisions);
+                bool on_x = (i == 0 || i == x_division);
+                bool on_y = (j == 0 || j == y_division);
+                bool on_z = (k == 0 || k == z_division);
 
                 int boundary_count = (int)on_x + (int)on_y + (int)on_z;
                 int neighbors = 0;
@@ -46,7 +43,7 @@ inline std::vector<MeshPoint> building_basic_cubic_brick(Vector3 center_point, f
                 }
 
                 block_points.push_back({
-                    Vector3( float(i)/divisions - 0.5, float(j)/divisions - 0.5, float(k)/divisions - 0.5 ),
+                    Vector3( (float(i)/x_division - 0.5), (float(j)/y_division - 0.5), (float(k)/z_division - 0.5) ),
                                        neighbors, {-1,-1,-1,-1,-1,-1}
                 });
             }
@@ -57,13 +54,61 @@ inline std::vector<MeshPoint> building_basic_cubic_brick(Vector3 center_point, f
 
     for ( auto& point : block_points ){
 
-        point.pos.setX( point.pos.x()* x + center_point.x() );
-        point.pos.setY( point.pos.y()* y + center_point.y() );
-        point.pos.setZ( point.pos.z()* z + center_point.z() );
+        point.pos.setX( point.pos.x() * x_scale+ x );
+        point.pos.setY( point.pos.y() * y_scale+ y );
+        point.pos.setZ( point.pos.z() * z_scale+ z );
     }
 
     return block_points;
 
+}
+
+inline std::vector<MeshPoint> building_basic_cubic_brick(int x_division, int y_division, int z_division, float x, float y, float z) {
+
+    std::vector<MeshPoint> block_points;
+
+    for (int k = 0; k < z_division + 1; ++k) {
+        for (int j = 0; j < y_division + 1; ++j) {
+            for (int i = 0; i < x_division + 1; ++i) {
+                // Determine if the point is on a boundary
+                bool on_x = (i == 0 || i == x_division);
+                bool on_y = (j == 0 || j == y_division);
+                bool on_z = (k == 0 || k == z_division);
+
+                int boundary_count = (int)on_x + (int)on_y + (int)on_z;
+                int neighbors = 0;
+
+                if (boundary_count == 3) { // Corner
+                    neighbors = 3;
+                }
+                else if (boundary_count == 2) { // Edge
+                    neighbors = 4;
+                }
+                else if (boundary_count == 1) { // Face
+                    neighbors = 5;
+                }
+                else { // Internal
+                    neighbors = 6;
+                }
+
+                block_points.push_back({
+                    Vector3(float(i) / x_division - 0.5, float(j) / y_division - 0.5, float(k) / z_division - 0.5),
+                                       neighbors, {-1,-1,-1,-1,-1,-1}
+                    });
+            }
+        }
+    }
+    AdjacencyGraph initial_adj = ReconstructionEngine::buildAdjacencyGraph(block_points);
+    //return a 1*1*1 cube with (0,0,0) as its centter
+
+    for (auto& point : block_points) {
+
+        point.pos.setX(point.pos.x() + x);
+        point.pos.setY(point.pos.y() + y);
+        point.pos.setZ(point.pos.z() + z);
+    }
+
+    return block_points;
 }
 
 inline Vector3 cube_center_point ( std::vector <MeshPoint> mesh_points ){

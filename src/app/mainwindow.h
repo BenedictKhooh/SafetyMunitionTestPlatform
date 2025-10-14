@@ -32,6 +32,7 @@ private:
     void createDockWidgets();
     void createCommandLine();
     void logCommand(const QString &command, const QString &response = "");
+    void clean();
     void showHelp();
     QTextEdit *commandHistoryEdit;
 
@@ -55,10 +56,45 @@ private:
     QTreeWidget *substanceTree;
 
     // Data containers for the reconstruction process
-    std::vector<MeshPoint> m_points;
-    std::vector<MeshPoint> m_points_sphere;
+    //std::vector<MeshPoint> m_points;
+    //std::vector<MeshPoint> m_points_sphere;
 
+    //store all the points
     
+    std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
+
+    inline bool contains_point(
+        const std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator>& set,
+        const MeshPoint& search_point
+	) {
+		return set.find(search_point) != set.end();
+	}
+
+    inline bool remove_point(
+        std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator>& set,
+         const MeshPoint& point_to_remove
+     ) {
+         // set.erase() 返回被删除的元素数量 (0 或 1)
+         size_t count = set.erase(point_to_remove);
+
+         if (count > 0) {
+             return true;
+         }
+         else {
+             return false;
+         }
+     }
+
+    inline void insert_points_vector(
+        std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator>& set,
+        const std::vector<MeshPoint> points) {
+
+		for (const auto& p : points) {
+			set.insert(p);
+		}
+    }
+    
+    //
 
     AdjacencyGraph m_adjGraph;
     AdjacencyGraph m_adjGraph_sphere;

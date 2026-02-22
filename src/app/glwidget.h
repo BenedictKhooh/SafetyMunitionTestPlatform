@@ -10,6 +10,7 @@
 #include <QOpenGLShaderProgram>
 #include "src/core/reconstruction/reconstruction_engine.h"
 #include "src/core/common/common_types.h"
+#include "Drawable.h"
 
 class GLWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -24,6 +25,7 @@ public:
     void setFaces(const std::vector<QuadFace>& faces);
     void setHexahedra(const std::vector<Hexahedron>& hexahedra);
 	void setDrawableInstances(std::vector<Instance> instances) { drawable_buffer = instances;  }
+    void setDrawableLines(std::vector<GeoLine> lines) { drawable_line_buffer = lines; }
 
     void reset();
     float rotationX, rotationY, rotationZ;
@@ -59,10 +61,12 @@ public:
 
     // --- Drawing Helper Functions ---
     void drawPoints( std::vector<MeshPoint> );
+    void drawPoints(std::vector<Vector3>);
     void drawGraph( AdjacencyGraph );
     void drawFaces( std::vector<QuadFace> );
     void drawHexahedra( std::vector<Hexahedron> );
     void drawAxes();
+    void drawLines(const std::vector<Vector3>& points);
     QPoint project(const QMatrix4x4 &mvp, const QVector3D &point3d);
 
     // --- Data Storage ---
@@ -72,6 +76,8 @@ public:
     std::vector<Hexahedron> m_hexahedra;
 
     std::vector<Instance> drawable_buffer;
+    std::vector<GeoLine> drawable_line_buffer;
+
 
     // --- Camera and Transformation Matrices ---
     QMatrix4x4 m_projMatrix;
@@ -79,6 +85,12 @@ public:
     QVector2D m_lastMousePos;
     float m_zoom;
     QQuaternion m_rotation;
+
+	// --Drawable Command Interface---A
+    void submitDrawCommand(const DrawCommand& cmd);
+    void clearDrawCommands();
+    std::vector<DrawCommand> m_drawCommands;
+
 
 signals:
     void drawingComplete();

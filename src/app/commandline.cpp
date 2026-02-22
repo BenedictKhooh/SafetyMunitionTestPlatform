@@ -15,7 +15,7 @@ CommandLine::CommandLine(QWidget *parent)
     completer->setCompletionMode(QCompleter::PopupCompletion);
 
     // 设置默认的可用命令
-    availableCommands << "line" << "circle" << "rectangle" << "zoom" << "reset" << "help" << "clear";
+    availableCommands << "line"<< "circle" << "cube" << "rectangle" << "cylinder" << "sphere" << "zoom in" << "zoom out" << "reset" << "help" << "clear";
     completer->setModel(new QStringListModel(availableCommands, this));
     setCompleter(completer);
 }

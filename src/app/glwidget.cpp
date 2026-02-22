@@ -1,3 +1,5 @@
+#pragma comment(lib, "opengl32.lib")
+#pragma comment(lib, "glu32.lib")
 #include "glwidget.h"
 #include <QDebug>
 #include <QPainter>
@@ -101,6 +103,28 @@ void GLWidget::paintGL() {
             drawPoints(instance.instance_points);
 		}
     }
+
+    if (!drawable_line_buffer.empty()) {
+    
+        for (const auto& line : drawable_line_buffer) {
+        
+            drawPoints(line.points);
+        }
+    }
+    // --Drawable
+    for (const auto& cmd : m_drawCommands) {
+        switch (cmd.type) {
+        case DrawCommand::Points:
+            glPointSize(cmd.pointsCmd.size);
+            drawPoints(cmd.pointsCmd.points);
+            break;
+
+        case DrawCommand::Lines:
+            glLineWidth(cmd.linesCmd.width);
+            drawPoints(cmd.linesCmd.points);
+            break;
+        }
+    }
 }
 
 // --- Drawing Functions ---
@@ -146,6 +170,19 @@ void GLWidget::drawPoints( std::vector<MeshPoint> points ) {
     glBegin(GL_POINTS);
     for(const auto& p : points) {
         glVertex3f(p.pos.x(), p.pos.y(), p.pos.z());
+    }
+    glEnd();
+
+    // Replace the line "updateGL();" with the following line to fix the error:
+    update(); // update() is the correct method to trigger a repaint in QOpenGLWidget
+}
+
+void GLWidget::drawPoints(std::vector<Vector3> points) {
+    glColor3f(1.0f, 1.0f, 1.0f); // White points
+    glPointSize(1.0f);
+    glBegin(GL_POINTS);
+    for (const auto& p : points) {
+        glVertex3f(p.x(), p.y(), p.z());
     }
     glEnd();
 
@@ -225,4 +262,26 @@ void GLWidget::wheelEvent(QWheelEvent *event) {
     if (event->angleDelta().y() > 0) m_zoom *= 1.1f;
     else m_zoom *= 0.9f;
     update();
+}
+
+// --- Drawable Command Interface ---
+
+// glwidget.cpp
+void GLWidget::submitDrawCommand(const DrawCommand& cmd) {
+    m_drawCommands.push_back(cmd);
+    update();
+}
+
+void GLWidget::clearDrawCommands() {
+    m_drawCommands.clear();
+    update();
+}
+
+void GLWidget::drawLines(const std::vector<Vector3>& points) {
+    glColor3f(0.8f, 0.8f, 0.8f);
+    glBegin(GL_LINES);
+    for (const auto& p : points) {
+        glVertex3f(p.x(), p.y(), p.z());
+    }
+    glEnd();
 }

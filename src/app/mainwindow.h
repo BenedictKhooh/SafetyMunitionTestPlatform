@@ -24,6 +24,12 @@ public:
 private slots:
     void onCommandEntered(const QString &command);
     void onDrawingComplete();
+    void startMeshing();
+	void generateCylindricalMesh( double radius, double height, double meshSize );
+    void generateCylindricalShellMesh(double radius, double height, double lid, double wall,double meshSize);
+    void generateOrbMesh(double radius, double meshSize);
+
+    void parseMeshFile( QString fileName );
 
 private:
     void createMenuBar();
@@ -36,7 +42,11 @@ private:
     void showHelp();
     QTextEdit *commandHistoryEdit;
 
+    void DrawCube(QStringList args);
+    void DrawLine(QStringList args);
+
     std::vector<Instance> drawables;
+    std::vector<GeoLine> drawables_lines;
 
     // UI Widgets
     GLWidget *glWidget;
@@ -49,15 +59,19 @@ private:
     QDockWidget *layersDock;
     QDockWidget *commandDock;
     QDockWidget *substanceDock;
+    QDockWidget *boundaryDock;
+    QDockWidget* interactionDock;
 
     CommandLine *commandLine;
     QTextEdit *propertiesEditor;
     QTreeWidget *layersTree;
     QTreeWidget *substanceTree;
+    QTreeWidget *boundaryTree;
+    QTreeWidget* interactionTree;
 
-    // Data containers for the reconstruction process
-    //std::vector<MeshPoint> m_points;
-    //std::vector<MeshPoint> m_points_sphere;
+   /*  Data containers for the reconstruction process
+    std::vector<MeshPoint> m_points;
+    std::vector<MeshPoint> m_points_sphere;*/
 
     //store all the points
     

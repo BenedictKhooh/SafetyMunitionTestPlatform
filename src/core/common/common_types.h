@@ -27,8 +27,16 @@ struct MeshPoint {
     int required_neighbors;
 
     std::vector<int> neighbor_indices; // Stores indices of neighboring points in the final mesh array.
+	std::vector<MeshPoint> neighbor_points;
 
 };
+
+struct MeshPoint_gmsh {
+
+    int instance_id;
+    Vector3 pos;
+};
+
 struct SamplingMeshPoint {
 
     Vector3 pos;
@@ -77,10 +85,31 @@ struct MeshPointComparator {
     }
 };
 
+struct MeshPointComparator_gmsh {
+    bool operator()(const MeshPoint_gmsh& a, const MeshPoint_gmsh& b) const {
+        // 比较逻辑封装在这里，而不是在 MeshPoint 内部
+        const float epsilon = 1e-6f;
+        if (std::abs(a.pos.x() - b.pos.x()) > epsilon) return a.pos.x() < b.pos.x();
+        if (std::abs(a.pos.y() - b.pos.y()) > epsilon) return a.pos.y() < b.pos.y();
+        if (std::abs(a.pos.z() - b.pos.z()) > epsilon) return a.pos.z() < b.pos.z();
+        return false; // Considered equal
+    }
+};
+
 
 // 4. 为 std::unordered_map 提供自定义哈希函数和等价函数
 struct MeshPointHasher {
     std::size_t operator()(const MeshPoint& p) const {
+        // 哈希逻辑封装在这里
+        std::size_t hx = std::hash<float>{}(p.pos.x());
+        std::size_t hy = std::hash<float>{}(p.pos.y());
+        std::size_t hz = std::hash<float>{}(p.pos.z());
+        return hx ^ (hy << 1) ^ (hz << 2);
+    }
+};
+
+struct MeshPointHasher_gmsh {
+    std::size_t operator()(const MeshPoint_gmsh& p) const {
         // 哈希逻辑封装在这里
         std::size_t hx = std::hash<float>{}(p.pos.x());
         std::size_t hy = std::hash<float>{}(p.pos.y());
@@ -97,6 +126,18 @@ struct MeshPointEqualTo {
                std::abs(a.pos.y() - b.pos.y()) < epsilon &&
                std::abs(a.pos.z() - b.pos.z()) < epsilon &&
                a.required_neighbors == b.required_neighbors;
+    }
+};
+
+struct MeshPointEqualTo_gmsh {
+    bool operator()(const MeshPoint_gmsh& a, const MeshPoint_gmsh& b) const {
+        // 等价逻辑封装在这里
+        const float epsilon = 1e-6f;
+        return std::abs(a.pos.x() - b.pos.x()) < epsilon &&
+            std::abs(a.pos.y() - b.pos.y()) < epsilon &&
+            std::abs(a.pos.z() - b.pos.z()) < epsilon &&
+            std::abs(a.instance_id - b.instance_id) < epsilon;
+            
     }
 };
 
@@ -128,6 +169,13 @@ struct Instance {
     //Instance() = default;
 };
 
+struct Instance_gmsh {
+
+    QString instance_name;
+
+    std::vector< MeshPoint_gmsh > instance_points;
+};
+
 struct eos{
 
     QString eos_name;
@@ -144,8 +192,31 @@ struct Triangle{
 
 struct GeoLine {
 
-    int resolution ;
+    int resolution = 100;
     std::vector<Vector3> points;
+
+    explicit GeoLine(Vector3& start, Vector3& end, const int resolu) {
+    
+        resolution = resolu;
+        for (int i = 0; i < resolu; i++) {
+
+            float x_section = start.x() + i * (end.x() - start.x()) / resolu;
+            float y_section = start.y() + i * (end.y() - start.y()) / resolu;
+            float z_section = start.z() + i * (end.z() - start.z()) / resolu;
+            points.push_back(Vector3(x_section, y_section, z_section));
+        }
+    }
+    explicit GeoLine(Vector3& start, Vector3& end) {
+
+        for (int i = 0; i < resolution; i++) {
+
+            float x_section = start.x() + i * (end.x() - start.x()) / resolution;
+            float y_section = start.y() + i * (end.y() - start.y()) / resolution;
+            float z_section = start.z() + i * (end.z() - start.z()) / resolution;
+            points.push_back(Vector3(x_section, y_section, z_section));
+        }
+    }
+
     explicit GeoLine(MeshPoint& start, MeshPoint& end, int resolu ){
 
         resolution = resolu;
@@ -158,11 +229,33 @@ struct GeoLine {
         }
 
     }
+
+    explicit GeoLine(MeshPoint& start, MeshPoint& end) {
+
+        for (int i = 0; i < resolution; i++) {
+
+            float x_section = start.pos.x() + i * (end.pos.x() - start.pos.x()) / resolution;
+            float y_section = start.pos.y() + i * (end.pos.y() - start.pos.y()) / resolution;
+            float z_section = start.pos.z() + i * (end.pos.z() - start.pos.z()) / resolution;
+            points.push_back(Vector3(x_section, y_section, z_section));
+        }
+
+    }
 };
 
 struct Boundaries {
 
     std::vector<MeshPoint> boundary_points;
+};
+
+struct HexElement {
+    int id;
+    int nodeIndices[8]; // 存储 8 个节点的编号
+};
+
+struct Element {
+
+    std::vector< MeshPoint_gmsh* > element_points;
 };
 
 #endif // COMMON_TYPES_H

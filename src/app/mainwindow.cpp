@@ -42,6 +42,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         //clear()
         clean();
         
+        m_meshManager = new MeshManager(this);
+
+        // 核心：当网格文件准备好后，自动触发 parseMeshFile 进行解析和渲染
+        connect(m_meshManager, &MeshManager::meshReady, this, &MainWindow::parseMeshFile);
+
+        // 错误处理：如果 Gmsh 报错，打印到日志
+        connect(m_meshManager, &MeshManager::errorOccurred, this, [this](QString msg) {
+            logCommand("Error", msg);
+            });
 }
 
 MainWindow::~MainWindow() {}
@@ -271,9 +280,35 @@ void MainWindow::onCommandEntered(const QString &command) {
     
         generateOrbMesh(0.38, 0.05);
     }
+    else if (cmd == "sphere") {
+    
+        if (args.size() < 7) {
+            logCommand(command, "用法: sphere [name] [radius] [ms] [x] [y] [z]");
+            return;
+        }
+
+        QString name = args[1];
+        double r = args[2].toDouble();
+        double ms = args[3].toDouble();
+        double cx = args[4].toDouble();
+        double cy = args[5].toDouble();
+        double cz = args[6].toDouble();
+
+        // 实例化并设置参数
+        SphereGenerator sphereGen;
+        sphereGen.setParameters(r, ms, cx, cy, cz);
+
+        // 调用管理器（MeshManager 会处理 buildAndLoad 逻辑）
+        m_meshManager->buildAndLoad(sphereGen, name);
+
+        // --- 剩下的交给信号槽逻辑，当信号 meshReady 触发时渲染 ---
+        logCommand(command, "Sphere generation task sent to manager...");
+    }
       else {
         logCommand("Error: Unknown command. Type 'help' for a list of commands.");
     }
+
+    
     glWidget->update();
 }
 
@@ -296,8 +331,7 @@ void MainWindow::showHelp() {
         QString helpText = commandLine->getHelpText();
         commandHistoryEdit->append(helpText);
         logCommand("help", helpText);
-        
-
+     
     }
 }
 
@@ -397,13 +431,13 @@ void MainWindow::parseMeshFile(QString fileName) {
 
                 int elementType = data[1].toInt();
 
-                if (elementType == 12) {
+                if (elementType == 5) {
                 
                     Hexahedron hex;
 					//hex.id = data[0].toInt();
 					int numTags = data[2].toInt();
 
-                    for (int j = 0; j < 7; j++) {
+                    for (int j = 0; j < 8; j++) {
                     
                         hex[j] = data[3 +numTags+ j].toInt();
                     }
@@ -421,19 +455,21 @@ void MainWindow::parseMeshFile(QString fileName) {
     cmd.pointsCmd.points = points;
     cmd.pointsCmd.size = 2.5f;
 
-    glWidget->clearDrawCommands();
+    //glWidget->clearDrawCommands();
     glWidget->submitDrawCommand(cmd);
 
+    std::vector<Vector3> wireLines = buildHexWireframe(nodes, hexes);
    // auto wireLines = buildHexWireframe( nodes, hexes );
 
     DrawCommand lineCmd;
     lineCmd.type = DrawCommand::Lines;
-    //lineCmd.linesCmd.points = wireLines;
-    lineCmd.linesCmd.width = 1.0f;
+    lineCmd.linesCmd.points = wireLines;
+    lineCmd.linesCmd.width = 2.0f;
 
     glWidget->submitDrawCommand(lineCmd);
 
-    qDebug() << "done parsing!";
+    qDebug() << "done parsing and wireframe generated!";
+    qDebug() << "Wireframe submitted with" << wireLines.size() / 2 << "lines.";
     file.close();
 }
 
@@ -696,50 +732,39 @@ void MainWindow::generateOrbMesh(double radius, double meshSize) {
 
 QString geoContent = QString(R"(
 // =======================================================
-// Gmsh 高阶结构化球形 O-Grid 脚本 (2026 优化版)
+// Gmsh 结构化球形 O-Grid 脚本 (修正 Surface Loop 定义)
 // =======================================================
 
 // --- 1. 参数设置 ---
-R = %1;       // 球体半径
-L = R/(2*1.414);       // 核心立方体半边长 (建议 L < R/Sqrt(3))
-nC = %2;       // 核心和圆周方向等分数
-nR = nC /1.414;       // 径向方向等分数 (核心到球面)
+R = %1;           
+meshSize = %2;    
 
-// 计算投影点坐标，确保顶点在球面上: x^2 + y^2 + z^2 = R^2
-P = L * (R / Sqrt(3 * L^2)); 
+_nC = Round(R * 1.57 / meshSize);
+_nR = Round(R / meshSize);
+nC = (_nC > 2) ? _nC : 2;
+nR = (_nR > 2) ? _nR : 2;
+
+L = R * 0.45;  
+P = R / Sqrt(3); 
 
 // --- 2. 点定义 ---
-Point(100) = {0, 0, 0}; // 球心
-
-// 内部核心立方体顶点 (1-8)
-Point(1) = { L,  L,  L}; Point(2) = {-L,  L,  L};
-Point(3) = {-L, -L,  L}; Point(4) = { L, -L,  L};
-Point(5) = { L,  L, -L}; Point(6) = {-L,  L, -L};
-Point(7) = {-L, -L, -L}; Point(8) = { L, -L, -L};
-
-// 外部球面投影顶点 (11-18)
-Point(11) = { P,  P,  P}; Point(12) = {-P,  P,  P};
-Point(13) = {-P, -P,  P}; Point(14) = { P, -P,  P};
-Point(15) = { P,  P, -P}; Point(16) = {-P,  P, -P};
-Point(17) = {-P, -P, -P}; Point(18) = { P, -P, -P};
+Point(100) = {0, 0, 0}; 
+Point(1) = { L,  L,  L}; Point(2) = {-L,  L,  L}; Point(3) = {-L, -L,  L}; Point(4) = { L, -L,  L};
+Point(5) = { L,  L, -L}; Point(6) = {-L,  L, -L}; Point(7) = {-L, -L, -L}; Point(8) = { L, -L, -L};
+Point(11) = { P,  P,  P}; Point(12) = {-P,  P,  P}; Point(13) = {-P, -P,  P}; Point(14) = { P, -P,  P};
+Point(15) = { P,  P, -P}; Point(16) = {-P,  P, -P}; Point(17) = {-P, -P, -P}; Point(18) = { P, -P, -P};
 
 // --- 3. 线段定义 ---
-// 核心立方体直线边 (1-12)
 Line(1)={1,2}; Line(2)={2,3}; Line(3)={3,4}; Line(4)={4,1};
 Line(5)={5,6}; Line(6)={6,7}; Line(7)={7,8}; Line(8)={8,5};
 Line(9)={1,5}; Line(10)={2,6}; Line(11)={3,7}; Line(12)={4,8};
-
-// 球面圆弧 (21-32) - 明确圆心100，保证曲率
 Circle(21)={11,100,12}; Circle(22)={12,100,13}; Circle(23)={13,100,14}; Circle(24)={14,100,11};
 Circle(25)={15,100,16}; Circle(26)={16,100,17}; Circle(27)={17,100,18}; Circle(28)={18,100,15};
 Circle(29)={11,100,15}; Circle(30)={12,100,16}; Circle(31)={13,100,17}; Circle(32)={14,100,18};
-
-// 径向放射连接线 (41-48)
 Line(41)={1,11}; Line(42)={2,12}; Line(43)={3,13}; Line(44)={4,14};
 Line(45)={5,15}; Line(46)={6,16}; Line(47)={7,17}; Line(48)={8,18};
 
-// --- 4. 表面定义 (24个面) ---
-// 核心面 (确认为平面)
+// --- 4. 表面定义 ---
 Curve Loop(101)={1,2,3,4};     Plane Surface(101)={101}; 
 Curve Loop(102)={5,6,7,8};     Plane Surface(102)={102}; 
 Curve Loop(103)={1,10,-5,-9};  Plane Surface(103)={103}; 
@@ -747,7 +772,6 @@ Curve Loop(104)={2,11,-6,-10}; Plane Surface(104)={104};
 Curve Loop(105)={3,12,-7,-11}; Plane Surface(105)={105}; 
 Curve Loop(106)={4,9,-8,-12};  Plane Surface(106)={106}; 
 
-// 球面盖子 (必须使用通用 Surface 拟合曲率)
 Curve Loop(201)={21,22,23,24}; Surface(201)={201}; 
 Curve Loop(202)={25,26,27,28}; Surface(202)={202}; 
 Curve Loop(203)={21,30,-25,-29}; Surface(203)={203}; 
@@ -755,43 +779,45 @@ Curve Loop(204)={22,31,-26,-30}; Surface(204)={204};
 Curve Loop(205)={23,32,-27,-31}; Surface(205)={205}; 
 Curve Loop(206)={24,29,-28,-32}; Surface(206)={206}; 
 
-// 放射状侧面
-Curve Loop(301)={41,21,-42,-1}; Surface(301)={301};
+Curve Loop(301)={41,21,-42,-1}; Surface(301)={301}; 
 Curve Loop(302)={42,22,-43,-2}; Surface(302)={302};
-Curve Loop(303)={43,23,-44,-3}; Surface(303)={303};
+Curve Loop(303)={43,23,-44,-3}; Surface(303)={303}; 
 Curve Loop(304)={44,24,-41,-4}; Surface(304)={304};
-Curve Loop(305)={45,25,-46,-5}; Surface(305)={305};
+Curve Loop(305)={45,25,-46,-5}; Surface(305)={305}; 
 Curve Loop(306)={46,26,-47,-6}; Surface(306)={306};
-Curve Loop(307)={47,27,-48,-7}; Surface(307)={307};
+Curve Loop(307)={47,27,-48,-7}; Surface(307)={307}; 
 Curve Loop(308)={48,28,-45,-8}; Surface(308)={308};
-Curve Loop(309)={41,29,-45,-9}; Surface(309)={309};
+Curve Loop(309)={41,29,-45,-9}; Surface(309)={309}; 
 Curve Loop(310)={42,30,-46,-10}; Surface(310)={310};
-Curve Loop(311)={43,31,-47,-11}; Surface(311)={311};
+Curve Loop(311)={43,31,-47,-11}; Surface(311)={311}; 
 Curve Loop(312)={44,32,-48,-12}; Surface(312)={312};
 
-// --- 5. 体积定义 (7个区块) ---
-Surface Loop(1) = {101:106}; Volume(1) = {1}; // 核心立方体
-Surface Loop(2) = {101, 201, 301, 302, 303, 304}; Volume(2) = {2}; // 上
-Surface Loop(3) = {102, 202, 305, 306, 307, 308}; Volume(3) = {3}; // 下
-Surface Loop(4) = {103, 203, 301, 305, 309, 310}; Volume(4) = {4}; // 侧1
-Surface Loop(5) = {104, 204, 302, 306, 310, 311}; Volume(5) = {5}; // 侧2
-Surface Loop(6) = {105, 205, 303, 307, 311, 312}; Volume(6) = {6}; // 侧3
-Surface Loop(7) = {106, 206, 304, 308, 312, 309}; Volume(7) = {7}; // 侧4
+// --- 5. 体积定义 (显式定义 Surface Loop) ---
+Surface Loop(1) = {101, 102, 103, 104, 105, 106}; Volume(1) = {1}; 
+Surface Loop(2) = {101, 201, 301, 302, 303, 304}; Volume(2) = {2}; 
+Surface Loop(3) = {102, 202, 305, 306, 307, 308}; Volume(3) = {3}; 
+Surface Loop(4) = {103, 203, 301, 305, 309, 310}; Volume(4) = {4}; 
+Surface Loop(5) = {104, 204, 302, 306, 310, 311}; Volume(5) = {5}; 
+Surface Loop(6) = {105, 205, 303, 307, 311, 312}; Volume(6) = {6}; 
+Surface Loop(7) = {106, 206, 304, 308, 312, 309}; Volume(7) = {7}; 
 
-// --- 6. 结构化约束与网格生成 ---
+// --- 6. 约束与重组 ---
 Transfinite Curve {1:12, 21:32} = nC;
 Transfinite Curve {41:48} = nR;
-
 Transfinite Surface "*";
 Transfinite Volume "*";
-Recombine Surface "*"; // 强制转换为四边形
-Mesh.RecombineAll = 1; // 尽量将三棱柱合并为六面体
+Recombine Surface "*";
+Mesh.RecombineAll = 1;
 
-// --- 7. 几何保真度增强 (关键) ---
-Mesh.ElementOrder = 2; // 开启二阶网格，使边缘平滑贴合球面
+// --- 7. 纯 5 号元素配置 ---
+Physical Volume("SphereHex") = {1, 2, 3, 4, 5, 6, 7};
+Mesh.SaveAll = 0; 
+
+Mesh.ElementOrder = 1;
+Mesh.MshFileVersion = 2.2;
 Mesh 3;
-)")
-.arg(radius).arg(nC)
+    )")
+.arg(radius).arg(meshSize)
 ;
     // 2. 写入物理文件
 

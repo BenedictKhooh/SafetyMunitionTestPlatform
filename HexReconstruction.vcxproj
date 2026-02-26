@@ -182,13 +182,19 @@
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="MeshUtils.cpp" />
     <ClCompile Include="src\app\commandline.cpp" />
     <ClCompile Include="src\app\glwidget.cpp" />
     <ClCompile Include="src\app\main.cpp" />
     <ClCompile Include="src\app\mainwindow.cpp" />
+    <ClCompile Include="src\core\common\MeshManager.cpp" />
+    <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MeshUtils.h" />
     <ClInclude Include="src\core\algorithm\Algorithm.h" />
+    <ClInclude Include="src\core\common\MeshGenerator.h" />
+    <QtMoc Include="src\core\common\MeshManager.h" />
     <ClInclude Include="src\core\common\STL_reader.h" />
     <QtMoc Include="src\app\commandline.h" />
     <ClInclude Include="src\core\common\common_types.h" />
@@ -196,7 +202,7 @@
     <ClInclude Include="src\core\generation\cylinder_projection.h" />
     <ClInclude Include="src\core\eos\eos.h" />
     <QtMoc Include="src\app\glwidget.h" />
-    <ClInclude Include="src\core\generation\cylinder_sheet.h" />
+    <ClInclude Include="src\core\generation\SphereGenerator.h" />
     <ClInclude Include="src\core\reconstruction\instance_builder.h" />
     <ClInclude Include="src\core\reconstruction\instance_modification.h" />
     <QtMoc Include="src\app\mainwindow.h" />
@@ -225,6 +231,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtUic Include="src\app\ui\mainwindow.ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />

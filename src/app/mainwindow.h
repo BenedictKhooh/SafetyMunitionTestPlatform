@@ -8,6 +8,9 @@
 #include "src/core/generation/sphere_projection.h"
 #include "src/core/generation/cylinder_projection.h"
 #include "src/core/common/common_types.h"
+#include "src/core/common/MeshGenerator.h"
+#include "src/core/common/MeshManager.h"
+#include "src/core/generation/SphereGenerator.h"
 #include "commandline.h"
 
 // Forward declaration
@@ -47,6 +50,7 @@ private:
 
     std::vector<Instance> drawables;
     std::vector<GeoLine> drawables_lines;
+    MeshManager* m_meshManager;
 
     // UI Widgets
     GLWidget *glWidget;

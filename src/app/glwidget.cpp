@@ -27,11 +27,12 @@ void GLWidget::reset() {
 // --- OpenGL Functions ---
 void GLWidget::initializeGL() {
     initializeOpenGLFunctions();
-    glClearColor(0.1f, 0.1f, 0.2f, 1.0f); // Dark blue background
+    glClearColor(0.1f, 0.15f, 0.2f, 1.0f); 
     glEnable(GL_DEPTH_TEST);              // Enable depth testing for 3D
     glEnable(GL_CULL_FACE);               // Cull back-facing polygons for better transparency rendering
     glEnable(GL_POINT_SMOOTH);            // Render points as circles
     glEnable(GL_BLEND);                   // Enable alpha blending for transparency
+    glDepthFunc(GL_LEQUAL);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // 2. Create VBO
@@ -83,19 +84,6 @@ void GLWidget::paintGL() {
     // Draw scene elements
     drawAxes();
 
-    //if (!m_points.empty()) {
-    //    drawPoints( m_points );
-    //    if (!m_adjGraph.empty()) {
-    //        drawGraph( m_adjGraph );
-    //        if (!m_faces.empty()) {
-    //            drawFaces( m_faces );
-    //            if (!m_hexahedra.empty()) {
-    //                drawHexahedra( m_hexahedra );
-    //            }
-    //        }
-    //    }
-    //}
-
     if (!drawable_buffer.empty()) {
     
 		for (const auto& instance : drawable_buffer) {
@@ -108,7 +96,7 @@ void GLWidget::paintGL() {
     
         for (const auto& line : drawable_line_buffer) {
         
-            drawPoints(line.points);
+            drawLines(line.points);
         }
     }
     // --Drawable
@@ -121,7 +109,7 @@ void GLWidget::paintGL() {
 
         case DrawCommand::Lines:
             glLineWidth(cmd.linesCmd.width);
-            drawPoints(cmd.linesCmd.points);
+            drawLines(cmd.linesCmd.points);
             break;
         }
     }
@@ -165,7 +153,7 @@ void GLWidget::drawAxes() {
 }
 
 void GLWidget::drawPoints( std::vector<MeshPoint> points ) {
-    glColor3f(1.0f, 1.0f, 1.0f); // White points
+    glColor3f(1.0f, 9.0f, 1.0f); // White points
     glPointSize(1.0f);
     glBegin(GL_POINTS);
     for(const auto& p : points) {
@@ -278,10 +266,16 @@ void GLWidget::clearDrawCommands() {
 }
 
 void GLWidget::drawLines(const std::vector<Vector3>& points) {
-    glColor3f(0.8f, 0.8f, 0.8f);
+    if (points.empty()) return;
+
+    glColor4f(0.0f, 0.0f, 255.0f, 0.3f);
+
+    glLineWidth(0.5f);
     glBegin(GL_LINES);
     for (const auto& p : points) {
         glVertex3f(p.x(), p.y(), p.z());
     }
     glEnd();
+
+    update(); // ¥•∑¢÷ÿªÊ
 }

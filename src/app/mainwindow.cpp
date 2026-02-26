@@ -30,6 +30,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         // 初始化停靠窗口
         createDockWidgets();
 
+
         // 初始化命令行
         createCommandLine();
 
@@ -423,11 +424,11 @@ void MainWindow::parseMeshFile(QString fileName) {
     glWidget->clearDrawCommands();
     glWidget->submitDrawCommand(cmd);
 
-    auto wireLines = buildHexWireframe( nodes, hexes );
+   // auto wireLines = buildHexWireframe( nodes, hexes );
 
     DrawCommand lineCmd;
     lineCmd.type = DrawCommand::Lines;
-    lineCmd.linesCmd.points = wireLines;
+    //lineCmd.linesCmd.points = wireLines;
     lineCmd.linesCmd.width = 1.0f;
 
     glWidget->submitDrawCommand(lineCmd);

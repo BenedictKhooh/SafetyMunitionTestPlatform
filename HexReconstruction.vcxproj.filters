@@ -49,9 +49,6 @@
     <ClCompile Include="src\app\mainwindow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MeshUtils.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -105,14 +102,8 @@
     <ClInclude Include="src\core\generation\sphere_projection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gmsh.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Drawable.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MeshUtils.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="src\core\generation\cylinder_sheet.h">
+      <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -127,10 +118,5 @@
     <QtUic Include="src\app\ui\mainwindow.ui">
       <Filter>Form Files</Filter>
     </QtUic>
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="gmsh.dll.lib">
-      <Filter>Header Files</Filter>
-    </Library>
   </ItemGroup>
 </Project>

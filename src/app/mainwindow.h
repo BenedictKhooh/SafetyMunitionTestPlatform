@@ -11,6 +11,7 @@
 #include "src/core/common/MeshGenerator.h"
 #include "src/core/common/MeshManager.h"
 #include "src/core/generation/SphereGenerator.h"
+#include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 
 // Forward declaration
@@ -78,7 +79,9 @@ private:
     std::vector<MeshPoint> m_points_sphere;*/
 
     //store all the points
-    
+    EntityRepository m_repository; // 实体仓库实例
+    void redrawAllEntities();      // 封装一个全量重绘的函数
+
     std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
 
     inline bool contains_point(

@@ -12,7 +12,7 @@
 struct MeshEntity {
     QString name;                       // 实体名称 (如 "ball1")
     QString type;                       // 实体类型 (如 "Sphere", "Cylinder")
-    std::vector<MeshPoint_gmsh> nodes;       // 节点数据
+    std::vector<MeshPoint> nodes;       // 节点数据
     std::vector<Hexahedron> hexes;      // 六面体单元数据
     std::vector<Vector3> wireLines;     // 预生成的渲染线段 (缓存起来，重绘时极快)
 };

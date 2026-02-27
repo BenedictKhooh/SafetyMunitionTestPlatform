@@ -403,6 +403,8 @@ void MainWindow::parseMeshFile(QString fileName) {
     std::vector<MeshPoint> nodes;
 	std::vector<Hexahedron> hexes;
 
+    QString entityName = QFileInfo(fileName).baseName();
+
     while (!in.atEnd()) {
         line = in.readLine().trimmed();
 
@@ -446,6 +448,7 @@ void MainWindow::parseMeshFile(QString fileName) {
             }
         }
     }
+
     std::vector<MeshPoint> points;
     for (auto& n : nodes)
         points.push_back(n);
@@ -461,12 +464,22 @@ void MainWindow::parseMeshFile(QString fileName) {
     std::vector<Vector3> wireLines = buildHexWireframe(nodes, hexes);
    // auto wireLines = buildHexWireframe( nodes, hexes );
 
+    MeshEntity newEntity;
+    newEntity.name = entityName;
+    newEntity.type = "Empty"; // 或者是从某个地方传过来的类型
+    newEntity.nodes = points;
+    newEntity.hexes = hexes;
+    newEntity.wireLines = wireLines;
+
+    m_repository.addEntity(entityName, newEntity);
+
     DrawCommand lineCmd;
     lineCmd.type = DrawCommand::Lines;
     lineCmd.linesCmd.points = wireLines;
     lineCmd.linesCmd.width = 2.0f;
 
     glWidget->submitDrawCommand(lineCmd);
+    redrawAllEntities();
 
     qDebug() << "done parsing and wireframe generated!";
     qDebug() << "Wireframe submitted with" << wireLines.size() / 2 << "lines.";
@@ -848,4 +861,32 @@ Mesh 3;
         parseMeshFile(mshFile);
         // 接下来可以调用之前的 parseMshFile(mshFile) 进行解析
     }
+}
+
+void MainWindow::redrawAllEntities() {
+    // 1. 清空 GLWidget 里的旧命令
+    glWidget->clearDrawCommands();
+
+    // 2. 遍历仓库里的所有实体
+    const auto& allEntities = m_repository.getAllEntities();
+    for (const auto& pair : allEntities) {
+        const MeshEntity& entity = pair.second;
+
+        // 提交点云渲染命令 (如果你需要)
+        DrawCommand ptCmd;
+        ptCmd.type = DrawCommand::Points;
+        ptCmd.pointsCmd.points = entity.nodes;
+        ptCmd.pointsCmd.size = 2.5f;
+        glWidget->submitDrawCommand(ptCmd);
+
+        // 提交线框渲染命令
+        DrawCommand lineCmd;
+        lineCmd.type = DrawCommand::Lines;
+        lineCmd.linesCmd.points = entity.wireLines;
+        lineCmd.linesCmd.width = 2.0f;
+        glWidget->submitDrawCommand(lineCmd);
+    }
+
+    // 3. 触发显卡刷新
+    glWidget->update();
 }

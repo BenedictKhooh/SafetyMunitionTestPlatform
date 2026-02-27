@@ -187,12 +187,14 @@
     <ClCompile Include="src\app\glwidget.cpp" />
     <ClCompile Include="src\app\main.cpp" />
     <ClCompile Include="src\app\mainwindow.cpp" />
+    <ClCompile Include="src\core\common\EntityRepository.cpp" />
     <ClCompile Include="src\core\common\MeshManager.cpp" />
     <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MeshUtils.h" />
     <ClInclude Include="src\core\algorithm\Algorithm.h" />
+    <ClInclude Include="src\core\common\EntityRepository.h" />
     <ClInclude Include="src\core\common\MeshGenerator.h" />
     <QtMoc Include="src\core\common\MeshManager.h" />
     <ClInclude Include="src\core\common\STL_reader.h" />

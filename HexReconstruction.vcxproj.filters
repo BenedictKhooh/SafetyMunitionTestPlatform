@@ -49,6 +49,18 @@
     <ClCompile Include="src\app\mainwindow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MeshUtils.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\MeshManager.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\generation\SphereGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\EntityRepository.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -102,7 +114,16 @@
     <ClInclude Include="src\core\generation\sphere_projection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\generation\cylinder_sheet.h">
+    <ClInclude Include="MeshUtils.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\MeshGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\SphereGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\EntityRepository.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -118,5 +139,13 @@
     <QtUic Include="src\app\ui\mainwindow.ui">
       <Filter>Form Files</Filter>
     </QtUic>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="src\core\common\MeshManager.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
   </ItemGroup>
 </Project>

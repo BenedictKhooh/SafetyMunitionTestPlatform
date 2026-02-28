@@ -88,6 +88,8 @@ void MainWindow::createMenuBar() {
         glWidget->translation = QVector3D(0, 0, 0);
         glWidget->update();
     });
+
+    
 }
 
 void MainWindow::createToolBars() {
@@ -156,6 +158,7 @@ void MainWindow::createDockWidgets() {
     substanceTree->setHeaderLabel("substanceTree");
     substanceDock->setWidget(substanceTree);
     substanceDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    substanceTree->setContextMenuPolicy(Qt::CustomContextMenu);
     addDockWidget(Qt::LeftDockWidgetArea, substanceDock);
 
     //boundaryDock
@@ -175,6 +178,10 @@ void MainWindow::createDockWidgets() {
     interactionDock->setWidget(interactionTree);
     interactionDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
     addDockWidget(Qt::LeftDockWidgetArea, interactionDock);
+
+    //connect slot funcs
+    connect(substanceTree, &QTreeWidget::customContextMenuRequested,
+        this, &MainWindow::onSubstanceTreeContextMenu);
 
 }
 
@@ -925,5 +932,40 @@ void MainWindow::updateSubstanceTree() {
 
         // 默认展开新生成的节点
         topItem->setExpanded(true);
+    }
+}
+
+void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
+    // 获取点击位置所在的项
+    QTreeWidgetItem* item = substanceTree->itemAt(pos);
+    if (!item) return; // 如果点在空白处，不弹菜单
+
+    // 获取实体名称（如果是二级节点，则找父节点）
+    QString entityName = item->parent() ? item->parent()->text(0) : item->text(0);
+
+    // 创建菜单
+    QMenu menu(this);
+    QAction* deleteAction = menu.addAction(tr("Delete the substance: ") + entityName);
+
+    // 执行菜单并获取用户的点击结果
+    QAction* selectedAction = menu.exec(substanceTree->mapToGlobal(pos));
+
+    if (selectedAction == deleteAction) {
+        // --- 核心调用：执行删除流程 ---
+        this->handleDeleteEntity(entityName);
+    }
+}
+
+void MainWindow::handleDeleteEntity(QString name) {
+    // 1. 从实体仓库(Repository)中移除数据
+    if (m_repository.deleteEntity(name)) {
+
+        // 2. 刷新 3D 画面 (清空指令 -> 重新遍历剩余实体提交给 GLWidget)
+        redrawAllEntities();
+
+        // 3. 刷新左侧列表 (清空树节点 -> 重新遍历剩余实体插入 Tree)
+        updateSubstanceTree();
+
+        qDebug() << "Entity deleted and UI refreshed: " << name;
     }
 }

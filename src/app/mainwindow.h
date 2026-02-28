@@ -46,7 +46,6 @@ private:
     void showHelp();
     QTextEdit *commandHistoryEdit;
 
-    void DrawCube(QStringList args);
     void DrawLine(QStringList args);
 
     std::vector<Instance> drawables;
@@ -72,6 +71,10 @@ private:
     QTreeWidget *layersTree;
     QTreeWidget *substanceTree;
     void updateSubstanceTree();
+    void onSubstanceTreeContextMenu(const QPoint& pos);
+
+    void handleDeleteEntity(QString name);
+
     QTreeWidget *boundaryTree;
     QTreeWidget* interactionTree;
 
@@ -83,7 +86,7 @@ private:
     EntityRepository m_repository; // 实体仓库实例
     void redrawAllEntities();      // 封装一个全量重绘的函数
     void clearAllEntities();
-    void refreshCanvas();
+
 
     std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
 

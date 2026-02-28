@@ -71,6 +71,7 @@ private:
     QTextEdit *propertiesEditor;
     QTreeWidget *layersTree;
     QTreeWidget *substanceTree;
+    void updateSubstanceTree();
     QTreeWidget *boundaryTree;
     QTreeWidget* interactionTree;
 
@@ -81,6 +82,8 @@ private:
     //store all the points
     EntityRepository m_repository; // 实体仓库实例
     void redrawAllEntities();      // 封装一个全量重绘的函数
+    void clearAllEntities();
+    void refreshCanvas();
 
     std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
 

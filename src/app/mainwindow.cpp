@@ -889,4 +889,41 @@ void MainWindow::redrawAllEntities() {
 
     // 3. 触发显卡刷新
     glWidget->update();
+    // 4. Update Substance Tree
+    updateSubstanceTree();
+}
+
+void MainWindow::clearAllEntities() {
+    m_repository.clearAll();      // 清空账本
+    glWidget->clearDrawCommands(); // 清空显卡指令
+    glWidget->update();           // 刷新画面
+    qDebug() << "Cleared all entities";
+}
+
+void MainWindow::updateSubstanceTree() {
+    // 1. 先清空当前的树，防止重复堆叠
+    substanceTree->clear();
+
+    // 2. 获取仓库中所有的实体
+    const auto& entities = m_repository.getAllEntities();
+
+    // 3. 遍历并创建节点
+    // 依然使用迭代器写法，避开你之前报错的 C++17 语法
+    for (auto it = entities.begin(); it != entities.end(); ++it) {
+        const MeshEntity& entity = it->second;
+
+        // 创建一级节点：显示实体名字
+        QTreeWidgetItem* topItem = new QTreeWidgetItem(substanceTree);
+        topItem->setText(0, entity.name);
+
+        // 创建二级节点：显示基本参数（可选）
+        QTreeWidgetItem* typeItem = new QTreeWidgetItem(topItem);
+        typeItem->setText(0, "Type: " + entity.type);
+
+        QTreeWidgetItem* nodeItem = new QTreeWidgetItem(topItem);
+        nodeItem->setText(0, QString("Nodes: %1").arg(entity.nodes.size()));
+
+        // 默认展开新生成的节点
+        topItem->setExpanded(true);
+    }
 }

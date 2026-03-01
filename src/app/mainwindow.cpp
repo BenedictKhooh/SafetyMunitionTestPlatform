@@ -288,6 +288,40 @@ void MainWindow::onCommandEntered(const QString &command) {
         //glWidget->update();
     }
 
+    else if (cmd == "cylindrical_shell") {
+        
+        // args[0] 是 "cylindrical_shell"，所以 args.size() 至少需要 10
+        if (args.size() < 10) {
+            logCommand(command, "用法: cylindrical_shell [name] [radius] [height] [lid] [wall] [ms] [x] [y] [z]");
+            return;
+        }
+
+        QString name = args[1];
+        double r = args[2].toDouble();      // 内径
+        double h = args[3].toDouble();      // 总高度
+        double lid = args[4].toDouble();    // 端盖厚度
+        double wall = args[5].toDouble();   // 侧壁厚度
+        double ms = args[6].toDouble();     // 网格大小
+
+        // 中心点坐标 (目前 Generator 内部逻辑以 0,0,0 为底面中心，
+        // 如果需要平移，可以在 .geo 脚本中加入偏移量，这里先预留解析)
+        double cx = args[7].toDouble();
+        double cy = args[8].toDouble();
+        double cz = args[9].toDouble();
+
+        // 1. 实例化圆柱壳体生成器
+        CylindricalShellGenerator shellGen;
+
+        // 2. 设置参数
+        // 注意：这里调用的参数顺序需对应类中 setParameters 的定义
+        shellGen.setParameters(r, h, lid, wall, ms);
+
+        // 3. 调用管理器进行构建与加载
+        m_meshManager->buildAndLoad(shellGen, name);
+
+        logCommand(command, QString("Cylindrical Shell (%1) generation task sent to manager...").arg(name));
+    }
+
     else if (cmd == "shell") {
     
 		generateCylindricalShellMesh(3.8, 8.0, 0.6, 0.6, 0.1);

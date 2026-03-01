@@ -12,6 +12,7 @@
 #include "src/core/common/MeshManager.h"
 #include "src/core/generation/SphereGenerator.h"
 #include "src/core/generation/CylinderGenerator.h"
+#include "src/core/generation/CylindricalShellGenerator.h"
 #include "src/core/generation/CubeGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
@@ -120,8 +121,6 @@ private:
 			set.insert(p);
 		}
     }
-    
-    //
 
     AdjacencyGraph m_adjGraph;
     AdjacencyGraph m_adjGraph_sphere;

@@ -67,6 +67,9 @@
     <ClCompile Include="src\core\generation\CubeGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\generation\CylindricalShellGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -136,6 +139,9 @@
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\CubeGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\CylindricalShellGenerator.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>

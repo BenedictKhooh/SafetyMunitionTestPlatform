@@ -11,6 +11,7 @@
 #include "src/core/common/MeshGenerator.h"
 #include "src/core/common/MeshManager.h"
 #include "src/core/generation/SphereGenerator.h"
+#include "src/core/generation/CylinderGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 

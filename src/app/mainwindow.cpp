@@ -202,16 +202,8 @@ void MainWindow::onCommandEntered(const QString &command) {
     if (args.isEmpty()) return;
 
     QString cmd = args[0].toLower();
-
-    if (cmd == "line") {
-       
-        DrawLine(args);
-
-    } else if (cmd == "circle") {
-       // startCircleDrawing();
-    } else if (cmd == "rectangle") {
-       // startRectangleDrawing();
-    }  else if (cmd == "cube") {
+    
+    if (cmd == "cube") {
                if (args.size() == 11) {
 
 				   QString instance_name = args[1];
@@ -275,7 +267,30 @@ void MainWindow::onCommandEntered(const QString &command) {
     } 
     else if (cmd == "cylinder") {
     
-		generateCylindricalMesh(3.8, 10.0, 0.1);
+		//generateCylindricalMesh(3.8, 10.0, 0.1);
+        if (args.size() < 8) {
+            logCommand(command, "Argument: cylinder [name] [radius] [ms] [height] [x] [y] [z]");
+            return;
+        }
+
+        QString name = args[1];
+        double r = args[2].toDouble();
+        double ms = args[3].toDouble();
+		double height = args[4].toDouble();
+        double cx = args[5].toDouble();
+        double cy = args[6].toDouble();
+        double cz = args[7].toDouble();
+
+        // 实例化并设置参数
+        CylinderGenerator cylinderGen;
+        cylinderGen.setParameters(r, ms, height, cx, cy, cz);
+
+        // 调用管理器（MeshManager 会处理 buildAndLoad 逻辑）
+        m_meshManager->buildAndLoad(cylinderGen, name);
+
+        logCommand(command, "Sphere generation task sent to manager...");
+    
+        //glWidget->update();
     }
 
     else if (cmd == "shell") {
@@ -308,14 +323,11 @@ void MainWindow::onCommandEntered(const QString &command) {
         // 调用管理器（MeshManager 会处理 buildAndLoad 逻辑）
         m_meshManager->buildAndLoad(sphereGen, name);
 
-        // --- 剩下的交给信号槽逻辑，当信号 meshReady 触发时渲染 ---
         logCommand(command, "Sphere generation task sent to manager...");
     }
       else {
         logCommand("Error: Unknown command. Type 'help' for a list of commands.");
     }
-
-    
     glWidget->update();
 }
 

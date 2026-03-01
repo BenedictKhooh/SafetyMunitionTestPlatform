@@ -1,5 +1,6 @@
 // MeshUtils.cpp
 #include "MeshUtils.h"
+#include <QDebug>
 
 std::vector<Vector3> buildHexWireframe(
     const std::vector<MeshPoint>& points,
@@ -22,8 +23,10 @@ std::vector<Vector3> buildHexWireframe(
 
             lines.push_back(points[i0].pos);
             lines.push_back(points[i1].pos);
+
         }
     }
+
     return lines;
 }
 

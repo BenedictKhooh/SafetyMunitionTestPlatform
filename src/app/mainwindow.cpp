@@ -407,7 +407,7 @@ void MainWindow::parseMeshFile(QString fileName) {
 
     QTextStream in(&file);
     QString line;
-    std::vector<MeshPoint> nodes;
+    std::vector<MeshPoint> nodes; nodes.push_back(MeshPoint());//占位
 	std::vector<Hexahedron> hexes;
 
     QString entityName = QFileInfo(fileName).baseName();
@@ -915,7 +915,6 @@ void MainWindow::updateSubstanceTree() {
     const auto& entities = m_repository.getAllEntities();
 
     // 3. 遍历并创建节点
-    // 依然使用迭代器写法，避开你之前报错的 C++17 语法
     for (auto it = entities.begin(); it != entities.end(); ++it) {
         const MeshEntity& entity = it->second;
 

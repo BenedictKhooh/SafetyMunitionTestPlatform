@@ -189,6 +189,7 @@
     <ClCompile Include="src\app\mainwindow.cpp" />
     <ClCompile Include="src\core\common\EntityRepository.cpp" />
     <ClCompile Include="src\core\common\MeshManager.cpp" />
+    <ClCompile Include="src\core\generation\CubeGenerator.cpp" />
     <ClCompile Include="src\core\generation\CylinderGenerator.cpp" />
     <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
   </ItemGroup>
@@ -201,6 +202,7 @@
     <ClInclude Include="src\core\common\STL_reader.h" />
     <QtMoc Include="src\app\commandline.h" />
     <ClInclude Include="src\core\common\common_types.h" />
+    <ClInclude Include="src\core\generation\CubeGenerator.h" />
     <ClInclude Include="src\core\generation\cubic_block.h" />
     <ClInclude Include="src\core\generation\CylinderGenerator.h" />
     <ClInclude Include="src\core\generation\cylinder_projection.h" />

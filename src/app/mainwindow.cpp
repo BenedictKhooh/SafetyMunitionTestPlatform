@@ -34,10 +34,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         // 初始化命令行
         createCommandLine();
 
-        setWindowTitle("OpenGL CAD Demo");
+        setWindowTitle("SafetyMunitionTestPlatform");
         resize(1024, 768);
-
-        
 
         //clear()
         clean();
@@ -204,36 +202,33 @@ void MainWindow::onCommandEntered(const QString &command) {
     QString cmd = args[0].toLower();
     
     if (cmd == "cube") {
-               if (args.size() == 11) {
+     
+        if (args.size() < 9) {
+            logCommand(command, "用法: box [name] [lx] [ly] [lz] [ms] [cx] [cy] [cz]");
+            return;
+        }
 
-				   QString instance_name = args[1];
-                   float x_division = args[2].toFloat();
-                   float y_division = args[3].toFloat();
-                   float z_division = args[4].toFloat();
-                   float x = args[5].toFloat();
-                   float y = args[6].toFloat();
-                   float z = args[7].toFloat();
-				   float x_scale = args[8].toFloat(); 
-				   float y_scale = args[9].toFloat();
-				   float z_scale = args[10].toFloat();
+        QString name = args[1];
+        double lx = args[2].toDouble();
+        double ly = args[3].toDouble();
+        double lz = args[4].toDouble();
+        double ms = args[5].toDouble();
+        double cx = args[6].toDouble();
+        double cy = args[7].toDouble();
+        double cz = args[8].toDouble();
 
-                   std::vector<MeshPoint> cube_points = CubicBlock::building_basic_cubic_brick(x_division, y_division, z_division, x, y, z, x_scale, y_scale, z_scale);
-                   drawables.push_back( Instance( instance_name, cube_points ) );
-                 
-                   glWidget->setDrawableInstances(drawables);
-                   insert_points_vector(points, cube_points);
-				   
-                   glWidget->update();
-				   logCommand(command, QString("Created cube '%1' with dimensions %2x%3x%4.").arg(instance_name).arg(x).arg(y).arg(z));
+        // 1. 实例化立方体生成器
+        CubeGenerator cubeGen;
 
-                   QTreeWidgetItem* instance_generate = new QTreeWidgetItem(substanceTree);
-                   instance_generate->setText(0, instance_name);
+        // 2. 设置参数（长度、宽度、高度、网格大小、中心点坐标）
+        cubeGen.setParameters(lx, ly, lz, ms, cx, cy, cz);
 
-               } 
-               else {
-                   logCommand(command, "Error: Missing argument for 'cube' command.");
-               }
-           }
+        // 3. 调用管理器进行构建与加载
+        // MeshManager 会获取 boxGen 的 .geo 脚本并交给 Gmsh 处理
+        m_meshManager->buildAndLoad(cubeGen, name);
+
+        logCommand(command, QString("Box (%1x%2x%3) generation task sent to manager...").arg(lx).arg(ly).arg(lz));
+     }
     
     else if (cmd == "zoom") {
         if (args.size() > 1 && args[1] == "in") {
@@ -297,11 +292,6 @@ void MainWindow::onCommandEntered(const QString &command) {
     
 		generateCylindricalShellMesh(3.8, 8.0, 0.6, 0.6, 0.1);
     }
-
-    else if (cmd == "orb") {
-    
-        generateOrbMesh(0.38, 0.05);
-    }
     else if (cmd == "sphere") {
     
         if (args.size() < 7) {
@@ -350,7 +340,6 @@ void MainWindow::showHelp() {
         QString helpText = commandLine->getHelpText();
         commandHistoryEdit->append(helpText);
         logCommand("help", helpText);
-     
     }
 }
 
@@ -505,130 +494,6 @@ void MainWindow::parseMeshFile(QString fileName) {
     file.close();
 }
 
-void MainWindow::generateCylindricalMesh( double radius, double height, double meshSize) {
-
-    int nC = 2 * round((radius / (2 * 1.414) ) / meshSize );
-	int nH = round(height / meshSize);
-    QString geoContent = QString(R"(
-////////////////////////////////////////////////////
-// Cylindrical O-grid mesh (parameterized)
-////////////////////////////////////////////////////
-
-// 1. 参数定义
-R = %1;
-H = %2;
-
-nC = %3;
-nH = %4;
-
-L = R /(2 * 1.414);
-Rproj = R / 1.414;
-nR = nC / 1.414;
-
-Printf("L = %g, R = %g, H = %g", L, R, H);
-
-// 2. 点定义
-Point(1)  = {0, 0, 0};
-
-Point(2)  = { L,  L, 0};
-Point(3)  = {-L,  L, 0};
-Point(4)  = {-L, -L, 0};
-Point(5)  = { L, -L, 0};
-
-Point(6)  = { Rproj,  Rproj, 0};
-Point(7)  = {-Rproj,  Rproj, 0};
-Point(8)  = {-Rproj, -Rproj, 0};
-Point(9)  = { Rproj, -Rproj, 0};
-
-Point(10) = { 2*L, 0, 0};
-Point(11) = { 0, 2*L, 0};
-Point(12) = {-2*L, 0, 0};
-Point(13) = { 0,-2*L, 0};
-
-// 3. 线定义
-Circle(1) = {2, 13, 3};
-Circle(2) = {3, 10, 4};
-Circle(3) = {4, 11, 5};
-Circle(4) = {5, 12, 2};
-
-Circle(5) = {6, 1, 7};
-Circle(6) = {7, 1, 8};
-Circle(7) = {8, 1, 9};
-Circle(8) = {9, 1, 6};
-
-Line(9)  = {2, 6};
-Line(10) = {3, 7};
-Line(11) = {4, 8};
-Line(12) = {5, 9};
-
-// 4. 面定义
-Curve Loop(1) = {1, 2, 3, 4};
-Plane Surface(1) = {1};
-
-Curve Loop(2) = {9, 5, -10, -1};
-Plane Surface(2) = {2};
-
-Curve Loop(3) = {10, 6, -11, -2};
-Plane Surface(3) = {3};
-
-Curve Loop(4) = {11, 7, -12, -3};
-Plane Surface(4) = {4};
-
-Curve Loop(5) = {12, 8, -9, -4};
-Plane Surface(5) = {5};
-
-// 5. 结构化约束
-Transfinite Curve {1,2,3,4,5,6,7,8} = nC;
-Transfinite Curve {9,10,11,12} = nR;
-
-Transfinite Surface {1,2,3,4,5};
-Recombine Surface {1,2,3,4,5};
-
-// 6. 扫掠 3D
-Extrude {0, 0, H} {
-  Surface{1,2,3,4,5};
-  Layers{nH};
-  Recombine;
-}
-
-Mesh 3;
-Mesh.MshFileVersion = 2.2;
-)")
-.arg(radius)
-.arg(height)
-.arg(nC)
-.arg(nH);
-    // 2. 写入物理文件
-    
-    QString appPath = QCoreApplication::applicationDirPath();
-    QFile::remove("output_geo.geo");
-    QFile::remove("output_geo.msh");
-    QString geoFile = appPath + "/output_geo.geo";
-    QString mshFile = appPath + "/output_geo.msh";
-
-    QFile file(geoFile);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&file);
-        out << geoContent;
-        file.close();
-    }
-    
-    QProcess* gmsh = new QProcess();
-    QStringList args;
-    args << geoFile << "-3" << "-o" << mshFile; // -3 表示三维划分
-
-    gmsh->start(appPath + "/gmsh.exe", args);
-
-    if (!gmsh->waitForFinished()) {
-        qDebug() << "Gmsh failed:" << gmsh->errorString();
-    }
-    else {
-        qDebug() << "Success! You may find the mesh file in: " << mshFile;
-        parseMeshFile(mshFile);
-        // 接下来可以调用之前的 parseMshFile(mshFile) 进行解析
-    }
-}
-
 void MainWindow::generateCylindricalShellMesh(double radius, double height, double lid, double wall ,double meshSize) {
 
     int nC = 2 * round((radius / (2 * 1.414)) / meshSize);
@@ -728,129 +593,6 @@ Mesh 3;
 .arg(nR_wall)
 .arg(nH_cap)
 .arg(nH_cap);
-    // 2. 写入物理文件
-
-    QString appPath = QCoreApplication::applicationDirPath();
-    QFile::remove("output_geo.geo");
-    QFile::remove("output_geo.msh");
-    QString geoFile = appPath + "/output_geo.geo";
-    QString mshFile = appPath + "/output_geo.msh";
-
-    QFile file(geoFile);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&file);
-        out << geoContent;
-        file.close();
-    }
-
-    QProcess* gmsh = new QProcess();
-    QStringList args;
-    args << geoFile << "-3" << "-o" << mshFile; // -3 表示三维划分
-
-    gmsh->start(appPath + "/gmsh.exe", args);
-
-    if (!gmsh->waitForFinished()) {
-        qDebug() << "Gmsh failed:" << gmsh->errorString();
-    }
-    else {
-        qDebug() << "Success! You may find the mesh file in: " << mshFile;
-        parseMeshFile(mshFile);
-        // 接下来可以调用之前的 parseMshFile(mshFile) 进行解析
-    }
-}
-
-void MainWindow::generateOrbMesh(double radius, double meshSize) {
-    int nC = 2 * round((radius / (2 * 1.414)) / meshSize);
-
-QString geoContent = QString(R"(
-// =======================================================
-// Gmsh 结构化球形 O-Grid 脚本 (修正 Surface Loop 定义)
-// =======================================================
-
-// --- 1. 参数设置 ---
-R = %1;           
-meshSize = %2;    
-
-_nC = Round(R * 1.57 / meshSize);
-_nR = Round(R / meshSize);
-nC = (_nC > 2) ? _nC : 2;
-nR = (_nR > 2) ? _nR : 2;
-
-L = R * 0.45;  
-P = R / Sqrt(3); 
-
-// --- 2. 点定义 ---
-Point(100) = {0, 0, 0}; 
-Point(1) = { L,  L,  L}; Point(2) = {-L,  L,  L}; Point(3) = {-L, -L,  L}; Point(4) = { L, -L,  L};
-Point(5) = { L,  L, -L}; Point(6) = {-L,  L, -L}; Point(7) = {-L, -L, -L}; Point(8) = { L, -L, -L};
-Point(11) = { P,  P,  P}; Point(12) = {-P,  P,  P}; Point(13) = {-P, -P,  P}; Point(14) = { P, -P,  P};
-Point(15) = { P,  P, -P}; Point(16) = {-P,  P, -P}; Point(17) = {-P, -P, -P}; Point(18) = { P, -P, -P};
-
-// --- 3. 线段定义 ---
-Line(1)={1,2}; Line(2)={2,3}; Line(3)={3,4}; Line(4)={4,1};
-Line(5)={5,6}; Line(6)={6,7}; Line(7)={7,8}; Line(8)={8,5};
-Line(9)={1,5}; Line(10)={2,6}; Line(11)={3,7}; Line(12)={4,8};
-Circle(21)={11,100,12}; Circle(22)={12,100,13}; Circle(23)={13,100,14}; Circle(24)={14,100,11};
-Circle(25)={15,100,16}; Circle(26)={16,100,17}; Circle(27)={17,100,18}; Circle(28)={18,100,15};
-Circle(29)={11,100,15}; Circle(30)={12,100,16}; Circle(31)={13,100,17}; Circle(32)={14,100,18};
-Line(41)={1,11}; Line(42)={2,12}; Line(43)={3,13}; Line(44)={4,14};
-Line(45)={5,15}; Line(46)={6,16}; Line(47)={7,17}; Line(48)={8,18};
-
-// --- 4. 表面定义 ---
-Curve Loop(101)={1,2,3,4};     Plane Surface(101)={101}; 
-Curve Loop(102)={5,6,7,8};     Plane Surface(102)={102}; 
-Curve Loop(103)={1,10,-5,-9};  Plane Surface(103)={103}; 
-Curve Loop(104)={2,11,-6,-10}; Plane Surface(104)={104}; 
-Curve Loop(105)={3,12,-7,-11}; Plane Surface(105)={105}; 
-Curve Loop(106)={4,9,-8,-12};  Plane Surface(106)={106}; 
-
-Curve Loop(201)={21,22,23,24}; Surface(201)={201}; 
-Curve Loop(202)={25,26,27,28}; Surface(202)={202}; 
-Curve Loop(203)={21,30,-25,-29}; Surface(203)={203}; 
-Curve Loop(204)={22,31,-26,-30}; Surface(204)={204}; 
-Curve Loop(205)={23,32,-27,-31}; Surface(205)={205}; 
-Curve Loop(206)={24,29,-28,-32}; Surface(206)={206}; 
-
-Curve Loop(301)={41,21,-42,-1}; Surface(301)={301}; 
-Curve Loop(302)={42,22,-43,-2}; Surface(302)={302};
-Curve Loop(303)={43,23,-44,-3}; Surface(303)={303}; 
-Curve Loop(304)={44,24,-41,-4}; Surface(304)={304};
-Curve Loop(305)={45,25,-46,-5}; Surface(305)={305}; 
-Curve Loop(306)={46,26,-47,-6}; Surface(306)={306};
-Curve Loop(307)={47,27,-48,-7}; Surface(307)={307}; 
-Curve Loop(308)={48,28,-45,-8}; Surface(308)={308};
-Curve Loop(309)={41,29,-45,-9}; Surface(309)={309}; 
-Curve Loop(310)={42,30,-46,-10}; Surface(310)={310};
-Curve Loop(311)={43,31,-47,-11}; Surface(311)={311}; 
-Curve Loop(312)={44,32,-48,-12}; Surface(312)={312};
-
-// --- 5. 体积定义 (显式定义 Surface Loop) ---
-Surface Loop(1) = {101, 102, 103, 104, 105, 106}; Volume(1) = {1}; 
-Surface Loop(2) = {101, 201, 301, 302, 303, 304}; Volume(2) = {2}; 
-Surface Loop(3) = {102, 202, 305, 306, 307, 308}; Volume(3) = {3}; 
-Surface Loop(4) = {103, 203, 301, 305, 309, 310}; Volume(4) = {4}; 
-Surface Loop(5) = {104, 204, 302, 306, 310, 311}; Volume(5) = {5}; 
-Surface Loop(6) = {105, 205, 303, 307, 311, 312}; Volume(6) = {6}; 
-Surface Loop(7) = {106, 206, 304, 308, 312, 309}; Volume(7) = {7}; 
-
-// --- 6. 约束与重组 ---
-Transfinite Curve {1:12, 21:32} = nC;
-Transfinite Curve {41:48} = nR;
-Transfinite Surface "*";
-Transfinite Volume "*";
-Recombine Surface "*";
-Mesh.RecombineAll = 1;
-
-// --- 7. 纯 5 号元素配置 ---
-Physical Volume("SphereHex") = {1, 2, 3, 4, 5, 6, 7};
-Mesh.SaveAll = 0; 
-
-Mesh.ElementOrder = 1;
-Mesh.MshFileVersion = 2.2;
-Mesh 3;
-    )")
-.arg(radius).arg(meshSize)
-;
     // 2. 写入物理文件
 
     QString appPath = QCoreApplication::applicationDirPath();

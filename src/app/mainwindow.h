@@ -12,6 +12,7 @@
 #include "src/core/common/MeshManager.h"
 #include "src/core/generation/SphereGenerator.h"
 #include "src/core/generation/CylinderGenerator.h"
+#include "src/core/generation/CubeGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 
@@ -30,9 +31,7 @@ private slots:
     void onCommandEntered(const QString &command);
     void onDrawingComplete();
     void startMeshing();
-	void generateCylindricalMesh( double radius, double height, double meshSize );
     void generateCylindricalShellMesh(double radius, double height, double lid, double wall,double meshSize);
-    void generateOrbMesh(double radius, double meshSize);
 
     void parseMeshFile( QString fileName );
 

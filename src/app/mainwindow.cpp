@@ -322,10 +322,6 @@ void MainWindow::onCommandEntered(const QString &command) {
         logCommand(command, QString("Cylindrical Shell (%1) generation task sent to manager...").arg(name));
     }
 
-    else if (cmd == "shell") {
-    
-		generateCylindricalShellMesh(3.8, 8.0, 0.6, 0.6, 0.1);
-    }
     else if (cmd == "sphere") {
     
         if (args.size() < 7) {
@@ -349,6 +345,38 @@ void MainWindow::onCommandEntered(const QString &command) {
 
         logCommand(command, "Sphere generation task sent to manager...");
     }
+
+    else if (cmd == "hemisphere") {
+        // 参数检查: hemisphere [name] [radius] [ms] [cx] [cy] [cz]
+        // args[0] 是 "hemisphere"，所以 args.size() 至少需要 7
+        if (args.size() < 7) {
+            logCommand(command, "用法: hemisphere [name] [radius] [ms] [cx] [cy] [cz]");
+            return;
+        }
+
+        QString name = args[1];
+        double r = args[2].toDouble();  // 半径
+        double ms = args[3].toDouble();  // 网格大小
+        double cx = args[4].toDouble();  // 中心 X (底面圆心)
+        double cy = args[5].toDouble();  // 中心 Y
+        double cz = args[6].toDouble();  // 中心 Z
+
+        // 1. 实例化半球形生成器 (使用 O-Grid 结构化算法)
+        HemisphereGenerator hemiGen;
+
+        // 2. 设置参数
+        hemiGen.setParameters(r, ms, cx, cy, cz);
+
+        // 3. 调用管理器进行构建与加载
+        // MeshManager 会调用 hemiGen.generateGeoScript() 并驱动 Gmsh 渲染
+        m_meshManager->buildAndLoad(hemiGen, name);
+
+        logCommand(command, QString("Hemisphere (R=%1, MS=%2) task sent to manager...").arg(r).arg(ms));
+
+        // 如果需要立即刷新界面
+        // glWidget->update();
+        }
+
       else {
         logCommand("Error: Unknown command. Type 'help' for a list of commands.");
     }
@@ -480,7 +508,6 @@ void MainWindow::parseMeshFile(QString fileName) {
                     Hexahedron hex;
 					//hex.id = data[0].toInt();
 					int numTags = data[2].toInt();
-
                     for (int j = 0; j < 8; j++) {
                     
                         hex[j] = data[3 +numTags+ j].toInt();
@@ -526,136 +553,6 @@ void MainWindow::parseMeshFile(QString fileName) {
     qDebug() << "done parsing and wireframe generated!";
     qDebug() << "Wireframe submitted with" << wireLines.size() / 2 << "lines.";
     file.close();
-}
-
-void MainWindow::generateCylindricalShellMesh(double radius, double height, double lid, double wall ,double meshSize) {
-
-    int nC = 2 * round((radius / (2 * 1.414)) / meshSize);
-    int nH = round(height / meshSize);
-
-	int nH_cap = round(lid / meshSize);
-	int nR_wall = round(wall / meshSize);
-
-    int nH_void = round(height / meshSize);
-    QString geoContent = QString(R"(
-// 1. 参数定义
-R_in = %1; 
-L_val = R_in / (2 * 1.414); 
-Wall = %4;
- 
-R_out = R_in + Wall;
-H_height = %2;
-H_cap = %3; // lid height 
-H_void = H_height - 2* H_cap; 
-nC = %5; 
-nR_in = nC / 1.414; 
-nR_wall = %6; 
-nH_cap = %7; 
-nH_void = %8;
-
-// 2. 基础面定义 (Z=0)
-Point(1) = {0, 0, 0}; 
-Point(2) = {L_val, L_val, 0};    Point(3) = {-L_val, L_val, 0};
-Point(4) = {-L_val, -L_val, 0};  Point(5) = {L_val, -L_val, 0};
-p = R_in / 1.414;
-Point(6) = {p, p, 0};    Point(7) = {-p, p, 0};
-Point(8) = {-p, -p, 0};  Point(9) = {p, -p, 0};
-p2 = R_out / 1.414;
-Point(10) = {p2, p2, 0}; Point(11) = {-p2, p2, 0};
-Point(12) = {-p2, -p2, 0}; Point(13) = {p2, -p2, 0};
-
-Line(1)={2,3}; Line(2)={3,4}; Line(3)={4,5}; Line(4)={5,2};
-Line(5)={2,6}; Line(6)={3,7}; Line(7)={4,8}; Line(8)={5,9};
-Circle(9)={6,1,7}; Circle(10)={7,1,8}; Circle(11)={8,1,9}; Circle(12)={9,1,6};
-Line(13)={6,10}; Line(14)={7,11}; Line(15)={8,12}; Line(16)={9,13};
-Circle(17)={10,1,11}; Circle(18)={11,1,12}; Circle(19)={12,1,13}; Circle(20)={13,1,10};
-
-Curve Loop(101) = {1, 2, 3, 4};            Plane Surface(1) = {101}; 
-Curve Loop(102) = {5, 9, -6, -1};          Plane Surface(2) = {102}; 
-Curve Loop(103) = {6, 10, -7, -2};         Plane Surface(3) = {103};
-Curve Loop(104) = {7, 11, -8, -3};         Plane Surface(4) = {104};
-Curve Loop(105) = {8, 12, -5, -4};         Plane Surface(5) = {105};
-Curve Loop(106) = {13, 17, -14, -9};       Plane Surface(6) = {106}; 
-Curve Loop(107) = {14, 18, -15, -10};      Plane Surface(7) = {107};
-Curve Loop(108) = {15, 19, -16, -11};      Plane Surface(8) = {108};
-Curve Loop(109) = {16, 20, -13, -12};      Plane Surface(9) = {109};
-
-Transfinite Surface {1:9}; Recombine Surface {1:9};
-Transfinite Curve {1:4, 9:12, 17:20} = nC;
-Transfinite Curve {5:8} = nR_in; Transfinite Curve {13:16} = nR_wall;
-
-// 3. 顺序拉伸
-// 第一层：底部端盖 (9个体积)
-out1[] = Extrude {0, 0, H_cap} { Surface{1:9}; Layers{nH_cap}; Recombine; };
-
-// 第二层：中间层 (9个体积)
-out2[] = Extrude {0, 0, H_void} { 
-  Surface{out1[0], out1[6], out1[12], out1[18], out1[24], out1[30], out1[36], out1[42], out1[48]}; 
-  Layers{nH_void}; Recombine; 
-};
-
-// 第三层：顶部端盖 (9个体积)
-out3[] = Extrude {0, 0, H_cap} { 
-  Surface{out2[0], out2[6], out2[12], out2[18], out2[24], out2[30], out2[36], out2[42], out2[48]}; 
-  Layers{nH_cap}; Recombine; 
-};
-
-// 4. 【核心黑科技】递归删除中间不想要的 5 个体积
-// 这样中间在界面上就彻底消失了，变成真正的空腔
-Recursive Delete {
-  Volume{out2[1], out2[7], out2[13], out2[19], out2[25]};
-}
-
-// 5. 重新约束顶部的网格 (因为删除可能导致拓扑连接标记刷新)
-// 只要面还在，网格策略就能保住
-Transfinite Volume {out3[1], out3[7], out3[13], out3[19], out3[25], out3[31], out3[37], out3[43], out3[49]};
-
-// 6. 物理组
-Physical Volume("Solid_Part") = {
-  out1[1], out1[7], out1[13], out1[19], out1[25], out1[31], out1[37], out1[43], out1[49], // 底
-  out2[31], out2[37], out2[43], out2[49],                                                // 侧壁
-  out3[1], out3[7], out3[13], out3[19], out3[25], out3[31], out3[37], out3[43], out3[49]  // 顶
-};
-
-Mesh 3;
-)")
-.arg(radius)
-.arg(height)
-.arg(lid)
-.arg(wall)
-.arg(nC)
-.arg(nR_wall)
-.arg(nH_cap)
-.arg(nH_cap);
-    // 2. 写入物理文件
-
-    QString appPath = QCoreApplication::applicationDirPath();
-    QFile::remove("output_geo.geo");
-    QFile::remove("output_geo.msh");
-    QString geoFile = appPath + "/output_geo.geo";
-    QString mshFile = appPath + "/output_geo.msh";
-
-    QFile file(geoFile);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&file);
-        out << geoContent;
-        file.close();
-    }
-
-    QProcess* gmsh = new QProcess();
-    QStringList args;
-    args << geoFile << "-3" << "-o" << mshFile; // -3 表示三维划分
-
-    gmsh->start(appPath + "/gmsh.exe", args);
-
-    if (!gmsh->waitForFinished()) {
-        qDebug() << "Gmsh failed:" << gmsh->errorString();
-    }
-    else {
-        qDebug() << "Success! You may find the mesh file in: " << mshFile;
-        parseMeshFile(mshFile);
-        // 接下来可以调用之前的 parseMshFile(mshFile) 进行解析
-    }
 }
 
 void MainWindow::redrawAllEntities() {

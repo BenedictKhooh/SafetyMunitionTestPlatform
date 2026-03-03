@@ -192,6 +192,7 @@
     <ClCompile Include="src\core\generation\CubeGenerator.cpp" />
     <ClCompile Include="src\core\generation\CylinderGenerator.cpp" />
     <ClCompile Include="src\core\generation\CylindricalShellGenerator.cpp" />
+    <ClCompile Include="src\core\generation\HemisphereGenerator.cpp" />
     <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -210,6 +211,7 @@
     <ClInclude Include="src\core\eos\eos.h" />
     <QtMoc Include="src\app\glwidget.h" />
     <ClInclude Include="src\core\generation\CylindricalShellGenerator.h" />
+    <ClInclude Include="src\core\generation\HemisphereGenerator.h" />
     <ClInclude Include="src\core\generation\SphereGenerator.h" />
     <ClInclude Include="src\core\reconstruction\instance_builder.h" />
     <ClInclude Include="src\core\reconstruction\instance_modification.h" />

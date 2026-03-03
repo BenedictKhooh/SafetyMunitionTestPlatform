@@ -14,6 +14,7 @@
 #include "src/core/generation/CylinderGenerator.h"
 #include "src/core/generation/CylindricalShellGenerator.h"
 #include "src/core/generation/CubeGenerator.h"
+#include "src/core/generation/HemisphereGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 
@@ -32,7 +33,6 @@ private slots:
     void onCommandEntered(const QString &command);
     void onDrawingComplete();
     void startMeshing();
-    void generateCylindricalShellMesh(double radius, double height, double lid, double wall,double meshSize);
 
     void parseMeshFile( QString fileName );
 

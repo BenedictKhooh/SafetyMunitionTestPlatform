@@ -377,6 +377,29 @@ void MainWindow::onCommandEntered(const QString &command) {
         // glWidget->update();
         }
 
+    else if (cmd == "frustum") {
+        // frustum [name] [rBase] [rTop] [height] [ms] [x] [y] [z]
+        if (args.size() < 9) {
+            logCommand(command, "用法: frustum [name] [rBase] [rTop] [height] [ms] [x] [y] [z]");
+            return;
+        }
+
+        QString name = args[1];
+        double rb = args[2].toDouble();
+        double rt = args[3].toDouble();
+        double h = args[4].toDouble();
+        double ms = args[5].toDouble();
+        double cx = args[6].toDouble();
+        double cy = args[7].toDouble();
+        double cz = args[8].toDouble();
+
+        FrustumGenerator frustumGen;
+        frustumGen.setParameters(rb, rt, h, ms, cx, cy, cz);
+
+        m_meshManager->buildAndLoad(frustumGen, name);
+        logCommand(command, QString("Frustum (%1) task sent to manager...").arg(name));
+        }
+
       else {
         logCommand("Error: Unknown command. Type 'help' for a list of commands.");
     }

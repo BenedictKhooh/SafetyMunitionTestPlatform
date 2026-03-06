@@ -7,6 +7,7 @@
 #include <QHBoxLayout>
 #include <QWidget>
 #include <QDebug>
+#include <QFileInfo>
 #include "MeshUtils.h"
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
@@ -400,6 +401,17 @@ void MainWindow::onCommandEntered(const QString &command) {
         logCommand(command, QString("Frustum (%1) task sent to manager...").arg(name));
         }
 
+    else if (cmd == "save" || cmd == "export") {
+        if (args.size() < 2) {
+            logCommand(command, "用法: save [filename.k]");
+            return;
+        }
+        QString fileName = args[1];
+        if (!fileName.endsWith(".k")) fileName += ".k";
+
+        exportToKFile(fileName);
+        }
+
       else {
         logCommand("Error: Unknown command. Type 'help' for a list of commands.");
     }
@@ -675,4 +687,72 @@ void MainWindow::handleDeleteEntity(QString name) {
 
         qDebug() << "Entity deleted and UI refreshed: " << name;
     }
+}
+
+void MainWindow::exportToKFile(const QString& fileName) {
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        logCommand("Export", "Failed to open file: " + fileName);
+        return;
+    }
+
+    QTextStream out(&file);
+    out << "*KEYWORD\n";
+
+    const auto& allEntities = m_repository.getAllEntities(); // 获取仓库中所有实体
+
+    int globalNodeId = 1;  // 全局节点计数器
+    int globalElemId = 1;  // 全局单元计数器
+    int partId = 1;        // Part 计数器
+
+    for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
+        const MeshEntity& entity = it->second;
+
+        // 映射表：局部向量索引 -> 全局文件节点 ID
+        std::unordered_map<int, int> localToGlobal;
+
+        out << "$ #################################################\n";
+        out << "$ Entity: " << entity.name << "\n";
+        out << "$ #################################################\n";
+
+        // 1. 导出节点 (从索引 1 开始，跳过占位的 nodes[0])
+        out << "*NODE\n";
+        for (size_t i = 1; i < entity.nodes.size(); ++i) {
+            localToGlobal[static_cast<int>(i)] = globalNodeId;
+
+            // 格式：ID, X, Y, Z
+            out << globalNodeId << ", "
+                << entity.nodes[i].pos.x() << ", "
+                << entity.nodes[i].pos.y() << ", "
+                << entity.nodes[i].pos.z() << "\n";
+
+            globalNodeId++;
+        }
+
+        // 2. 导出六面体单元
+        out << "*ELEMENT_SOLID\n";
+        for (const auto& hex : entity.hexes) {
+            // 解决报错的关键：直接使用 hex[j] 访问 std::array 元素
+            out << globalElemId << ", " << partId;
+
+            for (int j = 0; j < 8; ++j) {
+                int localIdx = hex[j]; // 获取存储在 array 中的局部节点索引
+                out << ", " << localToGlobal[localIdx]; // 映射为全局 ID
+            }
+            out << "\n";
+
+            globalElemId++;
+        }
+
+        // 3. 定义 PART 关键字
+        out << "*PART\n";
+        out << entity.name << "\n";
+        out << partId << ", 1, 1\n"; // 默认分配 SectionID=1, MaterialID=1
+
+        partId++;
+    }
+
+    out << "*END\n";
+    file.close();
+    logCommand("Export", "Saved entities to " + fileName);
 }

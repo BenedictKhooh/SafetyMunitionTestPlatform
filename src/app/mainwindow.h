@@ -89,6 +89,8 @@ private:
     void redrawAllEntities();      // 封装一个全量重绘的函数
     void clearAllEntities();
 
+    void exportToKFile(const QString& fileName); // 导出逻辑
+
 
     std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
 

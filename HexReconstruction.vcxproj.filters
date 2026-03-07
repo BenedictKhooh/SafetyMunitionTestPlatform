@@ -79,6 +79,12 @@
     <ClCompile Include="src\core\generation\FrustumShellGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\generation\HalfCylinderGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\generation\HalfCylindricalShellGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -160,6 +166,12 @@
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\FrustumShellGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\HalfCylinderGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\HalfCylindricalShellGenerator.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>

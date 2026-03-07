@@ -289,6 +289,34 @@ void MainWindow::onCommandEntered(const QString &command) {
         //glWidget->update();
     }
 
+    else if (cmd == "half_cylinder") {
+        // 预期命令格式: half_cylinder [名称] [半径] [网格尺寸] [高度] [x] [y] [z]
+        if (args.size() < 8) {
+            logCommand(command, "Argument: half_cylinder [name] [radius] [ms] [height] [x] [y] [z]");
+            return;
+        }
+
+        // 1. 解析参数
+        QString name = args[1];
+        double r = args[2].toDouble();
+        double ms = args[3].toDouble();
+        double height = args[4].toDouble();
+        double cx = args[5].toDouble();
+        double cy = args[6].toDouble();
+        double cz = args[7].toDouble();
+
+        // 2. 实例化生成器并设置参数
+        // 确保你已经在 mainwindow.h 中包含了 #include "src/core/generation/HalfCylinderGenerator.h"
+        HalfCylinderGenerator halfCylinderGen;
+        halfCylinderGen.setParameters(r, height, ms, cx, cy, cz);
+
+        // 3. 调用管理器执行生成、保存和解析流程
+        // MeshManager 会调用 generator.generateGeoScript() 并通过 Gmsh 产生 .msh 文件
+        m_meshManager->buildAndLoad(halfCylinderGen, name);
+
+        logCommand(command, QString("Half-Cylinder '%1' generation task sent to manager...").arg(name));
+    }
+
     else if (cmd == "cylindrical_shell") {
         
         // args[0] 是 "cylindrical_shell"，所以 args.size() 至少需要 10

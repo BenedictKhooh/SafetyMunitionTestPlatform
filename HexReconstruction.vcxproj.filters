@@ -85,6 +85,27 @@
     <ClCompile Include="src\core\generation\HalfCylindricalShellGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\common\Part\PartCard.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\Contact\ContactCard.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\Material\MaterialCard.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\LSDynaDeck.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\Control\ControlCards.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\Database\DatabaseCards.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\Boundary\BoundaryCards.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -172,6 +193,39 @@
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\HalfCylindricalShellGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\DynaFormat.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\KeywordCard.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Part\PartCard.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Contact\ContactCard.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Material\MaterialCard.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\LSDynaDeck.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Control\ControlCards.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Database\DatabaseCards.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Boundary\BoundaryCards.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\InitialConditions\InitialConditions.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Miscellany\MiscCards.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>

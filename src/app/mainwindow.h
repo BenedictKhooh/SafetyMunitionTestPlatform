@@ -4,9 +4,7 @@
 #include <QMainWindow>
 #include <QtWidgets>
 #include <vector>
-#include "src/core/reconstruction/reconstruction_engine.h"
-#include "src/core/generation/sphere_projection.h"
-#include "src/core/generation/cylinder_projection.h"
+
 #include "src/core/common/common_types.h"
 #include "src/core/common/MeshGenerator.h"
 #include "src/core/common/MeshManager.h"

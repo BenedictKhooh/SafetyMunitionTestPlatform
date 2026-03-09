@@ -386,9 +386,7 @@
     <QtMoc Include="src\app\commandline.h" />
     <ClInclude Include="src\core\common\common_types.h" />
     <ClInclude Include="src\core\generation\CubeGenerator.h" />
-    <ClInclude Include="src\core\generation\cubic_block.h" />
     <ClInclude Include="src\core\generation\CylinderGenerator.h" />
-    <ClInclude Include="src\core\generation\cylinder_projection.h" />
     <ClInclude Include="src\core\eos\eos.h" />
     <QtMoc Include="src\app\glwidget.h" />
     <ClInclude Include="src\core\generation\CylindricalShellGenerator.h" />
@@ -405,9 +403,6 @@
     <ClInclude Include="src\core\materials\materials.h" />
     <ClInclude Include="src\core\reconstruction\mesh_refinement.h" />
     <ClInclude Include="src\core\reconstruction\reconstruction_engine.h" />
-    <ClInclude Include="src\core\generation\revolver_block.h" />
-    <ClInclude Include="src\core\generation\sampling.h" />
-    <ClInclude Include="src\core\generation\sphere_projection.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

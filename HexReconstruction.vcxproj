@@ -362,6 +362,7 @@
     <ClCompile Include="src\core\generation\HalfCylinderGenerator.cpp" />
     <ClCompile Include="src\core\generation\HalfCylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\HemisphereGenerator.cpp" />
+    <ClCompile Include="src\core\generation\OpenCylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -396,6 +397,7 @@
     <ClInclude Include="src\core\generation\HalfCylinderGenerator.h" />
     <ClInclude Include="src\core\generation\HalfCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\HemisphereGenerator.h" />
+    <ClInclude Include="src\core\generation\OpenCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\SphereGenerator.h" />
     <ClInclude Include="src\core\reconstruction\instance_builder.h" />
     <ClInclude Include="src\core\reconstruction\instance_modification.h" />

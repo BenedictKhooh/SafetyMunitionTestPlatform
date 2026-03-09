@@ -351,6 +351,40 @@ void MainWindow::onCommandEntered(const QString &command) {
         logCommand(command, QString("Cylindrical Shell (%1) generation task sent to manager...").arg(name));
     }
 
+    else if (cmd == "open_cylindrical_shell") {
+
+        // args[0] 是 "open_cylindrical_shell"
+        // 参数顺序: name, radius, wall, h_base, h_wall, ms, x, y, z
+        if (args.size() < 10) {
+            logCommand(command, "用法: open_cylindrical_shell [name] [radius] [wall] [h_base] [h_wall] [ms] [x] [y] [z]");
+            return;
+        }
+
+        QString name = args[1];
+        double r = args[2].toDouble();      // 内径
+        double wall = args[3].toDouble();   // 侧壁厚度
+        double h_base = args[4].toDouble(); // 底部厚度
+        double h_wall = args[5].toDouble(); // 侧壁高度
+        double ms = args[6].toDouble();     // 网格大小
+
+        // 中心点坐标预留（如需平移，需在Generator脚本中添加Translate逻辑）
+        double cx = args[7].toDouble();
+        double cy = args[8].toDouble();
+        double cz = args[9].toDouble();
+
+        // 1. 实例化开口圆柱壳体生成器 (有底无盖) [cite: 86, 107]
+        OpenCylindricalShellGenerator openShellGen;
+
+        // 2. 设置参数 
+        // 对应封装类中的: setParameters(radius, wall, h_base, h_wall, meshSize) 
+        openShellGen.setParameters(r, wall, h_base, h_wall, ms, cx, cy, cz);
+
+        // 3. 调用管理器进行构建与加载
+        m_meshManager->buildAndLoad(openShellGen, name);
+
+        logCommand(command, QString("Open Cylindrical Shell (有底无盖: %1) generation task sent to manager...").arg(name));
+        }
+
     else if (cmd == "sphere") {
     
         if (args.size() < 7) {

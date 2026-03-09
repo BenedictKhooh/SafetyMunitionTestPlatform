@@ -32,9 +32,6 @@ public:
     float scaleFactor;
     QVector3D translation;
 
-    void drawGrid();
-    void drawCube();
-
     enum class DrawingMode { None, Line, Circle, Rectangle };
     DrawingMode currentMode;
     QPointF startPoint;

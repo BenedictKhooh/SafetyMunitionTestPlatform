@@ -129,19 +129,10 @@
     <QtMoc Include="src\app\glwidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <ClInclude Include="src\core\reconstruction\instance_builder.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\reconstruction\instance_modification.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <QtMoc Include="src\app\mainwindow.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="src\core\materials\materials.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\reconstruction\mesh_refinement.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\reconstruction\reconstruction_engine.h">

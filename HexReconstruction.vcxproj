@@ -397,11 +397,8 @@
     <ClInclude Include="src\core\generation\HemisphereGenerator.h" />
     <ClInclude Include="src\core\generation\OpenCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\SphereGenerator.h" />
-    <ClInclude Include="src\core\reconstruction\instance_builder.h" />
-    <ClInclude Include="src\core\reconstruction\instance_modification.h" />
     <QtMoc Include="src\app\mainwindow.h" />
     <ClInclude Include="src\core\materials\materials.h" />
-    <ClInclude Include="src\core\reconstruction\mesh_refinement.h" />
     <ClInclude Include="src\core\reconstruction\reconstruction_engine.h" />
   </ItemGroup>
   <ItemGroup>

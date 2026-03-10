@@ -38,6 +38,9 @@ private slots:
 
     void parseMeshFile( QString fileName );
 
+    void onShapeTypeChanged(const QString& text); // 响应下拉菜单切换
+    void onGenerateButtonClicked();               // 响应生成按钮
+
 private:
     void createMenuBar();
     void createToolBars();
@@ -47,6 +50,19 @@ private:
     void logCommand(const QString &command, const QString &response = "");
     void clean();
     void showHelp();
+
+    QComboBox* m_shapeComboBox;
+    QWidget* m_paramContainer;    // 动态参数的容器
+    QVBoxLayout* m_paramLayout;   // 参数容器的布局
+    // 用来记录当前界面上所有的输入框，方便读取数据
+    QMap<QString, QDoubleSpinBox*> m_paramInputs;
+    QLineEdit* m_nameInput;
+    // 统一添加数值行的函数
+    void addNumParam(const QString& labelText, const QString& key, double defaultValue);
+
+    // 一个小工具函数：快速添加一行带标签的输入框
+    void addParamRow(const QString& labelText, const QString& key, double defaultValue);
+
     QTextEdit *commandHistoryEdit;
 
     void DrawLine(QStringList args);
@@ -94,37 +110,6 @@ private:
 
 
     std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
-
-    inline bool contains_point(
-        const std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator>& set,
-        const MeshPoint& search_point
-	) {
-		return set.find(search_point) != set.end();
-	}
-
-    inline bool remove_point(
-        std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator>& set,
-         const MeshPoint& point_to_remove
-     ) {
-         // set.erase() 返回被删除的元素数量 (0 或 1)
-         size_t count = set.erase(point_to_remove);
-
-         if (count > 0) {
-             return true;
-         }
-         else {
-             return false;
-         }
-     }
-
-    inline void insert_points_vector(
-        std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator>& set,
-        const std::vector<MeshPoint> points) {
-
-		for (const auto& p : points) {
-			set.insert(p);
-		}
-    }
 
     AdjacencyGraph m_adjGraph;
     AdjacencyGraph m_adjGraph_sphere;

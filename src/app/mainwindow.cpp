@@ -182,6 +182,46 @@ void MainWindow::createDockWidgets() {
     connect(substanceTree, &QTreeWidget::customContextMenuRequested,
         this, &MainWindow::onSubstanceTreeContextMenu);
 
+    //New UI
+    QDockWidget* dock = new QDockWidget(tr("Geometry Generator"), this);
+    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+    QWidget* container = new QWidget(dock);
+    QVBoxLayout* mainLayout = new QVBoxLayout(container);
+
+    // 1. 形状选择下拉框
+    mainLayout->addWidget(new QLabel("Select Shape:"));
+    m_shapeComboBox = new QComboBox(this);
+    m_shapeComboBox->addItems({
+        "Cube", "Sphere", "Cylinder", "CylindricalShell",
+        "Hemisphere", "Frustum", "HalfCylinder"
+        });
+    mainLayout->addWidget(m_shapeComboBox);
+
+    // 2. 动态参数区域 (这是核心)
+    mainLayout->addSpacing(10);
+    mainLayout->addWidget(new QLabel("Parameters:"));
+    m_paramContainer = new QWidget(this);
+    m_paramLayout = new QVBoxLayout(m_paramContainer);
+    m_paramLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->addWidget(m_paramContainer);
+
+    mainLayout->addStretch(1); // 把内容顶到上方
+
+    // 3. 生成按钮
+    QPushButton* generateBtn = new QPushButton("Generate Entity", this);
+    mainLayout->addWidget(generateBtn);
+
+    dock->setWidget(container);
+    addDockWidget(Qt::RightDockWidgetArea, dock);
+
+    // 4. 信号槽连接
+    connect(m_shapeComboBox, &QComboBox::currentTextChanged, this, &MainWindow::onShapeTypeChanged);
+    connect(generateBtn, &QPushButton::clicked, this, &MainWindow::onGenerateButtonClicked);
+
+    // 初始化显示第一个形状的参数
+    onShapeTypeChanged(m_shapeComboBox->currentText());
+
 }
 
 void MainWindow::createCommandLine() {
@@ -817,4 +857,167 @@ void MainWindow::exportToKFile(const QString& fileName) {
     out << "*END\n";
     file.close();
     logCommand("Export", "Saved entities to " + fileName);
+}
+
+void MainWindow::onShapeTypeChanged(const QString& text) {
+    if (!m_paramLayout || !m_paramContainer) return;
+
+    // 1. 安全清理：删除 m_paramContainer 内部的所有子对象
+    // 这是解决“文字堆叠”和“Access Violation”最彻底的办法
+    QList<QWidget*> children = m_paramContainer->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* child : children) {
+        child->hide();
+        child->deleteLater();
+    }
+
+    // 清理记录 Map
+    m_paramInputs.clear();
+
+    // 2. 添加实体名称输入
+    addNumParam("Entity Name:", "name_internal", 0); // 占位，名字单独处理
+    // 覆盖上一行生成的输入框，改成文本框
+    QHBoxLayout* nameRow = new QHBoxLayout();
+    nameRow->addWidget(new QLabel("Entity Name:"));
+    m_nameInput = new QLineEdit(this);
+    m_nameInput->setText(text.toLower() + "_1");
+    nameRow->addWidget(m_nameInput);
+    m_paramLayout->addLayout(nameRow);
+
+    // 3. 根据命令行逻辑补全参数 (ms=网格大小, cx/cy/cz=中心点)
+    if (text == "Cube") {
+        addNumParam("Length (LX):", "lx", 10.0);
+        addNumParam("Width (LY):", "ly", 10.0);
+        addNumParam("Height (LZ):", "lz", 10.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+        addNumParam("Center X:", "cx", 0.0);
+        addNumParam("Center Y:", "cy", 0.0);
+        addNumParam("Center Z:", "cz", 0.0);
+    }
+    else if (text == "Cylinder") {
+        addNumParam("Radius (R):", "r", 5.0);
+        addNumParam("Height (H):", "h", 15.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+        addNumParam("Center X:", "cx", 0.0);
+        addNumParam("Center Y:", "cy", 0.0);
+        addNumParam("Center Z:", "cz", 0.0);
+    }
+    else if (text == "CylindricalShell") {
+        addNumParam("Inner Radius:", "r", 5.0);
+        addNumParam("Total Height:", "h", 15.0);
+        addNumParam("Lid Thick:", "lid", 1.0);
+        addNumParam("Wall Thick:", "wall", 1.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+    }
+    else if (text == "OpenCylindricalShell") {
+        addNumParam("Radius:", "r", 5.0);
+        addNumParam("Wall Thick:", "wall", 1.0);
+        addNumParam("Base Height:", "h_base", 1.0);
+        addNumParam("Wall Height:", "h_wall", 10.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+        addNumParam("Center X:", "cx", 0.0);
+        addNumParam("Center Y:", "cy", 0.0);
+        addNumParam("Center Z:", "cz", 0.0);
+    }
+    else if (text == "Sphere" || text == "Hemisphere") {
+        addNumParam("Radius:", "r", 5.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+        addNumParam("Center X:", "cx", 0.0);
+        addNumParam("Center Y:", "cy", 0.0);
+        addNumParam("Center Z:", "cz", 0.0);
+    }
+    else if (text == "Frustum") {
+        addNumParam("Base R:", "rb", 6.0);
+        addNumParam("Top R:", "rt", 3.0);
+        addNumParam("Height:", "h", 10.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+        addNumParam("Center X:", "cx", 0.0);
+        addNumParam("Center Y:", "cy", 0.0);
+        addNumParam("Center Z:", "cz", 0.0);
+    }
+    else if (text == "HalfCylinder") {
+        addNumParam("Radius:", "r", 5.0);
+        addNumParam("Height:", "h", 15.0);
+        addNumParam("Mesh Size:", "ms", 1.0);
+        addNumParam("Center X:", "cx", 0.0);
+        addNumParam("Center Y:", "cy", 0.0);
+        addNumParam("Center Z:", "cz", 0.0);
+    }
+}
+// 辅助函数
+void MainWindow::addNumParam(const QString& labelText, const QString& key, double defaultValue) {
+    QHBoxLayout* row = new QHBoxLayout();
+    row->addWidget(new QLabel(labelText));
+    QDoubleSpinBox* sb = new QDoubleSpinBox(this);
+    sb->setRange(-9999.0, 9999.0);
+    sb->setValue(defaultValue);
+    row->addWidget(sb);
+    m_paramLayout->addLayout(row);
+    m_paramInputs[key] = sb;
+}
+// 辅助函数实现
+void MainWindow::addParamRow(const QString& labelText, const QString& key, double defaultValue) {
+    QHBoxLayout* row = new QHBoxLayout();
+    row->addWidget(new QLabel(labelText));
+    QDoubleSpinBox* sb = new QDoubleSpinBox(this);
+    sb->setRange(0.1, 1000.0);
+    sb->setValue(defaultValue);
+    row->addWidget(sb);
+    m_paramLayout->addLayout(row);
+    m_paramInputs[key] = sb; // 记录下来，点击生成时好取值
+}
+
+void MainWindow::onGenerateButtonClicked() {
+    if (!m_nameInput || m_shapeComboBox->currentText().isEmpty()) return;
+
+    QString type = m_shapeComboBox->currentText();
+    QString name = m_nameInput->text();
+
+    // 定义一个 Lambda 表达式方便取值
+    auto val = [&](QString key) {
+        return m_paramInputs.contains(key) ? m_paramInputs[key]->value() : 0.0;
+        };
+
+    if (type == "Cube") {
+        CubeGenerator gen;
+        gen.setParameters(val("lx"), val("ly"), val("lz"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Cylinder") {
+        CylinderGenerator gen;
+        gen.setParameters(val("r"), val("ms"), val("h"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "CylindricalShell") {
+        CylindricalShellGenerator gen;
+        gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "OpenCylindricalShell") {
+        OpenCylindricalShellGenerator gen;
+        gen.setParameters(val("r"), val("wall"), val("h_base"), val("h_wall"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Sphere") {
+        SphereGenerator gen;
+        gen.setParameters(val("r"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Hemisphere") {
+        HemisphereGenerator gen;
+        gen.setParameters(val("r"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Frustum") {
+        FrustumGenerator gen;
+        gen.setParameters(val("rb"), val("rt"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "HalfCylinder") {
+        HalfCylinderGenerator gen;
+        gen.setParameters(val("r"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+
+    logCommand("GUI Generate: " + name);
+    glWidget->update();
 }

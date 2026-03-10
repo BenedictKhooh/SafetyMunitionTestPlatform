@@ -88,6 +88,11 @@ public:
     void clearDrawCommands();
     std::vector<DrawCommand> m_drawCommands;
 
+    void setRepository(EntityRepository* repo) { m_repository = repo; }
+
+private: 
+
+    EntityRepository* m_repository = nullptr;
 
 signals:
     void drawingComplete();

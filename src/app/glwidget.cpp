@@ -84,34 +84,32 @@ void GLWidget::paintGL() {
     // Draw scene elements
     drawAxes();
 
-    if (!drawable_buffer.empty()) {
-    
-		for (const auto& instance : drawable_buffer) {
-			
-            drawPoints(instance.instance_points);
-		}
-    }
+    if (!m_repository) return;
 
-    if (!drawable_line_buffer.empty()) {
-    
-        for (const auto& line : drawable_line_buffer) {
-        
-            drawLines(line.points);
-        }
-    }
-    // --Drawable
-    for (const auto& cmd : m_drawCommands) {
-        switch (cmd.type) {
-        case DrawCommand::Points:
-            glPointSize(cmd.pointsCmd.size);
-            drawPoints(cmd.pointsCmd.points);
-            break;
+    // 直接向仓库索要所有实体
+    const auto& allEntities = m_repository->getAllEntities();
 
-        case DrawCommand::Lines:
-            glLineWidth(cmd.linesCmd.width);
-            drawLines(cmd.linesCmd.points);
-            break;
+    // 遍历仓库，挨个画出来
+    for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
+        const MeshEntity& entity = it->second;
+
+        // 1. 画点 (Points)
+        glPointSize(2.5f);
+        glBegin(GL_POINTS);
+        glColor3f(1.0f, 1.0f, 1.0f); // 设为白色
+        for (const auto& node : entity.nodes) {
+            glVertex3f(node.pos.x(), node.pos.y(), node.pos.z());
         }
+        glEnd();
+
+        // 2. 画线 (Wireframe Lines)
+        glLineWidth(2.0f);
+        glBegin(GL_LINES);
+        glColor3f(0.0f, 0.5f, 1.0f); // 设为蓝色
+        for (const auto& linePos : entity.wireLines) {
+            glVertex3f(linePos.x(), linePos.y(), linePos.z());
+        }
+        glEnd();
     }
 }
 

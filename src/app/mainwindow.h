@@ -17,6 +17,9 @@
 #include "src/core/generation/HalfCylinderGenerator.h"
 #include "src/core/generation/HalfCylindricalShellGenerator.h"
 #include "src/core/generation/OpenCylindricalShellGenerator.h"
+#include "src/core/generation/HexagonalPrismGenerator.h"
+#include "src/core/generation/PentagonalPrismGenerator.h"
+#include "src/core/generation/TriangularPrismGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 

@@ -362,8 +362,11 @@
     <ClCompile Include="src\core\generation\HalfCylinderGenerator.cpp" />
     <ClCompile Include="src\core\generation\HalfCylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\HemisphereGenerator.cpp" />
+    <ClCompile Include="src\core\generation\HexagonalPrismGenerator.cpp" />
     <ClCompile Include="src\core\generation\OpenCylindricalShellGenerator.cpp" />
+    <ClCompile Include="src\core\generation\PentagonalPrismGenerator.cpp" />
     <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
+    <ClCompile Include="src\core\generation\TriangularPrismGenerator.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MeshUtils.h" />
@@ -395,9 +398,12 @@
     <ClInclude Include="src\core\generation\HalfCylinderGenerator.h" />
     <ClInclude Include="src\core\generation\HalfCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\HemisphereGenerator.h" />
+    <ClInclude Include="src\core\generation\HexagonalPrismGenerator.h" />
     <ClInclude Include="src\core\generation\OpenCylindricalShellGenerator.h" />
+    <ClInclude Include="src\core\generation\PentagonalPrismGenerator.h" />
     <ClInclude Include="src\core\generation\SphereGenerator.h" />
     <QtMoc Include="src\app\mainwindow.h" />
+    <ClInclude Include="src\core\generation\TriangularPrismGenerator.h" />
     <ClInclude Include="src\core\materials\materials.h" />
     <ClInclude Include="src\core\reconstruction\reconstruction_engine.h" />
   </ItemGroup>

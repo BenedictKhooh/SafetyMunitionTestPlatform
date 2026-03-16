@@ -12,8 +12,10 @@
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
-    glWidget = new GLWidget(this);
+    
+        glWidget = new GLWidget(this);
         setCentralWidget(glWidget);
+        glWidget->setRepository(&m_repository); // ptr to the entities repo
 
         startMeshing();
         // 连接绘图完成信号
@@ -182,7 +184,7 @@ void MainWindow::createDockWidgets() {
     connect(substanceTree, &QTreeWidget::customContextMenuRequested,
         this, &MainWindow::onSubstanceTreeContextMenu);
 
-    //New UI
+    //New Entities UI
     QDockWidget* dock = new QDockWidget(tr("Geometry Generator"), this);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
 
@@ -287,18 +289,17 @@ void MainWindow::onCommandEntered(const QString &command) {
         logCommand(command, "View reset to default.");
     } else if (cmd == "clear") {
 
-        points.clear();
+        // 1. 清空数据仓库 (核心：源头清理)
+            m_repository.clearAll();
 
-		drawables.clear();
-        glWidget->setDrawableInstances(drawables);
-
-        drawables_lines.clear();
-        glWidget->setDrawableLines(drawables_lines);
-        
+        // 2. 清理 UI 界面上的对象树
         substanceTree->clear();
 
-        logCommand(command, "Cleared all!");
-    } else if (cmd == "help") {
+        // 3. 通知 GLWidget 重新绘图
+        // 由于 GLWidget 持有仓库指针，当它 update 时发现仓库为空，自然就什么都不画了
+        glWidget->update();
+    } 
+    else if (cmd == "help") {
         showHelp();
     } 
     else if (cmd == "cylinder") {
@@ -659,13 +660,13 @@ void MainWindow::parseMeshFile(QString fileName) {
     for (auto& n : nodes)
         points.push_back(n);
 
-    DrawCommand cmd;
+    /*DrawCommand cmd;
     cmd.type = DrawCommand::Points;
     cmd.pointsCmd.points = points;
-    cmd.pointsCmd.size = 2.5f;
+    cmd.pointsCmd.size = 2.5f;*/
 
     //glWidget->clearDrawCommands();
-    glWidget->submitDrawCommand(cmd);
+    /*glWidget->submitDrawCommand(cmd);*/
 
     std::vector<Vector3> wireLines = buildHexWireframe(nodes, hexes);
    // auto wireLines = buildHexWireframe( nodes, hexes );
@@ -679,16 +680,16 @@ void MainWindow::parseMeshFile(QString fileName) {
 
     m_repository.addEntity(entityName, newEntity);
 
-    DrawCommand lineCmd;
+    /*DrawCommand lineCmd;
     lineCmd.type = DrawCommand::Lines;
     lineCmd.linesCmd.points = wireLines;
-    lineCmd.linesCmd.width = 2.0f;
+    lineCmd.linesCmd.width = 2.0f;*/
 
-    glWidget->submitDrawCommand(lineCmd);
+    //glWidget->submitDrawCommand(lineCmd);
     redrawAllEntities();
 
-    qDebug() << "done parsing and wireframe generated!";
-    qDebug() << "Wireframe submitted with" << wireLines.size() / 2 << "lines.";
+    /*qDebug() << "done parsing and wireframe generated!";
+    qDebug() << "Wireframe submitted with" << wireLines.size() / 2 << "lines.";*/
     file.close();
 }
 
@@ -696,25 +697,25 @@ void MainWindow::redrawAllEntities() {
     // 1. 清空 GLWidget 里的旧命令
     glWidget->clearDrawCommands();
 
-    // 2. 遍历仓库里的所有实体
-    const auto& allEntities = m_repository.getAllEntities();
-    for (const auto& pair : allEntities) {
-        const MeshEntity& entity = pair.second;
+    //// 2. 遍历仓库里的所有实体
+    //const auto& allEntities = m_repository.getAllEntities();
+    //for (const auto& pair : allEntities) {
+    //    const MeshEntity& entity = pair.second;
 
-        // 提交点云渲染命令 (如果你需要)
-        DrawCommand ptCmd;
-        ptCmd.type = DrawCommand::Points;
-        ptCmd.pointsCmd.points = entity.nodes;
-        ptCmd.pointsCmd.size = 2.5f;
-        glWidget->submitDrawCommand(ptCmd);
+    //    // 提交点云渲染命令 (如果你需要)
+    //    DrawCommand ptCmd;
+    //    ptCmd.type = DrawCommand::Points;
+    //    ptCmd.pointsCmd.points = entity.nodes;
+    //    ptCmd.pointsCmd.size = 2.5f;
+    //    glWidget->submitDrawCommand(ptCmd);
 
-        // 提交线框渲染命令
-        DrawCommand lineCmd;
-        lineCmd.type = DrawCommand::Lines;
-        lineCmd.linesCmd.points = entity.wireLines;
-        lineCmd.linesCmd.width = 2.0f;
-        glWidget->submitDrawCommand(lineCmd);
-    }
+    //    // 提交线框渲染命令
+    //    DrawCommand lineCmd;
+    //    lineCmd.type = DrawCommand::Lines;
+    //    lineCmd.linesCmd.points = entity.wireLines;
+    //    lineCmd.linesCmd.width = 2.0f;
+    //    glWidget->submitDrawCommand(lineCmd);
+    //}
 
     // 3. 触发显卡刷新
     glWidget->update();
@@ -874,7 +875,7 @@ void MainWindow::onShapeTypeChanged(const QString& text) {
     m_paramInputs.clear();
 
     // 2. 添加实体名称输入
-    addNumParam("Entity Name:", "name_internal", 0); // 占位，名字单独处理
+    //addNumParam("Entity Name:", "name_internal", 0); // 占位，名字单独处理
     // 覆盖上一行生成的输入框，改成文本框
     QHBoxLayout* nameRow = new QHBoxLayout();
     nameRow->addWidget(new QLabel("Entity Name:"));

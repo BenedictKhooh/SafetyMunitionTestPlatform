@@ -109,6 +109,15 @@
     <ClCompile Include="src\core\generation\OpenCylindricalShellGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\generation\TriangularPrismGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\generation\HexagonalPrismGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\generation\PentagonalPrismGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -208,6 +217,15 @@
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\OpenCylindricalShellGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\TriangularPrismGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\HexagonalPrismGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\PentagonalPrismGenerator.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>

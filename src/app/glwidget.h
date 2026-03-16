@@ -10,6 +10,7 @@
 #include <QOpenGLShaderProgram>
 #include "src/core/reconstruction/reconstruction_engine.h"
 #include "src/core/common/common_types.h"
+#include "src/core/common/EntityRepository.h"
 #include "Drawable.h"
 
 class GLWidget : public QOpenGLWidget, protected QOpenGLFunctions

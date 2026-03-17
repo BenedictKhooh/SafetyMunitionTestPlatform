@@ -713,29 +713,43 @@ void MainWindow::clearAllEntities() {
 }
 
 void MainWindow::updateSubstanceTree() {
-    // 1. 先清空当前的树，防止重复堆叠
+    if (!substanceTree) return;
+
     substanceTree->clear();
+    // 确保有两列，一列显示名称，一列显示信息
+    substanceTree->setHeaderLabels(QStringList() << "Entity / Boundary" << "Info");
 
-    // 2. 获取仓库中所有的实体
-    const auto& entities = m_repository.getAllEntities();
+    const auto& allEntities = m_repository.getAllEntities();
 
-    // 3. 遍历并创建节点
-    for (auto it = entities.begin(); it != entities.end(); ++it) {
+    // 遍历仓库中的所有实体
+    for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
+        QString entityName = it->first;
         const MeshEntity& entity = it->second;
 
-        // 创建一级节点：显示实体名字
-        QTreeWidgetItem* topItem = new QTreeWidgetItem(substanceTree);
-        topItem->setText(0, entity.name);
+        // 1. 创建实体项 (父节点)，挂载在 substanceTree 上
+        QTreeWidgetItem* entityItem = new QTreeWidgetItem(substanceTree);
+        entityItem->setText(0, entityName);
+        entityItem->setText(1, QString("Nodes: %1").arg(entity.nodes.size()));
 
-        // 创建二级节点：显示基本参数（可选）
-        QTreeWidgetItem* typeItem = new QTreeWidgetItem(topItem);
-        typeItem->setText(0, "Type: " + entity.type);
+        // --- [新增边界子节点逻辑开始] ---
+        // 2. 遍历该实体所拥有的边界，作为小项挂载到 entityItem 下面
+        for (const auto& boundary : entity.boundaries) {
+            // 关键：传入 entityItem 作为父级，这样它就会变成可展开的子项
+            QTreeWidgetItem* boundaryItem = new QTreeWidgetItem(entityItem);
 
-        QTreeWidgetItem* nodeItem = new QTreeWidgetItem(topItem);
-        nodeItem->setText(0, QString("Nodes: %1").arg(entity.nodes.size()));
+            // 为了视觉上区分，可以加个前缀或图标
+            boundaryItem->setText(0, QString("[Boundary] %1").arg(QString::fromStdString(boundary.name)));
+            boundaryItem->setText(1, QString("Size: %1").arg(boundary.nodeIndices.size()));
 
-        // 默认展开新生成的节点
-        topItem->setExpanded(true);
+            // (可选) 给边界小项换个颜色，比如暗灰色或蓝色，以便和实体区分
+            boundaryItem->setForeground(0, QBrush(QColor(80, 120, 200)));
+        }
+        // --- [新增边界子节点逻辑结束] ---
+
+        // (可选) 默认展开包含边界的实体节点
+        if (!entity.boundaries.empty()) {
+            entityItem->setExpanded(true);
+        }
     }
 }
 

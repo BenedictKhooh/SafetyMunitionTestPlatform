@@ -8,6 +8,11 @@
 // 包含你项目里定义这些基础结构体的头文件
 #include "core/common/common_types.h" // 假设 MeshPoint, Hexahedron, Vector3 在这里
 
+
+struct Boundary {
+    std::string name;               // 边界的名称 (例如 "Top_Surface", "Impact_Face")
+    std::vector<size_t> nodeIndices; // 储存属于该边界的节点在 MeshEntity.nodes 中的索引
+};
 // --- 1. 单个实体的属性结构 ---
 struct MeshEntity {
     QString name;                       // 实体名称 (如 "ball1")
@@ -15,6 +20,8 @@ struct MeshEntity {
     std::vector<MeshPoint> nodes;       // 节点数据
     std::vector<Hexahedron> hexes;      // 六面体单元数据
     std::vector<Vector3> wireLines;     // 预生成的渲染线段 (缓存起来，重绘时极快)
+
+    std::vector<Boundary> boundaries; // [新增] 用于储存该实体内部包含的所有边界
 };
 
 // --- 2. 实体仓库管理类 ---

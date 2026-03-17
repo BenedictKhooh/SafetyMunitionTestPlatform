@@ -41,9 +41,6 @@ private slots:
 
     void parseMeshFile( QString fileName );
 
-    void onShapeTypeChanged(const QString& text); // 响应下拉菜单切换
-    void onGenerateButtonClicked();               // 响应生成按钮
-
 private:
     void createMenuBar();
     void createToolBars();
@@ -54,17 +51,30 @@ private:
     void clean();
     void showHelp();
 
-    QComboBox* m_shapeComboBox;
-    QWidget* m_paramContainer;    // 动态参数的容器
-    QVBoxLayout* m_paramLayout;   // 参数容器的布局
-    // 用来记录当前界面上所有的输入框，方便读取数据
-    QMap<QString, QDoubleSpinBox*> m_paramInputs;
-    QLineEdit* m_nameInput;
-    // 统一添加数值行的函数
-    void addNumParam(const QString& labelText, const QString& key, double defaultValue);
+private:
+    // 定义一个结构体来管理每个独立窗口的 UI 控件
+    struct GeneratorUI {
+        QComboBox* shapeComboBox;
+        QWidget* paramContainer;
+        QVBoxLayout* paramLayout;
+        QLineEdit* nameInput;
+        QMap<QString, QDoubleSpinBox*> paramInputs;
+    };
 
-    // 一个小工具函数：快速添加一行带标签的输入框
-    void addParamRow(const QString& labelText, const QString& key, double defaultValue);
+    // 声明三个独立窗口的 UI 管理器
+    GeneratorUI m_fragmentUI; // 破片
+    GeneratorUI m_shellUI;    // 壳体
+    GeneratorUI m_chargeUI;   // 装药
+
+    // 声明统一的创建窗口的辅助函数
+    void setupGeneratorDock(const QString& title, const QStringList& shapes, GeneratorUI& ui, Qt::DockWidgetArea area);
+
+    // 重构的槽函数，将具体的 ui 结构体作为参数传入
+    void handleShapeTypeChanged(GeneratorUI& ui, const QString& text);
+    void handleGenerateButtonClicked(GeneratorUI& ui);
+
+    // 更新辅助函数，加入 GeneratorUI 参数
+    void addNumParamToUI(GeneratorUI& ui, const QString& labelText, const QString& key, double defaultValue);
 
     QTextEdit *commandHistoryEdit;
 

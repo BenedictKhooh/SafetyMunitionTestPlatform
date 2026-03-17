@@ -555,10 +555,6 @@ void MainWindow::DrawLine(QStringList args) {
 
 void MainWindow::clean() {
 
-    drawables.clear();
-    drawables_lines.clear();
-    points.clear();
-
 }
 
 void MainWindow::startMeshing() {
@@ -754,24 +750,32 @@ void MainWindow::updateSubstanceTree() {
 }
 
 void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
-    // 获取点击位置所在的项
     QTreeWidgetItem* item = substanceTree->itemAt(pos);
-    if (!item) return; // 如果点在空白处，不弹菜单
+    // 假设只有顶层实体可以操作 (没有父节点的 Item)
+    if (!item || item->parent() != nullptr) return;
 
-    // 获取实体名称（如果是二级节点，则找父节点）
-    QString entityName = item->parent() ? item->parent()->text(0) : item->text(0);
-
-    // 创建菜单
+    QString entityName = item->text(0);
     QMenu menu(this);
-    QAction* deleteAction = menu.addAction(tr("Delete the substance: ") + entityName);
 
-    // 执行菜单并获取用户的点击结果
-    QAction* selectedAction = menu.exec(substanceTree->mapToGlobal(pos));
+    // 1. 删除
+    QAction* delAct = menu.addAction("删除实体 (Delete)");
+    connect(delAct, &QAction::triggered, this, [this, entityName]() { handleDeleteEntity(entityName); });
 
-    if (selectedAction == deleteAction) {
-        // --- 核心调用：执行删除流程 ---
-        this->handleDeleteEntity(entityName);
-    }
+    menu.addSeparator(); // 加条分割线
+
+    // 2. 平移
+    QAction* transAct = menu.addAction("平移 (Translate)");
+    connect(transAct, &QAction::triggered, this, [this, entityName]() { handleTranslateEntity(entityName); });
+
+    // 3. 缩放
+    QAction* scaleAct = menu.addAction("缩放 (Scale)");
+    connect(scaleAct, &QAction::triggered, this, [this, entityName]() { handleScaleEntity(entityName); });
+
+    // 4. 旋转
+    QAction* rotateAct = menu.addAction("旋转 (Rotate)");
+    connect(rotateAct, &QAction::triggered, this, [this, entityName]() { handleRotateEntity(entityName); });
+
+    menu.exec(substanceTree->viewport()->mapToGlobal(pos));
 }
 
 void MainWindow::handleDeleteEntity(QString name) {
@@ -1045,5 +1049,154 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     }
 
     logCommand("GUI Generate (" + type + "): " + name);
+    glWidget->update();
+}
+
+// ==========================================
+// 1. 平移操作 (Translate)
+// ==========================================
+void MainWindow::handleTranslateEntity(const QString& entityName) {
+    QDialog dialog(this);
+    dialog.setWindowTitle("平移实体 - " + entityName);
+    QFormLayout form(&dialog);
+
+    QDoubleSpinBox* dx = new QDoubleSpinBox(&dialog); dx->setRange(-99999, 99999); dx->setDecimals(3);
+    QDoubleSpinBox* dy = new QDoubleSpinBox(&dialog); dy->setRange(-99999, 99999); dy->setDecimals(3);
+    QDoubleSpinBox* dz = new QDoubleSpinBox(&dialog); dz->setRange(-99999, 99999); dz->setDecimals(3);
+
+    form.addRow("X位移 (dx):", dx);
+    form.addRow("Y位移 (dy):", dy);
+    form.addRow("Z位移 (dz):", dz);
+
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form.addRow(&buttonBox);
+    connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QMatrix4x4 mat;
+        mat.setToIdentity();
+        mat.translate(dx->value(), dy->value(), dz->value());
+
+        applyTransformation(entityName, mat);
+        logCommand("Transformation", "Translated " + entityName);
+    }
+}
+
+// ==========================================
+// 2. 缩放操作 (Scale)
+// ==========================================
+void MainWindow::handleScaleEntity(const QString& entityName) {
+    QDialog dialog(this);
+    dialog.setWindowTitle("缩放实体 - " + entityName);
+    QFormLayout form(&dialog);
+
+    // 缩放因子默认值为 1.0
+    QDoubleSpinBox* sx = new QDoubleSpinBox(&dialog); sx->setRange(0.001, 9999); sx->setValue(1.0); sx->setDecimals(3);
+    QDoubleSpinBox* sy = new QDoubleSpinBox(&dialog); sy->setRange(0.001, 9999); sy->setValue(1.0); sy->setDecimals(3);
+    QDoubleSpinBox* sz = new QDoubleSpinBox(&dialog); sz->setRange(0.001, 9999); sz->setValue(1.0); sz->setDecimals(3);
+
+    form.addRow("X向缩放:", sx);
+    form.addRow("Y向缩放:", sy);
+    form.addRow("Z向缩放:", sz);
+
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form.addRow(&buttonBox);
+    connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        MeshEntity* entity = m_repository.getMutableEntity(entityName);
+        if (!entity || entity->nodes.empty()) return;
+
+        // 【关键】必须以实体的几何中心为基准进行缩放，否则实体会“飞走”
+        QVector3D center(0, 0, 0);
+        for (const auto& node : entity->nodes) {
+            center += QVector3D(node.pos.x(), node.pos.y(), node.pos.z());
+        }
+        center /= float(entity->nodes.size());
+
+        QMatrix4x4 mat;
+        mat.setToIdentity();
+        mat.translate(center); // 3. 将原点移回其实际位置
+        mat.scale(sx->value(), sy->value(), sz->value()); // 2. 缩放
+        mat.translate(-center); // 1. 将实体中心平移到坐标原点
+
+        applyTransformation(entityName, mat);
+        logCommand("Transformation", "Scaled " + entityName);
+    }
+}
+
+// ==========================================
+// 3. 旋转操作 (Rotate)
+// ==========================================
+void MainWindow::handleRotateEntity(const QString& entityName) {
+    QDialog dialog(this);
+    dialog.setWindowTitle("旋转实体 - " + entityName);
+    QFormLayout form(&dialog);
+
+    QDoubleSpinBox* cx = new QDoubleSpinBox(&dialog); cx->setRange(-9999, 9999); cx->setDecimals(3);
+    QDoubleSpinBox* cy = new QDoubleSpinBox(&dialog); cy->setRange(-9999, 9999); cy->setDecimals(3);
+    QDoubleSpinBox* cz = new QDoubleSpinBox(&dialog); cz->setRange(-9999, 9999); cz->setDecimals(3);
+
+    QDoubleSpinBox* ax = new QDoubleSpinBox(&dialog); ax->setRange(-1.0, 1.0); ax->setValue(0.0);
+    QDoubleSpinBox* ay = new QDoubleSpinBox(&dialog); ay->setRange(-1.0, 1.0); ay->setValue(0.0);
+    QDoubleSpinBox* az = new QDoubleSpinBox(&dialog); az->setRange(-1.0, 1.0); az->setValue(1.0);
+
+    QDoubleSpinBox* angle = new QDoubleSpinBox(&dialog); angle->setRange(-360.0, 360.0); angle->setValue(90.0);
+
+    form.addRow("旋转中心 X:", cx);
+    form.addRow("旋转中心 Y:", cy);
+    form.addRow("旋转中心 Z:", cz);
+    form.addRow("旋转轴向量 X:", ax);
+    form.addRow("旋转轴向量 Y:", ay);
+    form.addRow("旋转轴向量 Z:", az);
+    form.addRow("旋转角度 (度):", angle);
+
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form.addRow(&buttonBox);
+    connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QVector3D center(cx->value(), cy->value(), cz->value());
+        QVector3D axis(ax->value(), ay->value(), az->value());
+
+        QMatrix4x4 mat;
+        mat.setToIdentity();
+        mat.translate(center);  // 3. 移回旋转中心点
+        mat.rotate(angle->value(), axis); // 2. 绕原点的对应轴旋转
+        mat.translate(-center); // 1. 将旋转中心点移到原点
+
+        applyTransformation(entityName, mat);
+        logCommand("Transformation", "Rotated " + entityName);
+    }
+}
+
+// ==========================================
+// 4. 矩阵变换底层执行 (Apply)
+// ==========================================
+void MainWindow::applyTransformation(const QString& entityName, const QMatrix4x4& mat) {
+    MeshEntity* entity = m_repository.getMutableEntity(entityName);
+    if (!entity) return;
+
+    // 1. 变换所有节点的坐标
+    for (auto& node : entity->nodes) {
+        QVector3D oldPos(node.pos.x(), node.pos.y(), node.pos.z());
+        QVector3D newPos = mat * oldPos; // 矩阵乘法直接完成变换
+
+        // 重新赋值（请根据你自定义 Vector 的方法名修改此处，比如 setX 或者直接赋值）
+        node.pos = QVector3D(newPos.x(), newPos.y(), newPos.z());
+    }
+
+    // 2. 变换实体线框/边界线（如果在渲染层你用 wireLines 保存了骨架线）
+    for (auto& linePos : entity->wireLines) {
+        QVector3D oldPos(linePos.x(), linePos.y(), linePos.z());
+        QVector3D newPos = mat * oldPos;
+
+        linePos = QVector3D(newPos.x(), newPos.y(), newPos.z());
+    }
+
+    // 3. 强制重绘 3D 界面
     glWidget->update();
 }

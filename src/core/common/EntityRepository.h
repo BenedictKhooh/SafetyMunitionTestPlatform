@@ -24,7 +24,7 @@ struct MeshEntity {
     std::vector<Boundary> boundaries; // [新增] 用于储存该实体内部包含的所有边界
 };
 
-// --- 2. 实体仓库管理类 ---
+// --- 2. 实体仓库管理类 储存所有的实体---
 class EntityRepository {
 public:
     EntityRepository() = default;
@@ -47,8 +47,24 @@ public:
     // 清空整个仓库
     void clearAll();
 
+    MeshEntity* getMutableEntity(const QString& name) {
+        auto it = m_entities.find(name);
+        if (it != m_entities.end()) {
+            return &(it->second);
+        }
+        return nullptr;
+    }
+
 private:
     std::map<QString, MeshEntity> m_entities; // 核心字典，用名字做索引
+    // 变换操作的弹窗响应函数
+    void handleTranslateEntity(const QString& entityName);
+    void handleScaleEntity(const QString& entityName);
+    void handleRotateEntity(const QString& entityName);
+
+    // 核心底层计算函数：将 4x4 变换矩阵应用到具体实体上
+    void applyTransformation(const QString& entityName, const QMatrix4x4& mat);
+
 };
 
 #endif // ENTITYREPOSITORY_H

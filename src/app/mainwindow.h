@@ -120,13 +120,11 @@ private:
 
     void exportToKFile(const QString& fileName); // 导出逻辑
 
+	void handleTranslateEntity(const QString& entityName);//平移
+	void handleScaleEntity(const QString& entityName);   //缩放
+	void handleRotateEntity(const QString& entityName);   //旋转
+	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // 变换应用函数
 
-    std::unordered_set<MeshPoint, MeshPointHasher, MeshPointComparator> points;
-
-    AdjacencyGraph m_adjGraph;
-    AdjacencyGraph m_adjGraph_sphere;
-    std::vector<QuadFace> m_faces;
-    std::vector<Hexahedron> m_hexahedra;
 
 };
 #endif // MAINWINDOW_H

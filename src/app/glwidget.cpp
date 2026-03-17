@@ -89,27 +89,49 @@ void GLWidget::paintGL() {
     // 直接向仓库索要所有实体
     const auto& allEntities = m_repository->getAllEntities();
 
-    // 遍历仓库
+    // 1. 定义一个高对比度、护眼的柔和调色板 (RGB 0.0~1.0)
+    std::vector<QVector3D> colorPalette = {
+        {0.2f, 0.6f, 1.0f}, // 天蓝色 (Blue)
+        {1.0f, 0.5f, 0.2f}, // 橙色 (Orange)
+        {0.2f, 0.8f, 0.4f}, // 翠绿色 (Green)
+        {0.8f, 0.3f, 0.8f}, // 紫色 (Purple)
+        {0.9f, 0.2f, 0.2f}, // 红色 (Red)
+        {0.0f, 0.8f, 0.8f}, // 青色 (Cyan)
+        {0.9f, 0.8f, 0.1f}, // 金黄色 (Yellow)
+        {0.9f, 0.5f, 0.7f}  // 粉色 (Pink)
+    };
+
+    int entityIndex = 0; // 用于追踪当前画到第几个实体了
+
+    // 2. 遍历仓库，挨个画出来
     for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
         const MeshEntity& entity = it->second;
 
-        // 1. 画点 (Points)
+        // 根据实体的序号，从调色板中取出一个颜色 (取余保证不会越界)
+        QVector3D meshColor = colorPalette[entityIndex % colorPalette.size()];
+
+        // ---- 画点 (可选，如果你需要显示节点的话) ----
         glPointSize(2.5f);
         glBegin(GL_POINTS);
-        glColor3f(1.0f, 1.0f, 1.0f); // 设为白色
+        // 点可以用统一的白色，或者和网格线同色，这里用纯白显得更干净
+        glColor3f(0.9f, 0.9f, 0.9f);
         for (const auto& node : entity.nodes) {
             glVertex3f(node.pos.x(), node.pos.y(), node.pos.z());
         }
         glEnd();
 
-        // 2. 画线 (Wireframe Lines)
-        glLineWidth(2.0f);
+        // ---- 画线 (Wireframe Lines) 核心变色逻辑 ----
+        glLineWidth(1.5f); // 可以稍微调细一点让网格看起来更精致
         glBegin(GL_LINES);
-        glColor3f(0.0f, 0.5f, 1.0f); // 设为蓝色
+        // 使用调色板分配的专属颜色！
+        glColor3f(meshColor.x(), meshColor.y(), meshColor.z());
+
         for (const auto& linePos : entity.wireLines) {
             glVertex3f(linePos.x(), linePos.y(), linePos.z());
         }
         glEnd();
+
+        entityIndex++; // 画完一个实体，序号+1，下一个实体换颜色
     }
 }
 

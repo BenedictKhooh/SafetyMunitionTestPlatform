@@ -89,7 +89,7 @@ void GLWidget::paintGL() {
     // 直接向仓库索要所有实体
     const auto& allEntities = m_repository->getAllEntities();
 
-    // 遍历仓库，挨个画出来
+    // 遍历仓库
     for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
         const MeshEntity& entity = it->second;
 

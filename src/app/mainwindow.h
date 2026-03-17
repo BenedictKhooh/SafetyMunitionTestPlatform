@@ -67,8 +67,7 @@ private:
     GeneratorUI m_chargeUI;   // 装药
 
     // 声明统一的创建窗口的辅助函数
-    void setupGeneratorDock(const QString& title, const QStringList& shapes, GeneratorUI& ui, Qt::DockWidgetArea area);
-
+    void setupGeneratorTab(QTabWidget* tabWidget, const QString& title, const QStringList& shapes, GeneratorUI& ui);
     // 重构的槽函数，将具体的 ui 结构体作为参数传入
     void handleShapeTypeChanged(GeneratorUI& ui, const QString& text);
     void handleGenerateButtonClicked(GeneratorUI& ui);

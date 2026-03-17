@@ -184,20 +184,27 @@ void MainWindow::createDockWidgets() {
     connect(substanceTree, &QTreeWidget::customContextMenuRequested,
         this, &MainWindow::onSubstanceTreeContextMenu);
 
-    // 1. 破片 (Fragment) 窗口
-    setupGeneratorDock(tr("破片 (Fragment)"),
-        { "Cube", "Sphere", "Hemisphere" },
-        m_fragmentUI, Qt::RightDockWidgetArea);
+    QDockWidget* generatorDock = new QDockWidget(tr("Entity Generator"), this);
+    generatorDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    // 只允许移动和浮动，不可关闭
+    generatorDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
 
-    // 2. 壳体 (Shell) 窗口：限制只能选择壳体类和圆台
-    setupGeneratorDock(tr("壳体 (Shell)"),
-        { "CylindricalShell", "OpenCylindricalShell", "Frustum" },
-        m_shellUI, Qt::RightDockWidgetArea);
+    // 创建标签页控件作为 Dock 的核心组件
+    QTabWidget* tabWidget = new QTabWidget(generatorDock);
 
-    // 3. 装药 (Charge) 窗口
-    setupGeneratorDock(tr("装药 (Charge)"),
-        { "Cylinder", "HalfCylinder", "Cube", "Sphere" },
-        m_chargeUI, Qt::RightDockWidgetArea);
+    // 将三个分类作为不同的 Tab 添加进去
+    setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
+        { "Cube", "Sphere", "Hemisphere" }, m_fragmentUI);
+
+    setupGeneratorTab(tabWidget, tr("壳体 (Shell)"),
+        { "CylindricalShell", "OpenCylindricalShell", "Frustum" }, m_shellUI);
+
+    setupGeneratorTab(tabWidget, tr("装药 (Charge)"),
+        { "Cylinder", "HalfCylinder", "Cube", "Sphere" }, m_chargeUI);
+
+    // 将 TabWidget 设置为 Dock 的主体，并添加到右侧
+    generatorDock->setWidget(tabWidget);
+    addDockWidget(Qt::RightDockWidgetArea, generatorDock);
 
 }
 
@@ -837,40 +844,35 @@ void MainWindow::exportToKFile(const QString& fileName) {
 
 
 // 辅助函数：创建独立且不可关闭的 Dock 窗口
-void MainWindow::setupGeneratorDock(const QString& title, const QStringList& shapes, GeneratorUI& ui, Qt::DockWidgetArea area) {
-    QDockWidget* dock = new QDockWidget(title, this);
-    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+void MainWindow::setupGeneratorTab(QTabWidget* tabWidget, const QString& title, const QStringList& shapes, GeneratorUI& ui) {
+    // 1. 创建一个普通的 QWidget 作为单独的标签页
+    QWidget* tab = new QWidget(tabWidget);
+    QVBoxLayout* mainLayout = new QVBoxLayout(tab);
 
-    // 关键设置：只允许移动(Movable)和浮动(Floatable)，不包含 Closable，这样就去掉了关闭按钮
-    dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-
-    QWidget* container = new QWidget(dock);
-    QVBoxLayout* mainLayout = new QVBoxLayout(container);
-
-    // 1. 形状选择下拉框
+    // 2. 形状选择下拉框
     mainLayout->addWidget(new QLabel("Select Shape:"));
-    ui.shapeComboBox = new QComboBox(this);
+    ui.shapeComboBox = new QComboBox(tab);
     ui.shapeComboBox->addItems(shapes);
     mainLayout->addWidget(ui.shapeComboBox);
 
-    // 2. 动态参数区域
+    // 3. 动态参数区域
     mainLayout->addSpacing(10);
     mainLayout->addWidget(new QLabel("Parameters:"));
-    ui.paramContainer = new QWidget(this);
+    ui.paramContainer = new QWidget(tab);
     ui.paramLayout = new QVBoxLayout(ui.paramContainer);
     ui.paramLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->addWidget(ui.paramContainer);
 
     mainLayout->addStretch(1);
 
-    // 3. 生成按钮
-    QPushButton* generateBtn = new QPushButton("Generate " + title, this);
+    // 4. 生成按钮
+    QPushButton* generateBtn = new QPushButton("Generate " + title, tab);
     mainLayout->addWidget(generateBtn);
 
-    dock->setWidget(container);
-    addDockWidget(area, dock);
+    // 5. 将配置好的页面添加到 TabWidget 中
+    tabWidget->addTab(tab, title);
 
-    // 4. 使用 Lambda 表达式连接信号，把当前的 ui 结构体传给处理函数
+    // 6. 信号槽连接
     connect(ui.shapeComboBox, &QComboBox::currentTextChanged, this, [this, &ui](const QString& text) {
         handleShapeTypeChanged(ui, text);
         });

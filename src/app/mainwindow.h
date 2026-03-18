@@ -125,6 +125,35 @@ private:
 	void handleRotateEntity(const QString& entityName);   //旋转
 	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // 变换应用函数
 
+    // 仿真设置 UI 管理器
+    struct SimulationSetupUI {
+        QTabWidget* mainTab;
 
+        // --- 材料标签页组件 ---
+        QComboBox* entitySelector;   // 选择给哪个实体赋予材料
+        QComboBox* materialSelector; // 比如 "MAT_JOHNSON_COOK", "MAT_HIGH_EXPLOSIVE_BURN"
+        QComboBox* eosSelector;      // 比如 "EOS_JWL", "None" (动态显示/隐藏)
+        QWidget* matParamContainer;  // 材料参数动态生成区
+        QFormLayout* matParamLayout;
+
+        // --- 控制卡标签页组件 ---
+        QDoubleSpinBox* endtimeInput;
+        QDoubleSpinBox* dtinitInput;
+        QDoubleSpinBox* d3plotFreqInput;
+
+        // 保存所有的动态输入框指针，便于一键获取数据
+        QMap<QString, QDoubleSpinBox*> currentMatInputs;
+    };
+
+    SimulationSetupUI m_simSetupUI;
+
+    // 创建面板的函数
+    void createSimulationSetupDock();
+
+    // 动态生成表单的响应槽函数
+    void handleMaterialTypeChanged(const QString& matType);
+
+    // 将 UI 数据保存到 LSDynaDeck 仓库中的函数
+    void handleApplySimulationSettings();
 };
 #endif // MAINWINDOW_H

@@ -33,9 +33,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         // 初始化停靠窗口
         createDockWidgets();
 
-
         // 初始化命令行
         createCommandLine();
+
+        createSimulationSetupDock();
 
         setWindowTitle("SafetyMunitionTestPlatform");
         resize(1024, 768);
@@ -747,6 +748,12 @@ void MainWindow::updateSubstanceTree() {
             entityItem->setExpanded(true);
         }
     }
+
+    // 每次新建实体，更新一次下拉菜单
+    m_simSetupUI.entitySelector->clear();
+    for (const auto& pair : m_repository.getAllEntities()) {
+        m_simSetupUI.entitySelector->addItem(pair.first); // pair.first 是实体名字，如 Cube_1
+    }
 }
 
 void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
@@ -1109,7 +1116,7 @@ void MainWindow::handleScaleEntity(const QString& entityName) {
         MeshEntity* entity = m_repository.getMutableEntity(entityName);
         if (!entity || entity->nodes.empty()) return;
 
-        // 【关键】必须以实体的几何中心为基准进行缩放，否则实体会“飞走”
+        // 【关键】必须以实体的几何中心为基准进行缩放
         QVector3D center(0, 0, 0);
         for (const auto& node : entity->nodes) {
             center += QVector3D(node.pos.x(), node.pos.y(), node.pos.z());
@@ -1199,4 +1206,163 @@ void MainWindow::applyTransformation(const QString& entityName, const QMatrix4x4
 
     // 3. 强制重绘 3D 界面
     glWidget->update();
+}
+
+void MainWindow::createSimulationSetupDock() {
+    QDockWidget* setupDock = new QDockWidget(tr("Simulation Setup (物理与求解设置)"), this);
+    setupDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    setupDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+
+    m_simSetupUI.mainTab = new QTabWidget(setupDock);
+
+    // ==========================================
+    // Tab 1: 材料与状态方程 (Materials & EOS)
+    // ==========================================
+    QWidget* matTab = new QWidget();
+    QVBoxLayout* matLayout = new QVBoxLayout(matTab);
+
+    // 实体选择
+    matLayout->addWidget(new QLabel("目标实体 (Target Entity):"));
+    m_simSetupUI.entitySelector = new QComboBox();
+    matLayout->addWidget(m_simSetupUI.entitySelector);
+
+    // 材料库选择
+    matLayout->addWidget(new QLabel("材料本构 (Material Model):"));
+    m_simSetupUI.materialSelector = new QComboBox();
+    m_simSetupUI.materialSelector->addItems({ "*MAT_PIECEWISE_LINEAR_PLASTICITY", "*MAT_JOHNSON_COOK", "*MAT_HIGH_EXPLOSIVE_BURN", "*MAT_NULL" });
+    matLayout->addWidget(m_simSetupUI.materialSelector);
+
+    // EOS 库选择 (初始隐藏)
+    QLabel* eosLabel = new QLabel("状态方程 (Equation of State):");
+    m_simSetupUI.eosSelector = new QComboBox();
+    m_simSetupUI.eosSelector->addItems({ "None", "*EOS_JWL", "*EOS_GRUNEISEN", "*EOS_LINEAR_POLYNOMIAL" });
+    matLayout->addWidget(eosLabel);
+    matLayout->addWidget(m_simSetupUI.eosSelector);
+
+    // 动态参数容器
+    m_simSetupUI.matParamContainer = new QWidget();
+    m_simSetupUI.matParamLayout = new QFormLayout(m_simSetupUI.matParamContainer);
+    QScrollArea* scrollArea = new QScrollArea(); // 参数可能很多，加上滚动条
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setWidget(m_simSetupUI.matParamContainer);
+    matLayout->addWidget(scrollArea);
+
+    m_simSetupUI.mainTab->addTab(matTab, "材料(Material)");
+
+    // ==========================================
+    // Tab 2: 求解控制 (Control)
+    // ==========================================
+    QWidget* ctrlTab = new QWidget();
+    QFormLayout* ctrlLayout = new QFormLayout(ctrlTab);
+
+    m_simSetupUI.endtimeInput = new QDoubleSpinBox();
+    m_simSetupUI.endtimeInput->setRange(0, 99999); m_simSetupUI.endtimeInput->setValue(1.0);
+    ctrlLayout->addRow("结束时间 (ENDTIM):", m_simSetupUI.endtimeInput);
+
+    m_simSetupUI.d3plotFreqInput = new QDoubleSpinBox();
+    m_simSetupUI.d3plotFreqInput->setRange(0, 9999); m_simSetupUI.d3plotFreqInput->setValue(0.01);
+    ctrlLayout->addRow("D3PLOT 步长 (DT):", m_simSetupUI.d3plotFreqInput);
+
+    m_simSetupUI.mainTab->addTab(ctrlTab, "控制(Control)");
+
+    // ==========================================
+    // 底部应用按钮
+    // ==========================================
+    QWidget* mainContainer = new QWidget();
+    QVBoxLayout* mainVLayout = new QVBoxLayout(mainContainer);
+    mainVLayout->addWidget(m_simSetupUI.mainTab);
+
+    QPushButton* applyBtn = new QPushButton("应用并写入 K 文件 (Apply to Deck)");
+    mainVLayout->addWidget(applyBtn);
+
+    setupDock->setWidget(mainContainer);
+    addDockWidget(Qt::LeftDockWidgetArea, setupDock);
+
+    // 连接信号
+    connect(m_simSetupUI.materialSelector, &QComboBox::currentTextChanged, this, &MainWindow::handleMaterialTypeChanged);
+    connect(applyBtn, &QPushButton::clicked, this, &MainWindow::handleApplySimulationSettings);
+
+    // 触发一次初始化
+    handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
+}
+
+void MainWindow::handleMaterialTypeChanged(const QString& matType) {
+    // 1. 清空旧表单
+    QLayoutItem* item;
+    while ((item = m_simSetupUI.matParamLayout->takeAt(0)) != nullptr) {
+        delete item->widget();
+        delete item;
+    }
+    m_simSetupUI.currentMatInputs.clear();
+
+    // 辅助 Lambda 表达式：快速添加一行参数
+    auto addParam = [&](const QString& label, const QString& key, double defaultVal) {
+        QDoubleSpinBox* box = new QDoubleSpinBox();
+        box->setRange(-999999, 999999);
+        box->setDecimals(5);
+        box->setValue(defaultVal);
+        m_simSetupUI.matParamLayout->addRow(label, box);
+        m_simSetupUI.currentMatInputs[key] = box;
+        };
+
+    // 2. 根据材料类型动态构建 UI
+    if (matType == "*MAT_JOHNSON_COOK") {
+        m_simSetupUI.eosSelector->setCurrentText("*EOS_GRUNEISEN"); // 默认关联
+        addParam("密度 (RO):", "ro", 7.83e-6); // 例：钢铁 kg/mm^3
+        addParam("剪切模量 (G):", "g", 77.0);
+        addParam("屈服强度 (A):", "a", 0.792);
+        addParam("硬化常数 (B):", "b", 0.510);
+        addParam("硬化指数 (N):", "n", 0.26);
+        addParam("应变率常数 (C):", "c", 0.014);
+        addParam("软化指数 (M):", "m", 1.03);
+        addParam("熔点 (TMELT):", "tmelt", 1793);
+    }
+    else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") {
+        m_simSetupUI.eosSelector->setCurrentText("*EOS_JWL"); // 炸药必须配 JWL
+        addParam("密度 (RO):", "ro", 1.63e-6); // 例：TNT
+        addParam("爆速 (D):", "d", 6.93);
+        addParam("CJ 压力 (PCJ):", "pcj", 21.0);
+        // -- 自动追加展示 JWL 参数 --
+        addParam("[JWL] A:", "jwl_a", 373.77);
+        addParam("[JWL] B:", "jwl_b", 3.747);
+        addParam("[JWL] R1:", "jwl_r1", 4.15);
+        addParam("[JWL] R2:", "jwl_r2", 0.90);
+        addParam("[JWL] OMEGA:", "jwl_omega", 0.35);
+        addParam("[JWL] E0:", "jwl_e0", 6.0);
+    }
+}
+
+void MainWindow::handleApplySimulationSettings() {
+    // 假设你有一个全局或成员变量 LSDynaDeck m_deck; 专门用来生成 .k 文件
+
+    // 1. 获取控制参数
+    double endtim = m_simSetupUI.endtimeInput->value();
+    // 伪代码： m_deck.controlCard.setTerminationTime(endtim);
+
+    // 2. 获取当前实体和材料
+    QString targetEntity = m_simSetupUI.entitySelector->currentText();
+    QString matType = m_simSetupUI.materialSelector->currentText();
+
+    // 使用我们保存的输入框 QMap 一键取值
+    auto val = [&](QString key) {
+        return m_simSetupUI.currentMatInputs.contains(key) ? m_simSetupUI.currentMatInputs[key]->value() : 0.0;
+        };
+
+    if (matType == "*MAT_JOHNSON_COOK") {
+        // 伪代码：调用你刚写的类
+        // MAT_JohnsonCookCard jcCard;
+        // jcCard.RO = val("ro");
+        // jcCard.A = val("a");
+        // m_deck.addMaterial(jcCard);
+    }
+    else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") {
+        // 伪代码
+        // MAT_HighExplosiveBurn heb;
+        // heb.RO = val("ro");
+        // heb.D = val("d");
+        // EOS_JWL jwl;
+        // jwl.A = val("jwl_a"); ...
+        // heb.attachEOS(jwl);
+        // m_deck.addMaterial(heb);
+    }
 }

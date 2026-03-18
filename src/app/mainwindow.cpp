@@ -53,6 +53,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         connect(m_meshManager, &MeshManager::errorOccurred, this, [this](QString msg) {
             logCommand("Error", msg);
             });
+        //初始化默认工作目录为当前程序运行的目录
+        m_workingDirectory = QDir::currentPath();
 }
 
 MainWindow::~MainWindow() {}
@@ -91,7 +93,12 @@ void MainWindow::createMenuBar() {
         glWidget->update();
     });
 
-    
+    QAction* setWorkDirAct = new QAction(tr("设置工作目录 (Set Working Directory)..."), this);
+    setWorkDirAct->setStatusTip(tr("设置所有导出文件和仿真数据的保存目录"));
+    connect(setWorkDirAct, &QAction::triggered, this, &MainWindow::onSetWorkingDirectory);
+
+    fileMenu->addAction(setWorkDirAct);
+    fileMenu->addSeparator();
 }
 
 void MainWindow::createToolBars() {
@@ -180,6 +187,11 @@ void MainWindow::createDockWidgets() {
     interactionDock->setWidget(interactionTree);
     interactionDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
     addDockWidget(Qt::LeftDockWidgetArea, interactionDock);
+
+    if (propertiesDock) propertiesDock->hide();   // 隐藏属性面板
+    if (layersDock) layersDock->hide();           // 隐藏图层面板
+    if (boundaryDock) boundaryDock->hide();       // 隐藏边界树面板
+    if (interactionDock) interactionDock->hide(); // 隐藏相互作用面板
 
     //connect slot funcs
     connect(substanceTree, &QTreeWidget::customContextMenuRequested,
@@ -1365,4 +1377,24 @@ void MainWindow::handleApplySimulationSettings() {
         // heb.attachEOS(jwl);
         // m_deck.addMaterial(heb);
     }
+}
+
+// ==========================================
+// 设置工作目录
+// ==========================================
+void MainWindow::onSetWorkingDirectory() {
+    // 弹出文件夹选择对话框
+    QString dir = QFileDialog::getExistingDirectory(this,
+        tr("选择工作目录 (Select Working Directory)"),
+        m_workingDirectory,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+
+    // 如果用户没有点击取消
+    if (!dir.isEmpty()) {
+        m_workingDirectory = dir; // 更新路径
+
+        // 在底部的命令行/日志窗口打印提示
+        logCommand("System", "工作目录已设置为: " + m_workingDirectory);
+
+     }
 }

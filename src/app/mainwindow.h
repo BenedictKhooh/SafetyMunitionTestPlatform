@@ -125,6 +125,7 @@ private:
 	void handleRotateEntity(const QString& entityName);   //旋转
 	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // 变换应用函数
 
+    QString m_workingDirectory; // [新增] 用于保存当前的工作目录路径
     // 仿真设置 UI 管理器
     struct SimulationSetupUI {
         QTabWidget* mainTab;
@@ -155,5 +156,8 @@ private:
 
     // 将 UI 数据保存到 LSDynaDeck 仓库中的函数
     void handleApplySimulationSettings();
+
+    //响应点击“设置工作目录”菜单的槽函数
+    void onSetWorkingDirectory();
 };
 #endif // MAINWINDOW_H

@@ -144,9 +144,38 @@ private:
 
         // 保存所有的动态输入框指针，便于一键获取数据
         QMap<QString, QDoubleSpinBox*> currentMatInputs;
+
+        // --- [新增] 材料失效与侵蚀 (附加在材料 Tab 底部) ---
+        QGroupBox* erosionGroup;      // 侵蚀设置的组合框
+        QCheckBox* erosionEnable;     // 是否启用 *MAT_ADD_EROSION
+        QDoubleSpinBox* erosionMxeps;   // 最大失效应变
+
+        // --- [新增] 2. 初始条件 (Initial Conditions) ---
+        QComboBox* icEntitySelector;    // 选择施加初始速度的实体
+        QDoubleSpinBox* icVx;
+        QDoubleSpinBox* icVy;
+        QDoubleSpinBox* icVz;
+
+        // --- [新增] 3. 接触定义 (Contact) ---
+        QComboBox* contactTypeSelector; // 接触类型下拉框
+        QComboBox* contactMasterSelector; // 主面实体
+        QComboBox* contactSlaveSelector;  // 从面实体
+        QDoubleSpinBox* contactFs;        // 静摩擦系数
+        QDoubleSpinBox* contactFd;        // 动摩擦系数
+
+        // --- [新增] 4. 截面属性 (Section) ---
+        QComboBox* sectionEntitySelector; // 目标实体
+        QComboBox* sectionTypeSelector;   // Solid 还是 Shell
+        QComboBox* sectionElformSelector; // 单元算法 (ELFORM)
+
+        // --- 5. 求解控制 (Control) ---
+        QLineEdit* jobTitleInput;         // [新增] 项目名称
+        QDoubleSpinBox* tssfacInput;      // [新增] 时间步缩放因子
+       
     };
 
     SimulationSetupUI m_simSetupUI;
+    void updateAllEntitySelectors();//一个辅助函数，用于统一刷新所有的“实体选择下拉框”
 
     // 创建面板的函数
     void createSimulationSetupDock();

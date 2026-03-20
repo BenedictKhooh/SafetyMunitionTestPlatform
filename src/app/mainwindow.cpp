@@ -1296,6 +1296,90 @@ void MainWindow::createSimulationSetupDock() {
 
     // 触发一次初始化
     handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
+
+    // ==========================================
+    // [补充] Tab 1: 材料标签页的底部加入“侵蚀(Erosion)设置”
+    // ==========================================
+    m_simSetupUI.erosionGroup = new QGroupBox("单元侵蚀准则 (*MAT_ADD_EROSION)");
+    m_simSetupUI.erosionGroup->setCheckable(true);
+    m_simSetupUI.erosionGroup->setChecked(false); // 默认不开启
+    QFormLayout* erosionLayout = new QFormLayout(m_simSetupUI.erosionGroup);
+    m_simSetupUI.erosionMxeps = new QDoubleSpinBox();
+    m_simSetupUI.erosionMxeps->setRange(0.0, 10.0);
+    m_simSetupUI.erosionMxeps->setValue(2.0); // 默认失效应变 2.0
+    erosionLayout->addRow("最大失效应变 (MXEPS):", m_simSetupUI.erosionMxeps);
+    matLayout->addWidget(m_simSetupUI.erosionGroup); // 加到原来的 matLayout 底部
+
+    // ==========================================
+    // [新增] Tab: 初始条件 (Initial Conditions)
+    // ==========================================
+    QWidget* icTab = new QWidget();
+    QFormLayout* icLayout = new QFormLayout(icTab);
+
+    m_simSetupUI.icEntitySelector = new QComboBox();
+    icLayout->addRow("目标实体 (Part):", m_simSetupUI.icEntitySelector);
+
+    m_simSetupUI.icVx = new QDoubleSpinBox(); m_simSetupUI.icVx->setRange(-99999, 99999);
+    m_simSetupUI.icVy = new QDoubleSpinBox(); m_simSetupUI.icVy->setRange(-99999, 99999);
+    m_simSetupUI.icVz = new QDoubleSpinBox(); m_simSetupUI.icVz->setRange(-99999, 99999);
+    icLayout->addRow("X 向初始速度 (Vx):", m_simSetupUI.icVx);
+    icLayout->addRow("Y 向初始速度 (Vy):", m_simSetupUI.icVy);
+    icLayout->addRow("Z 向初始速度 (Vz):", m_simSetupUI.icVz);
+
+    m_simSetupUI.mainTab->addTab(icTab, "初始条件(IC)");
+
+    // ==========================================
+    // [新增] Tab: 接触定义 (Contact)
+    // ==========================================
+    QWidget* contactTab = new QWidget();
+    QFormLayout* contactLayout = new QFormLayout(contactTab);
+
+    m_simSetupUI.contactTypeSelector = new QComboBox();
+    m_simSetupUI.contactTypeSelector->addItems({ "*CONTACT_ERODING_SURFACE_TO_SURFACE", "*CONTACT_AUTOMATIC_SINGLE_SURFACE", "*CONTACT_TIED_SURFACE_TO_SURFACE" });
+    contactLayout->addRow("接触类型:", m_simSetupUI.contactTypeSelector);
+
+    m_simSetupUI.contactMasterSelector = new QComboBox();
+    m_simSetupUI.contactSlaveSelector = new QComboBox();
+    contactLayout->addRow("主面实体 (Master):", m_simSetupUI.contactMasterSelector);
+    contactLayout->addRow("从面实体 (Slave):", m_simSetupUI.contactSlaveSelector);
+
+    m_simSetupUI.contactFs = new QDoubleSpinBox(); m_simSetupUI.contactFs->setRange(0, 1); m_simSetupUI.contactFs->setValue(0.0);
+    m_simSetupUI.contactFd = new QDoubleSpinBox(); m_simSetupUI.contactFd->setRange(0, 1); m_simSetupUI.contactFd->setValue(0.0);
+    contactLayout->addRow("静摩擦系数 (FS):", m_simSetupUI.contactFs);
+    contactLayout->addRow("动摩擦系数 (FD):", m_simSetupUI.contactFd);
+
+    m_simSetupUI.mainTab->addTab(contactTab, "接触(Contact)");
+
+    // ==========================================
+    // [新增] Tab: 截面与算法 (Section)
+    // ==========================================
+    QWidget* sectionTab = new QWidget();
+    QFormLayout* sectionLayout = new QFormLayout(sectionTab);
+
+    m_simSetupUI.sectionEntitySelector = new QComboBox();
+    sectionLayout->addRow("目标实体 (Part):", m_simSetupUI.sectionEntitySelector);
+
+    m_simSetupUI.sectionTypeSelector = new QComboBox();
+    m_simSetupUI.sectionTypeSelector->addItems({ "*SECTION_SOLID", "*SECTION_SHELL" });
+    sectionLayout->addRow("单元类型:", m_simSetupUI.sectionTypeSelector);
+
+    m_simSetupUI.sectionElformSelector = new QComboBox();
+    m_simSetupUI.sectionElformSelector->addItems({ "1 - 单点积分 (快, 需控制沙漏)", "2 - 全积分 (慢, 精确)", "0 - 默认" });
+    m_simSetupUI.sectionElformSelector->setCurrentIndex(0);
+    sectionLayout->addRow("单元算法 (ELFORM):", m_simSetupUI.sectionElformSelector);
+
+    m_simSetupUI.mainTab->addTab(sectionTab, "截面(Section)");
+
+    // ==========================================
+    // [修改] Tab: 控制面板 (Control) 增加高级选项
+    // ==========================================
+    // 在你原来的 ctrlLayout 中插入下面这两行：
+    m_simSetupUI.jobTitleInput = new QLineEdit("Fragment_ignition");
+    ctrlLayout->insertRow(0, "项目名称 (TITLE):", m_simSetupUI.jobTitleInput);
+
+    m_simSetupUI.tssfacInput = new QDoubleSpinBox();
+    m_simSetupUI.tssfacInput->setRange(0.1, 1.0); m_simSetupUI.tssfacInput->setValue(0.9); m_simSetupUI.tssfacInput->setSingleStep(0.1);
+    ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
 }
 
 void MainWindow::handleMaterialTypeChanged(const QString& matType) {
@@ -1397,4 +1481,38 @@ void MainWindow::onSetWorkingDirectory() {
         logCommand("System", "工作目录已设置为: " + m_workingDirectory);
 
      }
+}
+
+void MainWindow::updateAllEntitySelectors() {
+    // 提前保存当前选择的文本，防止刷新后用户的选择丢失
+    QString curMat = m_simSetupUI.entitySelector->currentText();
+    QString curIc = m_simSetupUI.icEntitySelector->currentText();
+    QString curMaster = m_simSetupUI.contactMasterSelector->currentText();
+    QString curSlave = m_simSetupUI.contactSlaveSelector->currentText();
+    QString curSec = m_simSetupUI.sectionEntitySelector->currentText();
+
+    // 清空所有框
+    m_simSetupUI.entitySelector->clear();
+    m_simSetupUI.icEntitySelector->clear();
+    m_simSetupUI.contactMasterSelector->clear();
+    m_simSetupUI.contactSlaveSelector->clear();
+    m_simSetupUI.sectionEntitySelector->clear();
+
+    // 加载所有实体
+    const auto& allEntities = m_repository.getAllEntities();
+    for (const auto& pair : allEntities) {
+        QString name = pair.first;
+        m_simSetupUI.entitySelector->addItem(name);
+        m_simSetupUI.icEntitySelector->addItem(name);
+        m_simSetupUI.contactMasterSelector->addItem(name);
+        m_simSetupUI.contactSlaveSelector->addItem(name);
+        m_simSetupUI.sectionEntitySelector->addItem(name);
+    }
+
+    // 尝试恢复之前的选择
+    m_simSetupUI.entitySelector->setCurrentText(curMat);
+    m_simSetupUI.icEntitySelector->setCurrentText(curIc);
+    m_simSetupUI.contactMasterSelector->setCurrentText(curMaster);
+    m_simSetupUI.contactSlaveSelector->setCurrentText(curSlave);
+    m_simSetupUI.sectionEntitySelector->setCurrentText(curSec);
 }

@@ -41,6 +41,15 @@ private slots:
 
     void parseMeshFile( QString fileName );
 
+    // [新增] 各个“添加”操作的响应函数
+    void handleAddMaterial();
+    void handleAddContact();
+    void handleAddIC();
+    void handleAddSection();
+
+    // [新增] 清空列表
+    void handleClearSummary();
+
 private:
     void createMenuBar();
     void createToolBars();
@@ -126,6 +135,7 @@ private:
 	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // 变换应用函数
 
     QString m_workingDirectory; // [新增] 用于保存当前的工作目录路径
+
     // 仿真设置 UI 管理器
     struct SimulationSetupUI {
         QTabWidget* mainTab;
@@ -172,6 +182,18 @@ private:
         QLineEdit* jobTitleInput;         // [新增] 项目名称
         QDoubleSpinBox* tssfacInput;      // [新增] 时间步缩放因子
        
+        // ---各个面板的“添加”按钮 ---
+        QPushButton* btnAddMaterial;
+        QPushButton* btnAddContact;
+        QPushButton* btnAddIC;
+        QPushButton* btnAddSection;
+
+        // ---底部实时观察面板 ---
+        QListWidget* setupSummaryList; // 用于显示已添加的参数条目
+        QPushButton* btnClearSummary;  // 清空列表按钮
+        QPushButton* btnExportKFile;   // 最终的导出按钮
+
+        QComboBox* presetSelector; // [新增] 材料预设下拉框
     };
 
     SimulationSetupUI m_simSetupUI;

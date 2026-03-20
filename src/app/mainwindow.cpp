@@ -766,6 +766,10 @@ void MainWindow::updateSubstanceTree() {
     for (const auto& pair : m_repository.getAllEntities()) {
         m_simSetupUI.entitySelector->addItem(pair.first); // pair.first 是实体名字，如 Cube_1
     }
+
+    if (m_simSetupUI.entitySelector != nullptr) {
+        updateAllEntitySelectors();
+    }
 }
 
 void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
@@ -1261,6 +1265,14 @@ void MainWindow::createSimulationSetupDock() {
 
     m_simSetupUI.mainTab->addTab(matTab, "材料(Material)");
 
+    m_simSetupUI.btnAddMaterial = new QPushButton("添加材料与侵蚀设定 (Add Material)");
+    matLayout->addWidget(m_simSetupUI.btnAddMaterial);
+
+	// 新增材料预设下拉菜单
+    m_simSetupUI.presetSelector = new QComboBox();
+    m_simSetupUI.presetSelector->addItems({ "Tungsten_Alloy", "Steel_4340", "Aluminum_6061" }); // 填入你需要的材料选项
+    matLayout->addWidget(new QLabel("选择材料预设:"));
+    matLayout->addWidget(m_simSetupUI.presetSelector);
     // ==========================================
     // Tab 2: 求解控制 (Control)
     // ==========================================
@@ -1284,15 +1296,33 @@ void MainWindow::createSimulationSetupDock() {
     QVBoxLayout* mainVLayout = new QVBoxLayout(mainContainer);
     mainVLayout->addWidget(m_simSetupUI.mainTab);
 
-    QPushButton* applyBtn = new QPushButton("应用并写入 K 文件 (Apply to Deck)");
-    mainVLayout->addWidget(applyBtn);
+    // ==========================================
+    // 底部：实时观察面板与导出区域
+    // ==========================================
+
+    // 1. 上半部分放入你的 TabWidget
+    mainVLayout->addWidget(m_simSetupUI.mainTab);
+
+    // 2. 下半部分放入实时观察列表
+    mainVLayout->addWidget(new QLabel("已添加的仿真参数 (Active Cards):"));
+    m_simSetupUI.setupSummaryList = new QListWidget();
+    m_simSetupUI.setupSummaryList->setMaximumHeight(150); // 限制一下高度，别占满屏幕
+    mainVLayout->addWidget(m_simSetupUI.setupSummaryList);
+
+    // 3. 底部操作按钮
+    QHBoxLayout* bottomBtnLayout = new QHBoxLayout();
+    m_simSetupUI.btnClearSummary = new QPushButton("清空 (Clear)");
+    m_simSetupUI.btnExportKFile = new QPushButton("打包导出 K 文件 (Export K File)");
+    m_simSetupUI.btnExportKFile->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;"); // 导出按钮搞个醒目的绿色
+
+    bottomBtnLayout->addWidget(m_simSetupUI.btnClearSummary);
+    bottomBtnLayout->addWidget(m_simSetupUI.btnExportKFile);
+    mainVLayout->addLayout(bottomBtnLayout);
+
+    setupDock->setWidget(mainContainer);
 
     setupDock->setWidget(mainContainer);
     addDockWidget(Qt::LeftDockWidgetArea, setupDock);
-
-    // 连接信号
-    connect(m_simSetupUI.materialSelector, &QComboBox::currentTextChanged, this, &MainWindow::handleMaterialTypeChanged);
-    connect(applyBtn, &QPushButton::clicked, this, &MainWindow::handleApplySimulationSettings);
 
     // 触发一次初始化
     handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
@@ -1328,6 +1358,8 @@ void MainWindow::createSimulationSetupDock() {
 
     m_simSetupUI.mainTab->addTab(icTab, "初始条件(IC)");
 
+    m_simSetupUI.btnAddIC = new QPushButton("添加初始速度 (Add IC)");
+    icLayout->addWidget(m_simSetupUI.btnAddIC);
     // ==========================================
     // [新增] Tab: 接触定义 (Contact)
     // ==========================================
@@ -1350,6 +1382,8 @@ void MainWindow::createSimulationSetupDock() {
 
     m_simSetupUI.mainTab->addTab(contactTab, "接触(Contact)");
 
+    m_simSetupUI.btnAddContact = new QPushButton("添加接触定义 (Add Contact)");
+    contactLayout->addWidget(m_simSetupUI.btnAddContact);
     // ==========================================
     // [新增] Tab: 截面与算法 (Section)
     // ==========================================
@@ -1370,16 +1404,29 @@ void MainWindow::createSimulationSetupDock() {
 
     m_simSetupUI.mainTab->addTab(sectionTab, "截面(Section)");
 
+    m_simSetupUI.btnAddSection = new QPushButton("添加截面属性 (Add Section)");
+    sectionLayout->addWidget(m_simSetupUI.btnAddSection);
     // ==========================================
     // [修改] Tab: 控制面板 (Control) 增加高级选项
     // ==========================================
-    // 在你原来的 ctrlLayout 中插入下面这两行：
+
     m_simSetupUI.jobTitleInput = new QLineEdit("Fragment_ignition");
     ctrlLayout->insertRow(0, "项目名称 (TITLE):", m_simSetupUI.jobTitleInput);
 
     m_simSetupUI.tssfacInput = new QDoubleSpinBox();
     m_simSetupUI.tssfacInput->setRange(0.1, 1.0); m_simSetupUI.tssfacInput->setValue(0.9); m_simSetupUI.tssfacInput->setSingleStep(0.1);
     ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
+
+    // 连接所有信号
+    connect(m_simSetupUI.materialSelector, &QComboBox::currentTextChanged, this, &MainWindow::handleMaterialTypeChanged);
+
+    connect(m_simSetupUI.btnAddMaterial, &QPushButton::clicked, this, &MainWindow::handleAddMaterial);
+    connect(m_simSetupUI.btnAddContact, &QPushButton::clicked, this, &MainWindow::handleAddContact);
+    connect(m_simSetupUI.btnAddIC, &QPushButton::clicked, this, &MainWindow::handleAddIC);
+    connect(m_simSetupUI.btnAddSection, &QPushButton::clicked, this, &MainWindow::handleAddSection);
+    connect(m_simSetupUI.btnClearSummary, &QPushButton::clicked, this, &MainWindow::handleClearSummary);
+    // 这里的 btnExportKFile 连接到你之前写的 handleApplySimulationSettings
+    connect(m_simSetupUI.btnExportKFile, &QPushButton::clicked, this, &MainWindow::handleApplySimulationSettings);
 }
 
 void MainWindow::handleMaterialTypeChanged(const QString& matType) {
@@ -1515,4 +1562,51 @@ void MainWindow::updateAllEntitySelectors() {
     m_simSetupUI.contactMasterSelector->setCurrentText(curMaster);
     m_simSetupUI.contactSlaveSelector->setCurrentText(curSlave);
     m_simSetupUI.sectionEntitySelector->setCurrentText(curSec);
+}
+
+void MainWindow::handleAddMaterial() {
+    QString target = m_simSetupUI.entitySelector->currentText();
+    QString preset = m_simSetupUI.presetSelector->currentText();
+    bool useErosion = m_simSetupUI.erosionGroup->isChecked();
+
+    QString summary = QString("[材料] 实体: %1 | 预设: %2").arg(target).arg(preset);
+    if (useErosion) {
+        summary += QString(" | 侵蚀开启 (MXEPS=%1)").arg(m_simSetupUI.erosionMxeps->value());
+    }
+
+    m_simSetupUI.setupSummaryList->addItem(summary);
+    // 这里可以同时调用底层 C++ 库将参数真正存入你的 LSDynaDeck 中
+}
+
+void MainWindow::handleAddContact() {
+    QString type = m_simSetupUI.contactTypeSelector->currentText().remove("*CONTACT_"); // 简化显示名称
+    QString master = m_simSetupUI.contactMasterSelector->currentText();
+    QString slave = m_simSetupUI.contactSlaveSelector->currentText();
+
+    QString summary = QString("[接触] %1 | 主面: %2 | 从面: %3").arg(type).arg(master).arg(slave);
+    m_simSetupUI.setupSummaryList->addItem(summary);
+}
+
+void MainWindow::handleAddIC() {
+    QString target = m_simSetupUI.icEntitySelector->currentText();
+    double vx = m_simSetupUI.icVx->value();
+    double vy = m_simSetupUI.icVy->value();
+    double vz = m_simSetupUI.icVz->value();
+
+    QString summary = QString("[初始速度] 实体: %1 | V=(%2, %3, %4)")
+        .arg(target).arg(vx).arg(vy).arg(vz);
+    m_simSetupUI.setupSummaryList->addItem(summary);
+}
+
+void MainWindow::handleAddSection() {
+    QString target = m_simSetupUI.sectionEntitySelector->currentText();
+    QString type = m_simSetupUI.sectionTypeSelector->currentText().remove("*SECTION_");
+
+    QString summary = QString("[截面] 实体: %1 | 类型: %2").arg(target).arg(type);
+    m_simSetupUI.setupSummaryList->addItem(summary);
+}
+
+void MainWindow::handleClearSummary() {
+    m_simSetupUI.setupSummaryList->clear();
+    // 伪代码: m_deck.clearAllParams(); // 清空底层的卡片数据，防止旧数据残留
 }

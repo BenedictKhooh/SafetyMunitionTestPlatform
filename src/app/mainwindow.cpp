@@ -10,6 +10,11 @@
 #include <QFileInfo>
 #include "MeshUtils.h"
 
+#include <QFile>
+#include <QTextStream>
+#include <QDir>
+#include <QMessageBox>
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     
@@ -1476,38 +1481,84 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
 }
 
 void MainWindow::handleApplySimulationSettings() {
-    // 假设你有一个全局或成员变量 LSDynaDeck m_deck; 专门用来生成 .k 文件
-
-    // 1. 获取控制参数
-    double endtim = m_simSetupUI.endtimeInput->value();
-    // 伪代码： m_deck.controlCard.setTerminationTime(endtim);
-
-    // 2. 获取当前实体和材料
-    QString targetEntity = m_simSetupUI.entitySelector->currentText();
-    QString matType = m_simSetupUI.materialSelector->currentText();
-
-    // 使用我们保存的输入框 QMap 一键取值
-    auto val = [&](QString key) {
-        return m_simSetupUI.currentMatInputs.contains(key) ? m_simSetupUI.currentMatInputs[key]->value() : 0.0;
-        };
-
-    if (matType == "*MAT_JOHNSON_COOK") {
-        // 伪代码：调用你刚写的类
-        // MAT_JohnsonCookCard jcCard;
-        // jcCard.RO = val("ro");
-        // jcCard.A = val("a");
-        // m_deck.addMaterial(jcCard);
+    // 1. 检查工作目录
+    if (m_workingDirectory.isEmpty()) {
+        QMessageBox::warning(this, "警告", "请先在 File 菜单中设置工作目录！");
+        return;
     }
-    else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") {
-        // 伪代码
-        // MAT_HighExplosiveBurn heb;
-        // heb.RO = val("ro");
-        // heb.D = val("d");
-        // EOS_JWL jwl;
-        // jwl.A = val("jwl_a"); ...
-        // heb.attachEOS(jwl);
-        // m_deck.addMaterial(heb);
+
+    // 2. 确定最终的单一文件路径
+    QString jobTitle = m_simSetupUI.jobTitleInput->text();
+    if (jobTitle.isEmpty()) jobTitle = "Simulation_Job";
+    QString kFilePath = QDir(m_workingDirectory).filePath(jobTitle + ".k");
+
+    // ==========================================
+    // 第一步：调用你原有的成功方法，直接导出网格
+    // ==========================================
+    exportToKFile(kFilePath);
+
+    // ==========================================
+    // 第二步：打开该文件，追加控制与物理参数
+    // ==========================================
+    QFile file(kFilePath);
+    if (!file.open(QIODevice::ReadWrite | QIODevice::Text)) {
+        QMessageBox::critical(this, "错误", "无法打开生成的 K 文件以追加参数！");
+        return;
     }
+
+    // 读取已有的网格内容，找到最后面的 *END 并截断掉
+    QString content = QString::fromUtf8(file.readAll());
+    int endIndex = content.lastIndexOf("*END");
+    if (endIndex != -1) {
+        content.truncate(endIndex); // 把 *END 及其之后的内容全部砍掉
+    }
+
+    // 清空文件，重新写入去掉了 *END 的网格内容
+    file.resize(0);
+    QTextStream out(&file);
+    out << content;
+
+    // ==========================================
+    // 第三步：直接在此处追加 UI 面板里的控制卡片
+    // ==========================================
+    out << "\n$ ===================================================================\n";
+    out << "$ CONTROL AND DATABASE (Appended from UI Settings)\n";
+    out << "$ ===================================================================\n";
+
+    // 写入标题
+    out << "*TITLE\n";
+    out << jobTitle << "\n";
+
+    // 写入求解时间
+    out << "*CONTROL_TERMINATION\n";
+    out << QString("%1, 0.0, 0.0, 0.0, 0.0\n").arg(m_simSetupUI.endtimeInput->value(), 0, 'f', 4);
+
+    // 写入时间步控制
+    out << "*CONTROL_TIMESTEP\n";
+    out << QString("0.0, %1, 0, 0.0, 0.0, 1, 0, 0\n").arg(m_simSetupUI.tssfacInput->value(), 0, 'f', 4);
+
+    // 写入 D3PLOT 输出频率
+    out << "*DATABASE_BINARY_D3PLOT\n";
+    out << QString("%1, 0, 0, 0, 0, 0\n").arg(m_simSetupUI.d3plotFreqInput->value(), 0, 'f', 4);
+
+    // ==========================================
+    // 第四步：追加底层的其他卡片 (材料、接触、初始条件)
+    // ==========================================
+    // 如果你底层有 LSDynaDeck m_deck 或者其他存储类，在这里直接输出：
+    // out << QString::fromStdString(m_deck.generateKFileText());
+
+    out << "\n"; // 空一行以保美观
+
+    // 重新封口
+    out << "*END\n";
+
+    file.close();
+
+    // ==========================================
+    // 结尾：提示成功
+    // ==========================================
+    logCommand("Export", "K 文件已成功导出并追加控制参数: " + kFilePath);
+    QMessageBox::information(this, "导出成功", "一键生成 K 文件成功！\n文件路径：" + kFilePath);
 }
 
 // ==========================================

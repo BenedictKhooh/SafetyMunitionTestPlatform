@@ -1,20 +1,35 @@
-#pragma once
+﻿#ifndef INITIALCONDITIONS_H
+#define INITIALCONDITIONS_H
+#include <string>
+#include <cstdio>
 #include "src/core/common/KeywordCard.h"
-#include "src/core/common/DynaFormat.h"
-#include <sstream>
 
-class InitialVelocityCard : public KeywordCard {
-public:
-    int id; // pid or nsid
-    double vx;
-    InitialVelocityCard(int target_id, double vel_x) : id(target_id), vx(vel_x) {}
-    std::string generate() const override {
-        std::stringstream ss;
-        ss << "*INITIAL_VELOCITY_GENERATION\n";
-        ss << "$#nsid/pid      styp     omega        vx        vy        vz     ivatn      icid\n";
-        ss << DynaFormat::I10(id) << "         2       0.0" << DynaFormat::F10(vx) << "       0.0       0.0         0         0\n";
-        ss << "$#      xc        yc        zc        nx        ny        nz     phase    irigid\n";
-        ss << "       0.0       0.0       0.0       0.0       1.0       0.0         0         0\n";
-        return ss.str();
+struct InitialVelocityGenerationCard : public KeywordCard {
+    int nsid;
+    int styp;
+    double vx, vy, vz;
+    double omega;
+
+    // 默认构造
+    InitialVelocityGenerationCard() = default;
+
+    // 🌟 强类型参数构造
+    InitialVelocityGenerationCard(int partId, double x, double y, double z) {
+        nsid = partId;
+        styp = 2; // Auto: 作用于 Part
+        omega = 0.0;
+        vx = x; vy = y; vz = z;
+    }
+
+    // 🌟 核心多态方法实现
+    std::string to_string() const override {
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+            "*INITIAL_VELOCITY_GENERATION\n"
+            "$#nsid/pid      styp     omega        vx        vy        vz      ivat      icid\n"
+            "%10d%10d       0.0%10.4f%10.4f%10.4f         0         0\n",
+            nsid, styp, vx, vy, vz);
+        return std::string(buf);
     }
 };
+#endif

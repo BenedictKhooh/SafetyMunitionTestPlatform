@@ -1481,84 +1481,46 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
 }
 
 void MainWindow::handleApplySimulationSettings() {
-    // 1. 检查工作目录
     if (m_workingDirectory.isEmpty()) {
-        QMessageBox::warning(this, "警告", "请先在 File 菜单中设置工作目录！");
+        QMessageBox::warning(this, "警告", "请先设置工作目录！");
         return;
     }
 
-    // 2. 确定最终的单一文件路径
     QString jobTitle = m_simSetupUI.jobTitleInput->text();
     if (jobTitle.isEmpty()) jobTitle = "Simulation_Job";
-    QString kFilePath = QDir(m_workingDirectory).filePath(jobTitle + ".k");
 
-    // ==========================================
-    // 第一步：调用你原有的成功方法，直接导出网格
-    // ==========================================
-    exportToKFile(kFilePath);
+    QString meshFileName = jobTitle + "_mesh.k";
+    QString controlFileName = jobTitle + "_control.k";
 
-    // ==========================================
-    // 第二步：打开该文件，追加控制与物理参数
-    // ==========================================
-    QFile file(kFilePath);
-    if (!file.open(QIODevice::ReadWrite | QIODevice::Text)) {
-        QMessageBox::critical(this, "错误", "无法打开生成的 K 文件以追加参数！");
-        return;
+    // 1. 导出几何网格 (保留你的原有代码)
+    exportToKFile(QDir(m_workingDirectory).filePath(meshFileName));
+
+    // 2. 导出控制文件
+    QFile controlFile(QDir(m_workingDirectory).filePath(controlFileName));
+    if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&controlFile);
+
+        // 写入固定头部
+        out << "*KEYWORD MEMORY=399999999\n";
+        out << "*TITLE\n" << jobTitle << "\n";
+        out << "*INCLUDE\n" << meshFileName << "\n"; // Include网格
+
+        // 🌟 核心点 1：把全局控制卡丢给管家（读取时间步、结束时间等）
+        m_deck.addCard(std::make_shared<GlobalControlCard>(
+            m_simSetupUI.endtimeInput->value(),
+            m_simSetupUI.tssfacInput->value(),
+            m_simSetupUI.d3plotFreqInput->value()
+        ));
+
+        // 🌟 核心点 2：一键多态序列化！
+        // m_deck 会遍历内部所有的 shared_ptr<KeywordCard>，挨个调用它们自己的 to_string()
+        out << QString::fromStdString(m_deck.generateDeck());
+
+        out << "*END\n";
+        controlFile.close();
     }
 
-    // 读取已有的网格内容，找到最后面的 *END 并截断掉
-    QString content = QString::fromUtf8(file.readAll());
-    int endIndex = content.lastIndexOf("*END");
-    if (endIndex != -1) {
-        content.truncate(endIndex); // 把 *END 及其之后的内容全部砍掉
-    }
-
-    // 清空文件，重新写入去掉了 *END 的网格内容
-    file.resize(0);
-    QTextStream out(&file);
-    out << content;
-
-    // ==========================================
-    // 第三步：直接在此处追加 UI 面板里的控制卡片
-    // ==========================================
-    out << "\n$ ===================================================================\n";
-    out << "$ CONTROL AND DATABASE (Appended from UI Settings)\n";
-    out << "$ ===================================================================\n";
-
-    // 写入标题
-    out << "*TITLE\n";
-    out << jobTitle << "\n";
-
-    // 写入求解时间
-    out << "*CONTROL_TERMINATION\n";
-    out << QString("%1, 0.0, 0.0, 0.0, 0.0\n").arg(m_simSetupUI.endtimeInput->value(), 0, 'f', 4);
-
-    // 写入时间步控制
-    out << "*CONTROL_TIMESTEP\n";
-    out << QString("0.0, %1, 0, 0.0, 0.0, 1, 0, 0\n").arg(m_simSetupUI.tssfacInput->value(), 0, 'f', 4);
-
-    // 写入 D3PLOT 输出频率
-    out << "*DATABASE_BINARY_D3PLOT\n";
-    out << QString("%1, 0, 0, 0, 0, 0\n").arg(m_simSetupUI.d3plotFreqInput->value(), 0, 'f', 4);
-
-    // ==========================================
-    // 第四步：追加底层的其他卡片 (材料、接触、初始条件)
-    // ==========================================
-    // 如果你底层有 LSDynaDeck m_deck 或者其他存储类，在这里直接输出：
-    // out << QString::fromStdString(m_deck.generateKFileText());
-
-    out << "\n"; // 空一行以保美观
-
-    // 重新封口
-    out << "*END\n";
-
-    file.close();
-
-    // ==========================================
-    // 结尾：提示成功
-    // ==========================================
-    logCommand("Export", "K 文件已成功导出并追加控制参数: " + kFilePath);
-    QMessageBox::information(this, "导出成功", "一键生成 K 文件成功！\n文件路径：" + kFilePath);
+    QMessageBox::information(this, "导出成功", "仿真文件打包成功！控制文件与网格文件已分离。");
 }
 
 // ==========================================
@@ -1617,16 +1579,34 @@ void MainWindow::updateAllEntitySelectors() {
 
 void MainWindow::handleAddMaterial() {
     QString target = m_simSetupUI.entitySelector->currentText();
-    QString preset = m_simSetupUI.presetSelector->currentText();
-    bool useErosion = m_simSetupUI.erosionGroup->isChecked();
+    if (target.isEmpty()) return;
 
-    QString summary = QString("[材料] 实体: %1 | 预设: %2").arg(target).arg(preset);
-    if (useErosion) {
-        summary += QString(" | 侵蚀开启 (MXEPS=%1)").arg(m_simSetupUI.erosionMxeps->value());
+    auto part = getOrCreatePart(target);
+    QString matType = m_simSetupUI.materialSelector->currentText().remove("*MAT_");
+
+    // 1. 将前端所有的 QDoubleSpinBox 动态输入抓取为字典
+    std::map<std::string, double> paramDict;
+    for (auto it = m_simSetupUI.currentMatInputs.begin(); it != m_simSetupUI.currentMatInputs.end(); ++it) {
+        paramDict[it.key().toStdString()] = it.value()->value();
+    }
+    if (m_simSetupUI.erosionGroup->isChecked()) {
+        paramDict["mxeps"] = m_simSetupUI.erosionMxeps->value();
     }
 
-    m_simSetupUI.setupSummaryList->addItem(summary);
-    // 这里可以同时调用底层 C++ 库将参数真正存入你的 LSDynaDeck 中
+    // 2. 实例化材料卡丢入管家
+    m_deck.addCard(std::make_shared<MaterialCard>(part->pid, matType.toStdString(), paramDict));
+
+    // 3. 根据材料类型自动挂载 EOS
+    if (matType == "JOHNSON_COOK") {
+        m_deck.addCard(std::make_shared<EOSCard>(part->pid, "GRUNEISEN", paramDict));
+        part->eosid = part->pid; // 🌟 直接通过智能指针修改实体绑定的 eosid，极其方便！
+    }
+    else if (matType == "HIGH_EXPLOSIVE_BURN") {
+        m_deck.addCard(std::make_shared<EOSCard>(part->pid, "JWL", paramDict));
+        part->eosid = part->pid;
+    }
+
+    m_simSetupUI.setupSummaryList->addItem(QString("[材料] 实体:%1 | %2").arg(target).arg(matType));
 }
 
 void MainWindow::handleAddContact() {
@@ -1640,12 +1620,20 @@ void MainWindow::handleAddContact() {
 
 void MainWindow::handleAddIC() {
     QString target = m_simSetupUI.icEntitySelector->currentText();
-    double vx = m_simSetupUI.icVx->value();
-    double vy = m_simSetupUI.icVy->value();
-    double vz = m_simSetupUI.icVz->value();
+    if (target.isEmpty()) return;
 
-    QString summary = QString("[初始速度] 实体: %1 | V=(%2, %3, %4)")
-        .arg(target).arg(vx).arg(vy).arg(vz);
+    auto part = getOrCreatePart(target); // 获取实体对应的 Part 指针
+
+    // 🌟 实例化并推入容器 (利用多态)
+    m_deck.addCard(std::make_shared<InitialVelocityGenerationCard>(
+        part->pid,
+        m_simSetupUI.icVx->value(),
+        m_simSetupUI.icVy->value(),
+        m_simSetupUI.icVz->value()
+    ));
+
+    // 更新前端列表
+    QString summary = QString("[初始速度] 实体: %1 | V=(%2, %3, %4)").arg(target).arg(m_simSetupUI.icVx->value()).arg(m_simSetupUI.icVy->value()).arg(m_simSetupUI.icVz->value());
     m_simSetupUI.setupSummaryList->addItem(summary);
 }
 
@@ -1658,6 +1646,27 @@ void MainWindow::handleAddSection() {
 }
 
 void MainWindow::handleClearSummary() {
+    // 1. 清空前端显示列表
     m_simSetupUI.setupSummaryList->clear();
-    // 伪代码: m_deck.clearAllParams(); // 清空底层的卡片数据，防止旧数据残留
+
+    // 2. 清空实体指针映射字典
+    m_entityParts.clear();
+
+    m_deck.clear();
+}
+
+// 在 mainwindow.cpp 空白处添加
+std::shared_ptr<PartCard> MainWindow::getOrCreatePart(const QString& entityName) {
+    if (!m_entityParts.contains(entityName)) {
+        // 分配一个新的 PID (1, 2, 3...)
+        int pid = m_entityParts.size() + 1;
+
+        // 实例化 PartCard 智能指针
+        auto part = std::make_shared<PartCard>(pid, entityName.toStdString());
+
+        m_deck.addCard(part);
+
+        m_entityParts[entityName] = part;
+    }
+    return m_entityParts[entityName];
 }

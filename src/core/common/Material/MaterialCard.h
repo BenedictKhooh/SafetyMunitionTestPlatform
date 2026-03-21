@@ -1,48 +1,77 @@
-#pragma once
-#include "src/core/common/KeywordCard.h"
+ï»¿#ifndef MATERIALCARD_H
+#define MATERIALCARD_H
 #include <string>
+#include <map>
+#include <cstdio>
+#include "src/core/common/KeywordCard.h"
 
-// --- Johnson-Cook (´øÍêÕû D1-D5 ËðÉË²ÎÊý) ---
-class MaterialJohnsonCook : public KeywordCard {
-public:
-    int mid; std::string title;
-    double ro, g, e, pr;
-    double a, b, n, c, m, tm, tr, epso;
-    double cp, pc, spall, it, d1, d2, d3, d4, d5;
-    MaterialJohnsonCook(int id, std::string t);
-    std::string generate() const override;
-};
+struct MaterialCard : public KeywordCard {
+    int mid;
+    std::string keyword;
+    std::map<std::string, double> p;
 
-// --- Lee-Tarver ×´Ì¬·½³Ì (ÓÃÓÚÕ¨Ò©Æð±¬) ---
-class EOSLeeTarver : public KeywordCard {
-public:
-    int eosid;
-    double a, b, xp1, xp2, frer, g, r1, r2, r3, r5, r6, fmxig, freq, grow1, em;
-    double ar1, es1, cvp, cvr, eetal, ccrit, enq, tmp0, grow2, ar2, es2, en, fmxgr, fmngr;
-    EOSLeeTarver(int id);
-    std::string generate() const override;
-};
+    MaterialCard() = default;
 
-// --- Plastic Kinematic (ÓÃÓÚ¿ÇÌå¼òµ¥ËÜÐÔ) ---
-class MatPlasticKinematic : public KeywordCard {
-public:
-    int mid; double ro, e, pr, sigy, etan, beta;
-    MatPlasticKinematic(int id, double r, double elastic, double p_ratio, double yield, double tangent);
-    std::string generate() const override;
-};
+    // ðŸŒŸ å­—å…¸æž„é€ å‡½æ•° (æ–¹ä¾¿ make_shared)
+    MaterialCard(int pid, const std::string& type, const std::map<std::string, double>& params) {
+        mid = pid;
+        keyword = type;
+        p = params;
+    }
 
-// --- Gruneisen ×´Ì¬·½³Ì ---
-class EOSGruneisen : public KeywordCard {
-public:
-    int eosid; double c, s1, s2, s3, gamao, a, e0, v0;
-    EOSGruneisen(int id, double C_val, double S1_val, double G_val, double A_val);
-    std::string generate() const override;
-};
+    // ðŸŒŸ æ ¸å¿ƒå¤šæ€æ–¹æ³•å®žçŽ°
+    std::string to_string() const override {
+        char buf[1024] = { 0 };
+        auto getVal = [&](const std::string& key) { return p.count(key) ? p.at(key) : 0.0; };
 
-// --- ÇÖÊ´Ê§Ð§×¼Ôò ---
-class MatAddErosion : public KeywordCard {
-public:
-    int mid; double effeps, mxeps;
-    MatAddErosion(int m_id, double effective_strain, double max_strain);
-    std::string generate() const override;
+        if (keyword == "JOHNSON_COOK") {
+            snprintf(buf, sizeof(buf),
+                "*MAT_JOHNSON_COOK\n"
+                "$#     mid        ro         g         e        pr     dtf     vp    rateop\n"
+                "%10d%10.4E%10.4E       0.3       0.0       0.0       0.0\n"
+                "$#       a         b         n         c         m     tmelt      tr     epso\n"
+                "%10.4E%10.4E%10.4f%10.4f%10.4f%10.1f       0.0       0.0\n"
+                "$#      cp        pc     spall        it        d1        d2        d3        d4\n"
+                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n",
+                mid, getVal("ro"), getVal("g"), getVal("a"), getVal("b"), getVal("n"), getVal("c"), getVal("m"), getVal("tmelt")
+            );
+        }
+        else if (keyword == "PLASTIC_KINEMATIC") {
+            snprintf(buf, sizeof(buf),
+                "*MAT_PLASTIC_KINEMATIC\n"
+                "$#     mid        ro         e        pr      sigy      etan      beta\n"
+                "%10d%10.4E%10.4E%10.4f%10.4E%10.4f       1.0\n"
+                "$#     src       srp        fs        vp\n"
+                "       0.0       0.0       1.0       1.0\n",
+                mid, getVal("ro"), getVal("e"), getVal("pr"), getVal("sigy"), getVal("etan")
+            );
+        }
+        else if (keyword == "HIGH_EXPLOSIVE_BURN") {
+            snprintf(buf, sizeof(buf),
+                "*MAT_HIGH_EXPLOSIVE_BURN\n"
+                "$#     mid        ro         d       pcj      beta         k         g   sigmay\n"
+                "%10d%10.4E%10.4E%10.4E         0         0         0         0\n",
+                mid, getVal("ro"), getVal("d"), getVal("pcj")
+            );
+        }
+
+        std::string res = buf;
+
+        // å¦‚æžœç”¨æˆ·åœ¨UIä¸Šå‹¾é€‰äº†ä¾µèš€ï¼Œè¿™é‡Œä¼šè‡ªåŠ¨è¿½åŠ ä¾µèš€å¡
+        if (p.count("mxeps") && p.at("mxeps") > 0.0) {
+            char eroBuf[512];
+            snprintf(eroBuf, sizeof(eroBuf),
+                "*MAT_ADD_EROSION\n"
+                "$#     mid      excl    mxpres     mneps    effeps    voleps    numfip       ncs\n"
+                "%10d       0.0       0.0       0.0       0.0       0.0       1.0       1.0\n"
+                "$#  mnpres     sigp1     sigvm     mxeps     epssh     sigth   impulse    failtm\n"
+                "       0.0       0.0       0.0%10.4f       0.0       0.0       0.0       0.0\n",
+                mid, p.at("mxeps")
+            );
+            res += eroBuf;
+        }
+
+        return res;
+    }
 };
+#endif

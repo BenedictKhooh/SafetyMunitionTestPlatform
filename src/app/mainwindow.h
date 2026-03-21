@@ -1,4 +1,4 @@
-#ifndef MAINWINDOW_H
+ï»¿#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -23,6 +23,17 @@
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 
+// Keyword Cards headers
+#include "src/core/common/LSDynaDeck.h"
+#include "src/core/common/Part/PartCard.h"
+#include "src/core/common/Contact/ContactCard.h"
+#include "src/core/common/Material/MaterialCard.h"
+#include "src/core/eos/eos.h"
+#include "src/core/common/InitialConditions/InitialConditions.h"
+#include "src/core/common/GlobalControl/GlobalControl.h"
+#include <memory>
+//
+
 // Forward declaration
 class GLWidget;
 class QPushButton;
@@ -41,13 +52,13 @@ private slots:
 
     void parseMeshFile( QString fileName );
 
-    // [ĞÂÔö] ¸÷¸ö¡°Ìí¼Ó¡±²Ù×÷µÄÏìÓ¦º¯Êı
+    // [æ–°å¢] å„ä¸ªâ€œæ·»åŠ â€æ“ä½œçš„å“åº”å‡½æ•°
     void handleAddMaterial();
     void handleAddContact();
     void handleAddIC();
     void handleAddSection();
 
-    // [ĞÂÔö] Çå¿ÕÁĞ±í
+    // [æ–°å¢] æ¸…ç©ºåˆ—è¡¨
     void handleClearSummary();
 
 private:
@@ -61,7 +72,7 @@ private:
     void showHelp();
 
 private:
-    // ¶¨ÒåÒ»¸ö½á¹¹ÌåÀ´¹ÜÀíÃ¿¸ö¶ÀÁ¢´°¿ÚµÄ UI ¿Ø¼ş
+    // å®šä¹‰ä¸€ä¸ªç»“æ„ä½“æ¥ç®¡ç†æ¯ä¸ªç‹¬ç«‹çª—å£çš„ UI æ§ä»¶
     struct GeneratorUI {
         QComboBox* shapeComboBox;
         QWidget* paramContainer;
@@ -70,18 +81,18 @@ private:
         QMap<QString, QDoubleSpinBox*> paramInputs;
     };
 
-    // ÉùÃ÷Èı¸ö¶ÀÁ¢´°¿ÚµÄ UI ¹ÜÀíÆ÷
-    GeneratorUI m_fragmentUI; // ÆÆÆ¬
-    GeneratorUI m_shellUI;    // ¿ÇÌå
-    GeneratorUI m_chargeUI;   // ×°Ò©
+    // å£°æ˜ä¸‰ä¸ªç‹¬ç«‹çª—å£çš„ UI ç®¡ç†å™¨
+    GeneratorUI m_fragmentUI; // ç ´ç‰‡
+    GeneratorUI m_shellUI;    // å£³ä½“
+    GeneratorUI m_chargeUI;   // è£…è¯
 
-    // ÉùÃ÷Í³Ò»µÄ´´½¨´°¿ÚµÄ¸¨Öúº¯Êı
+    // å£°æ˜ç»Ÿä¸€çš„åˆ›å»ºçª—å£çš„è¾…åŠ©å‡½æ•°
     void setupGeneratorTab(QTabWidget* tabWidget, const QString& title, const QStringList& shapes, GeneratorUI& ui);
-    // ÖØ¹¹µÄ²Ûº¯Êı£¬½«¾ßÌåµÄ ui ½á¹¹Ìå×÷Îª²ÎÊı´«Èë
+    // é‡æ„çš„æ§½å‡½æ•°ï¼Œå°†å…·ä½“çš„ ui ç»“æ„ä½“ä½œä¸ºå‚æ•°ä¼ å…¥
     void handleShapeTypeChanged(GeneratorUI& ui, const QString& text);
     void handleGenerateButtonClicked(GeneratorUI& ui);
 
-    // ¸üĞÂ¸¨Öúº¯Êı£¬¼ÓÈë GeneratorUI ²ÎÊı
+    // æ›´æ–°è¾…åŠ©å‡½æ•°ï¼ŒåŠ å…¥ GeneratorUI å‚æ•°
     void addNumParamToUI(GeneratorUI& ui, const QString& labelText, const QString& key, double defaultValue);
 
     QTextEdit *commandHistoryEdit;
@@ -123,92 +134,103 @@ private:
     std::vector<MeshPoint> m_points_sphere;*/
 
     //store all the points
-    EntityRepository m_repository; // ÊµÌå²Ö¿âÊµÀı
-    void redrawAllEntities();      // ·â×°Ò»¸öÈ«Á¿ÖØ»æµÄº¯Êı
+    EntityRepository m_repository; // å®ä½“ä»“åº“å®ä¾‹
+    void redrawAllEntities();      // å°è£…ä¸€ä¸ªå…¨é‡é‡ç»˜çš„å‡½æ•°
     void clearAllEntities();
 
-    void exportToKFile(const QString& fileName); // µ¼³öÂß¼­
+    void exportToKFile(const QString& fileName); // å¯¼å‡ºé€»è¾‘
 
-	void handleTranslateEntity(const QString& entityName);//Æ½ÒÆ
-	void handleScaleEntity(const QString& entityName);   //Ëõ·Å
-	void handleRotateEntity(const QString& entityName);   //Ğı×ª
-	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // ±ä»»Ó¦ÓÃº¯Êı
+	void handleTranslateEntity(const QString& entityName);//å¹³ç§»
+	void handleScaleEntity(const QString& entityName);   //ç¼©æ”¾
+	void handleRotateEntity(const QString& entityName);   //æ—‹è½¬
+	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // å˜æ¢åº”ç”¨å‡½æ•°
 
-    QString m_workingDirectory; // [ĞÂÔö] ÓÃÓÚ±£´æµ±Ç°µÄ¹¤×÷Ä¿Â¼Â·¾¶
+    QString m_workingDirectory; // [æ–°å¢] ç”¨äºä¿å­˜å½“å‰çš„å·¥ä½œç›®å½•è·¯å¾„
 
-    // ·ÂÕæÉèÖÃ UI ¹ÜÀíÆ÷
+    // ä»¿çœŸè®¾ç½® UI ç®¡ç†å™¨
     struct SimulationSetupUI {
         QTabWidget* mainTab;
 
-        // --- ²ÄÁÏ±êÇ©Ò³×é¼ş ---
-        QComboBox* entitySelector;   // Ñ¡Ôñ¸øÄÄ¸öÊµÌå¸³Óè²ÄÁÏ
-        QComboBox* materialSelector; // ±ÈÈç "MAT_JOHNSON_COOK", "MAT_HIGH_EXPLOSIVE_BURN"
-        QComboBox* eosSelector;      // ±ÈÈç "EOS_JWL", "None" (¶¯Ì¬ÏÔÊ¾/Òş²Ø)
-        QWidget* matParamContainer;  // ²ÄÁÏ²ÎÊı¶¯Ì¬Éú³ÉÇø
+        // --- ææ–™æ ‡ç­¾é¡µç»„ä»¶ ---
+        QComboBox* entitySelector;   // é€‰æ‹©ç»™å“ªä¸ªå®ä½“èµ‹äºˆææ–™
+        QComboBox* materialSelector; // æ¯”å¦‚ "MAT_JOHNSON_COOK", "MAT_HIGH_EXPLOSIVE_BURN"
+        QComboBox* eosSelector;      // æ¯”å¦‚ "EOS_JWL", "None" (åŠ¨æ€æ˜¾ç¤º/éšè—)
+        QWidget* matParamContainer;  // ææ–™å‚æ•°åŠ¨æ€ç”ŸæˆåŒº
         QFormLayout* matParamLayout;
 
-        // --- ¿ØÖÆ¿¨±êÇ©Ò³×é¼ş ---
+        // --- æ§åˆ¶å¡æ ‡ç­¾é¡µç»„ä»¶ ---
         QDoubleSpinBox* endtimeInput;
         QDoubleSpinBox* dtinitInput;
         QDoubleSpinBox* d3plotFreqInput;
 
-        // ±£´æËùÓĞµÄ¶¯Ì¬ÊäÈë¿òÖ¸Õë£¬±ãÓÚÒ»¼ü»ñÈ¡Êı¾İ
+        // ä¿å­˜æ‰€æœ‰çš„åŠ¨æ€è¾“å…¥æ¡†æŒ‡é’ˆï¼Œä¾¿äºä¸€é”®è·å–æ•°æ®
         QMap<QString, QDoubleSpinBox*> currentMatInputs;
 
-        // --- [ĞÂÔö] ²ÄÁÏÊ§Ğ§ÓëÇÖÊ´ (¸½¼ÓÔÚ²ÄÁÏ Tab µ×²¿) ---
-        QGroupBox* erosionGroup;      // ÇÖÊ´ÉèÖÃµÄ×éºÏ¿ò
-        QCheckBox* erosionEnable;     // ÊÇ·ñÆôÓÃ *MAT_ADD_EROSION
-        QDoubleSpinBox* erosionMxeps;   // ×î´óÊ§Ğ§Ó¦±ä
+        // --- [æ–°å¢] ææ–™å¤±æ•ˆä¸ä¾µèš€ (é™„åŠ åœ¨ææ–™ Tab åº•éƒ¨) ---
+        QGroupBox* erosionGroup;      // ä¾µèš€è®¾ç½®çš„ç»„åˆæ¡†
+        QCheckBox* erosionEnable;     // æ˜¯å¦å¯ç”¨ *MAT_ADD_EROSION
+        QDoubleSpinBox* erosionMxeps;   // æœ€å¤§å¤±æ•ˆåº”å˜
 
-        // --- [ĞÂÔö] 2. ³õÊ¼Ìõ¼ş (Initial Conditions) ---
-        QComboBox* icEntitySelector;    // Ñ¡ÔñÊ©¼Ó³õÊ¼ËÙ¶ÈµÄÊµÌå
+        // --- [æ–°å¢] 2. åˆå§‹æ¡ä»¶ (Initial Conditions) ---
+        QComboBox* icEntitySelector;    // é€‰æ‹©æ–½åŠ åˆå§‹é€Ÿåº¦çš„å®ä½“
         QDoubleSpinBox* icVx;
         QDoubleSpinBox* icVy;
         QDoubleSpinBox* icVz;
 
-        // --- [ĞÂÔö] 3. ½Ó´¥¶¨Òå (Contact) ---
-        QComboBox* contactTypeSelector; // ½Ó´¥ÀàĞÍÏÂÀ­¿ò
-        QComboBox* contactMasterSelector; // Ö÷ÃæÊµÌå
-        QComboBox* contactSlaveSelector;  // ´ÓÃæÊµÌå
-        QDoubleSpinBox* contactFs;        // ¾²Ä¦²ÁÏµÊı
-        QDoubleSpinBox* contactFd;        // ¶¯Ä¦²ÁÏµÊı
+        // --- [æ–°å¢] 3. æ¥è§¦å®šä¹‰ (Contact) ---
+        QComboBox* contactTypeSelector; // æ¥è§¦ç±»å‹ä¸‹æ‹‰æ¡†
+        QComboBox* contactMasterSelector; // ä¸»é¢å®ä½“
+        QComboBox* contactSlaveSelector;  // ä»é¢å®ä½“
+        QDoubleSpinBox* contactFs;        // é™æ‘©æ“¦ç³»æ•°
+        QDoubleSpinBox* contactFd;        // åŠ¨æ‘©æ“¦ç³»æ•°
 
-        // --- [ĞÂÔö] 4. ½ØÃæÊôĞÔ (Section) ---
-        QComboBox* sectionEntitySelector; // Ä¿±êÊµÌå
-        QComboBox* sectionTypeSelector;   // Solid »¹ÊÇ Shell
-        QComboBox* sectionElformSelector; // µ¥ÔªËã·¨ (ELFORM)
+        // --- [æ–°å¢] 4. æˆªé¢å±æ€§ (Section) ---
+        QComboBox* sectionEntitySelector; // ç›®æ ‡å®ä½“
+        QComboBox* sectionTypeSelector;   // Solid è¿˜æ˜¯ Shell
+        QComboBox* sectionElformSelector; // å•å…ƒç®—æ³• (ELFORM)
 
-        // --- 5. Çó½â¿ØÖÆ (Control) ---
-        QLineEdit* jobTitleInput;         // [ĞÂÔö] ÏîÄ¿Ãû³Æ
-        QDoubleSpinBox* tssfacInput;      // [ĞÂÔö] Ê±¼ä²½Ëõ·ÅÒò×Ó
+        // --- 5. æ±‚è§£æ§åˆ¶ (Control) ---
+        QLineEdit* jobTitleInput;         // [æ–°å¢] é¡¹ç›®åç§°
+        QDoubleSpinBox* tssfacInput;      // [æ–°å¢] æ—¶é—´æ­¥ç¼©æ”¾å› å­
        
-        // ---¸÷¸öÃæ°åµÄ¡°Ìí¼Ó¡±°´Å¥ ---
+        // ---å„ä¸ªé¢æ¿çš„â€œæ·»åŠ â€æŒ‰é’® ---
         QPushButton* btnAddMaterial;
         QPushButton* btnAddContact;
         QPushButton* btnAddIC;
         QPushButton* btnAddSection;
 
-        // ---µ×²¿ÊµÊ±¹Û²ìÃæ°å ---
-        QListWidget* setupSummaryList; // ÓÃÓÚÏÔÊ¾ÒÑÌí¼ÓµÄ²ÎÊıÌõÄ¿
-        QPushButton* btnClearSummary;  // Çå¿ÕÁĞ±í°´Å¥
-        QPushButton* btnExportKFile;   // ×îÖÕµÄµ¼³ö°´Å¥
+        // ---åº•éƒ¨å®æ—¶è§‚å¯Ÿé¢æ¿ ---
+        QListWidget* setupSummaryList; // ç”¨äºæ˜¾ç¤ºå·²æ·»åŠ çš„å‚æ•°æ¡ç›®
+        QPushButton* btnClearSummary;  // æ¸…ç©ºåˆ—è¡¨æŒ‰é’®
+        QPushButton* btnExportKFile;   // æœ€ç»ˆçš„å¯¼å‡ºæŒ‰é’®
 
-        QComboBox* presetSelector; // [ĞÂÔö] ²ÄÁÏÔ¤ÉèÏÂÀ­¿ò
+        QComboBox* presetSelector; // [æ–°å¢] ææ–™é¢„è®¾ä¸‹æ‹‰æ¡†
     };
 
     SimulationSetupUI m_simSetupUI;
-    void updateAllEntitySelectors();//Ò»¸ö¸¨Öúº¯Êı£¬ÓÃÓÚÍ³Ò»Ë¢ĞÂËùÓĞµÄ¡°ÊµÌåÑ¡ÔñÏÂÀ­¿ò¡±
+    void updateAllEntitySelectors();//ä¸€ä¸ªè¾…åŠ©å‡½æ•°ï¼Œç”¨äºç»Ÿä¸€åˆ·æ–°æ‰€æœ‰çš„â€œå®ä½“é€‰æ‹©ä¸‹æ‹‰æ¡†â€
 
-    // ´´½¨Ãæ°åµÄº¯Êı
+    // åˆ›å»ºé¢æ¿çš„å‡½æ•°
     void createSimulationSetupDock();
 
-    // ¶¯Ì¬Éú³É±íµ¥µÄÏìÓ¦²Ûº¯Êı
+    // åŠ¨æ€ç”Ÿæˆè¡¨å•çš„å“åº”æ§½å‡½æ•°
     void handleMaterialTypeChanged(const QString& matType);
 
-    // ½« UI Êı¾İ±£´æµ½ LSDynaDeck ²Ö¿âÖĞµÄº¯Êı
+    // å°† UI æ•°æ®ä¿å­˜åˆ° LSDynaDeck ä»“åº“ä¸­çš„å‡½æ•°
     void handleApplySimulationSettings();
 
-    //ÏìÓ¦µã»÷¡°ÉèÖÃ¹¤×÷Ä¿Â¼¡±²Ëµ¥µÄ²Ûº¯Êı
+    //å“åº”ç‚¹å‡»â€œè®¾ç½®å·¥ä½œç›®å½•â€èœå•çš„æ§½å‡½æ•°
     void onSetWorkingDirectory();
+
+    // ==========================================
+    // ğŸŒŸ åç«¯æ ¸å¿ƒæ•°æ®é›†ä¸å®ä½“æŒ‡é’ˆæ˜ å°„
+    // ==========================================
+    LSDynaDeck m_deck; // çº¯ç²¹çš„å®¹å™¨ç®¡å®¶
+
+    // è®°å½• UI ä¸Šçš„å®ä½“åç§°å¯¹åº”çš„ PartCard æ™ºèƒ½æŒ‡é’ˆ
+    QMap<QString, std::shared_ptr<PartCard>> m_entityParts;
+
+    // æ ¸å¿ƒæ¡¥æ¢ï¼šè·å–å®ä½“çš„ Part æŒ‡é’ˆï¼Œå¦‚æœä¸å­˜åœ¨åˆ™è‡ªåŠ¨åˆ›å»ºå¹¶ä¸¢å…¥ m_deck
+    std::shared_ptr<PartCard> getOrCreatePart(const QString& entityName);
 };
 #endif // MAINWINDOW_H

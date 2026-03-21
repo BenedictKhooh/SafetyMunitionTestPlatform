@@ -1486,6 +1486,10 @@ void MainWindow::handleApplySimulationSettings() {
         return;
     }
 
+    for (int i = 0; i < m_simSetupUI.entitySelector->count(); ++i) {
+        getOrCreatePart(m_simSetupUI.entitySelector->itemText(i));
+    }
+
     QString jobTitle = m_simSetupUI.jobTitleInput->text();
     if (jobTitle.isEmpty()) jobTitle = "Simulation_Job";
 
@@ -1658,14 +1662,14 @@ void MainWindow::handleClearSummary() {
 // 在 mainwindow.cpp 空白处添加
 std::shared_ptr<PartCard> MainWindow::getOrCreatePart(const QString& entityName) {
     if (!m_entityParts.contains(entityName)) {
-        // 分配一个新的 PID (1, 2, 3...)
-        int pid = m_entityParts.size() + 1;
+        // 假设 entitySelector 里面按顺序存了所有生成的实体
+        int realIndex = m_simSetupUI.entitySelector->findText(entityName);
+        if (realIndex == -1) realIndex = m_entityParts.size(); // 安全兜底
 
-        // 实例化 PartCard 智能指针
+        int pid = realIndex + 1; // 真实 PID (1-based)
+
         auto part = std::make_shared<PartCard>(pid, entityName.toStdString());
-
         m_deck.addCard(part);
-
         m_entityParts[entityName] = part;
     }
     return m_entityParts[entityName];

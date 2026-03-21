@@ -51,7 +51,7 @@ struct GlobalControlCard : public KeywordCard {
             "%10.4f       0.0       0.0       0.0       0.0         0\n"
             "*CONTROL_TIMESTEP\n"
             "$#  dtinit    tssfac      isdo    tslimt     dt2ms      lctm     erode     ms1st\n"
-            "       0.0%10.4f         0       0.0 -1.20E-04         1         0         0\n"
+            "       0.0%10.4f         0       0.0 -1.20E-04         0         0         0\n"
             "*DATABASE_BINARY_D3PLOT\n"
             "$#      dt      lcdt      beam     npltc    psetid      \n"
             "%10.4E         0         0         0         0\n"

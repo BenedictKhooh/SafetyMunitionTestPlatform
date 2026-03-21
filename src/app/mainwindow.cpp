@@ -875,11 +875,6 @@ void MainWindow::exportToKFile(const QString& fileName) {
             globalElemId++;
         }
 
-        // 3. 定义 PART 关键字
-        out << "*PART\n";
-        out << entity.name << "\n";
-        out << partId << ", 1, 1\n"; // 默认分配 SectionID=1, MaterialID=1
-
         partId++;
     }
 
@@ -1317,7 +1312,7 @@ void MainWindow::createSimulationSetupDock() {
     // 3. 底部操作按钮
     QHBoxLayout* bottomBtnLayout = new QHBoxLayout();
     m_simSetupUI.btnClearSummary = new QPushButton("清空 (Clear)");
-    m_simSetupUI.btnExportKFile = new QPushButton("打包导出 K 文件 (Export K File)");
+    m_simSetupUI.btnExportKFile = new QPushButton("导出工况.k文件(Export .k File)");
     m_simSetupUI.btnExportKFile->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;"); // 导出按钮搞个醒目的绿色
 
     bottomBtnLayout->addWidget(m_simSetupUI.btnClearSummary);

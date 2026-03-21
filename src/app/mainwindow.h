@@ -28,7 +28,7 @@
 #include "src/core/common/Part/PartCard.h"
 #include "src/core/common/Contact/ContactCard.h"
 #include "src/core/common/Material/MaterialCard.h"
-#include "src/core/eos/eos.h"
+#include "src/core/common/EOS/EOS.h"
 #include "src/core/common/InitialConditions/InitialConditions.h"
 #include "src/core/common/GlobalControl/GlobalControl.h"
 #include <memory>

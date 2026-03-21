@@ -346,7 +346,7 @@
     <ClCompile Include="src\app\main.cpp" />
     <ClCompile Include="src\app\mainwindow.cpp" />
     <ClCompile Include="src\core\common\EntityRepository.cpp" />
-    <ClCompile Include="src\core\common\EOS\EOS.cpp" />
+    <ClCompile Include="src\core\common\EOS\EOS.h" />
     <ClCompile Include="src\core\common\MeshManager.cpp" />
     <ClCompile Include="src\core\generation\CubeGenerator.cpp" />
     <ClCompile Include="src\core\generation\CylinderGenerator.cpp" />

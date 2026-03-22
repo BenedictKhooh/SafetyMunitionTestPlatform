@@ -53,14 +53,16 @@ private slots:
 
     void parseMeshFile( QString fileName );
 
-    // [新增] 各个“添加”操作的响应函数
+    //各个“添加”操作的响应函数
     void handleAddMaterial();
     void handleAddContact();
     void handleAddIC();
     void handleAddSection();
 
-    // [新增] 清空列表
+    //清空列表
     void handleClearSummary();
+
+    void handleAddSensor();
 
 private:
     void createMenuBar();
@@ -71,6 +73,10 @@ private:
     void logCommand(const QString &command, const QString &response = "");
     void clean();
     void showHelp();
+
+    //记录每个实体被选中的传感器局部节点索引
+    QMap<QString, QList<int>> m_sensorNodes;
+
 
 private:
     // 定义一个结构体来管理每个独立窗口的 UI 控件
@@ -167,32 +173,32 @@ private:
         // 保存所有的动态输入框指针，便于一键获取数据
         QMap<QString, QDoubleSpinBox*> currentMatInputs;
 
-        // --- [新增] 材料失效与侵蚀 (附加在材料 Tab 底部) ---
+        // ---材料失效与侵蚀 (附加在材料 Tab 底部) ---
         QGroupBox* erosionGroup;      // 侵蚀设置的组合框
         QCheckBox* erosionEnable;     // 是否启用 *MAT_ADD_EROSION
         QDoubleSpinBox* erosionMxeps;   // 最大失效应变
 
-        // --- [新增] 2. 初始条件 (Initial Conditions) ---
+        // ---初始条件 (Initial Conditions) ---
         QComboBox* icEntitySelector;    // 选择施加初始速度的实体
         QDoubleSpinBox* icVx;
         QDoubleSpinBox* icVy;
         QDoubleSpinBox* icVz;
 
-        // --- [新增] 3. 接触定义 (Contact) ---
+        // ---接触定义 (Contact) ---
         QComboBox* contactTypeSelector; // 接触类型下拉框
         QComboBox* contactMasterSelector; // 主面实体
         QComboBox* contactSlaveSelector;  // 从面实体
         QDoubleSpinBox* contactFs;        // 静摩擦系数
         QDoubleSpinBox* contactFd;        // 动摩擦系数
 
-        // --- [新增] 4. 截面属性 (Section) ---
+        // ---截面属性 (Section) ---
         QComboBox* sectionEntitySelector; // 目标实体
         QComboBox* sectionTypeSelector;   // Solid 还是 Shell
         QComboBox* sectionElformSelector; // 单元算法 (ELFORM)
 
-        // --- 5. 求解控制 (Control) ---
-        QLineEdit* jobTitleInput;         // [新增] 项目名称
-        QDoubleSpinBox* tssfacInput;      // [新增] 时间步缩放因子
+        // ---求解控制 (Control) ---
+        QLineEdit* jobTitleInput;         //项目名称
+        QDoubleSpinBox* tssfacInput;      //时间步缩放因子
        
         // ---各个面板的“添加”按钮 ---
         QPushButton* btnAddMaterial;
@@ -205,7 +211,15 @@ private:
         QPushButton* btnClearSummary;  // 清空列表按钮
         QPushButton* btnExportKFile;   // 最终的导出按钮
 
-        QComboBox* presetSelector; // [新增] 材料预设下拉框
+        QComboBox* presetSelector; //材料预设下拉框
+
+        // Sensors
+
+        QComboBox* sensorEntitySelector;
+        QDoubleSpinBox* sensorX;
+        QDoubleSpinBox* sensorY;
+        QDoubleSpinBox* sensorZ;
+        QPushButton* btnAddSensor;
     };
 
     SimulationSetupUI m_simSetupUI;

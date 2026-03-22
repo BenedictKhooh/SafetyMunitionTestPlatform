@@ -840,6 +840,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
 
     int globalNodeId = 1;  // 全局节点计数器
     int globalElemId = 1;  // 全局单元计数器
+    std::vector<int> globalSensorIds; // 收集所有传感器的全局 ID
 
     for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
         const MeshEntity& entity = it->second;
@@ -865,6 +866,10 @@ void MainWindow::exportToKFile(const QString& fileName) {
                 << entity.nodes[i].pos.y() << ", "
                 << entity.nodes[i].pos.z() << "\n";
 
+            if (m_sensorNodes.contains(entityName) && m_sensorNodes[entityName].contains(i)) {
+                globalSensorIds.push_back(globalNodeId);
+            }
+
             globalNodeId++;
         }
 
@@ -883,6 +888,24 @@ void MainWindow::exportToKFile(const QString& fileName) {
             globalElemId++;
         }
 
+    }
+
+    if (!globalSensorIds.empty()) {
+        // 1. 指定观测点全局 ID
+        out << "*DATABASE_HISTORY_NODE\n";
+        out << "$#    id1       id2       id3       id4       id5       id6       id7       id8\n";
+
+        // LS-DYNA 要求每行最多 8 个 ID，宽度为 10，自动换行
+        for (size_t i = 0; i < globalSensorIds.size(); ++i) {
+            out << QString("%1").arg(globalSensorIds[i], 10, 10, QChar(' '));
+            if ((i + 1) % 8 == 0) out << "\n";
+        }
+        if (globalSensorIds.size() % 8 != 0) out << "\n";
+
+        // 2. 指定节点数据的输出时间步长 (这里默认0.005，越小数据点越密，曲线越平滑)
+        out << "*DATABASE_NODOUT\n";
+        out << "$#      dt      lcdt      beam     npltc    psetid\n";
+        out << "     0.005         0         0         0         0\n";
     }
 
     out << "*END\n";
@@ -1287,7 +1310,7 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.btnAddMaterial = new QPushButton("添加材料与侵蚀设定 (Add Material)");
     matLayout->addWidget(m_simSetupUI.btnAddMaterial);
 
-	// 新增材料预设下拉菜单
+	// 材料预设下拉菜单
     m_simSetupUI.presetSelector = new QComboBox();
     
     matLayout->addWidget(new QLabel("选择材料预设 (自动填充参数):"));
@@ -1351,7 +1374,7 @@ void MainWindow::createSimulationSetupDock() {
     handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
 
     // ==========================================
-    // [补充] Tab 1: 材料标签页的底部加入“侵蚀(Erosion)设置”
+    // Tab 材料标签页的底部加入“侵蚀(Erosion)设置”
     // ==========================================
     m_simSetupUI.erosionGroup = new QGroupBox("单元侵蚀准则 (*MAT_ADD_EROSION)");
     m_simSetupUI.erosionGroup->setCheckable(true);
@@ -1364,7 +1387,7 @@ void MainWindow::createSimulationSetupDock() {
     matLayout->addWidget(m_simSetupUI.erosionGroup); // 加到原来的 matLayout 底部
 
     // ==========================================
-    // [新增] Tab: 初始条件 (Initial Conditions)
+    // Tab: 初始条件 (Initial Conditions)
     // ==========================================
     QWidget* icTab = new QWidget();
     QFormLayout* icLayout = new QFormLayout(icTab);
@@ -1384,7 +1407,7 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.btnAddIC = new QPushButton("添加初始速度 (Add IC)");
     icLayout->addWidget(m_simSetupUI.btnAddIC);
     // ==========================================
-    // [新增] Tab: 接触定义 (Contact)
+    // Tab: 接触定义 (Contact)
     // ==========================================
     QWidget* contactTab = new QWidget();
     QFormLayout* contactLayout = new QFormLayout(contactTab);
@@ -1408,7 +1431,7 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.btnAddContact = new QPushButton("添加接触定义 (Add Contact)");
     contactLayout->addWidget(m_simSetupUI.btnAddContact);
     // ==========================================
-    // [新增] Tab: 截面与算法 (Section)
+    // Tab: 截面与算法 (Section)
     // ==========================================
     QWidget* sectionTab = new QWidget();
     QFormLayout* sectionLayout = new QFormLayout(sectionTab);
@@ -1430,7 +1453,7 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.btnAddSection = new QPushButton("添加截面属性 (Add Section)");
     sectionLayout->addWidget(m_simSetupUI.btnAddSection);
     // ==========================================
-    // [修改] Tab: 控制面板 (Control) 增加高级选项
+    // Tab: 控制面板 (Control) 增加高级选项
     // ==========================================
 
     m_simSetupUI.jobTitleInput = new QLineEdit("Fragment_ignition");
@@ -1439,6 +1462,31 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.tssfacInput = new QDoubleSpinBox();
     m_simSetupUI.tssfacInput->setRange(0.1, 1.0); m_simSetupUI.tssfacInput->setValue(0.9); m_simSetupUI.tssfacInput->setSingleStep(0.1);
     ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
+
+    // ==========================================
+    // Tab: 传感器与观测点 (Sensors)
+    // ==========================================
+    QWidget* sensorTab = new QWidget();
+    QFormLayout* sensorLayout = new QFormLayout(sensorTab);
+
+    m_simSetupUI.sensorEntitySelector = new QComboBox();
+    sensorLayout->addRow("目标实体 (Target):", m_simSetupUI.sensorEntitySelector);
+
+    m_simSetupUI.sensorX = new QDoubleSpinBox(); m_simSetupUI.sensorX->setRange(-99999, 99999);
+    m_simSetupUI.sensorY = new QDoubleSpinBox(); m_simSetupUI.sensorY->setRange(-99999, 99999);
+    m_simSetupUI.sensorZ = new QDoubleSpinBox(); m_simSetupUI.sensorZ->setRange(-99999, 99999);
+
+    sensorLayout->addRow("目标位置 X:", m_simSetupUI.sensorX);
+    sensorLayout->addRow("目标位置 Y:", m_simSetupUI.sensorY);
+    sensorLayout->addRow("目标位置 Z:", m_simSetupUI.sensorZ);
+
+    m_simSetupUI.btnAddSensor = new QPushButton("添加观测点 (Add Sensor)");
+    sensorLayout->addWidget(m_simSetupUI.btnAddSensor);
+
+    m_simSetupUI.mainTab->addTab(sensorTab, "测点(Sensors)");
+
+    // 绑定按钮信号
+    connect(m_simSetupUI.btnAddSensor, &QPushButton::clicked, this, &MainWindow::handleAddSensor);
 
     // 连接所有信号
     connect(m_simSetupUI.materialSelector, &QComboBox::currentTextChanged, this, [this](const QString& matType) {
@@ -1670,16 +1718,19 @@ void MainWindow::updateAllEntitySelectors() {
     m_simSetupUI.contactMasterSelector->clear();
     m_simSetupUI.contactSlaveSelector->clear();
     m_simSetupUI.sectionEntitySelector->clear();
+    m_simSetupUI.sensorEntitySelector->clear();
 
     // 加载所有实体
     const auto& allEntities = m_repository.getAllEntities();
     for (const auto& pair : allEntities) {
         QString name = pair.first;
+
         m_simSetupUI.entitySelector->addItem(name);
         m_simSetupUI.icEntitySelector->addItem(name);
         m_simSetupUI.contactMasterSelector->addItem(name);
         m_simSetupUI.contactSlaveSelector->addItem(name);
         m_simSetupUI.sectionEntitySelector->addItem(name);
+        m_simSetupUI.sensorEntitySelector->addItem(name);
     }
 
     // 尝试恢复之前的选择
@@ -1688,6 +1739,9 @@ void MainWindow::updateAllEntitySelectors() {
     m_simSetupUI.contactMasterSelector->setCurrentText(curMaster);
     m_simSetupUI.contactSlaveSelector->setCurrentText(curSlave);
     m_simSetupUI.sectionEntitySelector->setCurrentText(curSec);
+
+    QString curSensor = m_simSetupUI.sensorEntitySelector->currentText();
+    m_simSetupUI.sensorEntitySelector->setCurrentText(curSensor);
 }
 
 void MainWindow::handleAddMaterial() {
@@ -1895,4 +1949,44 @@ void MainWindow::handlePresetChanged(const QString& presetName) {
 
     // 4. 将极度权威的文献来源打印在命令行日志上
     logCommand("Material Preset", QString("已加载预设 [%1]. 数据来源文献: %2").arg(presetName).arg(preset.source));
+}
+
+void MainWindow::handleAddSensor() {
+    QString target = m_simSetupUI.sensorEntitySelector->currentText();
+    if (target.isEmpty()) return;
+
+    // 获取底层网格实体数据
+    MeshEntity* entity = m_repository.getMutableEntity(target);
+    if (!entity || entity->nodes.size() < 2) return;
+
+    double tx = m_simSetupUI.sensorX->value();
+    double ty = m_simSetupUI.sensorY->value();
+    double tz = m_simSetupUI.sensorZ->value();
+
+    int closestIdx = -1;
+    double min_dist = 1e9; // 初始设为一个巨大的距离
+
+    // 遍历实体内的所有节点寻找最近点 (跳过索引0的占位符)
+    for (size_t i = 1; i < entity->nodes.size(); ++i) {
+        double dx = entity->nodes[i].pos.x() - tx;
+        double dy = entity->nodes[i].pos.y() - ty;
+        double dz = entity->nodes[i].pos.z() - tz;
+        double dist = std::sqrt(dx * dx + dy * dy + dz * dz); // 计算欧氏距离
+
+        if (dist < min_dist) {
+            min_dist = dist;
+            closestIdx = i;
+        }
+    }
+
+    if (closestIdx != -1) {
+        // 将局部索引记录到字典中
+        m_sensorNodes[target].append(closestIdx);
+
+        // 打印到面板供用户确认
+        QString summary = QString("[测点] 实体:%1 | 坐标:(%2,%3,%4) -> 绑定网格点误差: %5")
+            .arg(target).arg(tx).arg(ty).arg(tz).arg(min_dist, 0, 'f', 4);
+        m_simSetupUI.setupSummaryList->addItem(summary);
+        logCommand("Sensor", summary);
+    }
 }

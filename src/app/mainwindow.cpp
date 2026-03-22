@@ -374,7 +374,6 @@ void MainWindow::onCommandEntered(const QString &command) {
         double ms = args[6].toDouble();     // 网格大小
 
         // 中心点坐标 (目前 Generator 内部逻辑以 0,0,0 为底面中心，
-        // 如果需要平移，可以在 .geo 脚本中加入偏移量，这里先预留解析)
         double cx = args[7].toDouble();
         double cy = args[8].toDouble();
         double cz = args[9].toDouble();
@@ -384,7 +383,7 @@ void MainWindow::onCommandEntered(const QString &command) {
 
         // 2. 设置参数
         // 注意：这里调用的参数顺序需对应类中 setParameters 的定义
-        shellGen.setParameters(r, h, lid, wall, ms);
+        shellGen.setParameters(r, h, lid, wall, ms, cx, cy, cz);
 
         // 3. 调用管理器进行构建与加载
         m_meshManager->buildAndLoad(shellGen, name);
@@ -982,6 +981,9 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Lid Thick:", "lid", 1.0);
         addNumParamToUI(ui, "Wall Thick:", "wall", 1.0);
         addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
+        addNumParamToUI(ui, "Center X:", "cx", 0.0);
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
     }
     else if (text == "OpenCylindricalShell") {
         addNumParamToUI(ui, "Radius:", "r", 5.0);
@@ -1043,7 +1045,7 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     }
     else if (type == "CylindricalShell") {
         CylindricalShellGenerator gen;
-        gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"));
+        gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
         m_meshManager->buildAndLoad(gen, name);
     }
     else if (type == "OpenCylindricalShell") {

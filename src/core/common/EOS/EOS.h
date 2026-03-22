@@ -80,16 +80,22 @@ struct EOSCard : public KeywordCard {
         else if (keyword == "IGNITION_AND_GROWTH_OF_REACTION_IN_HE") {
             snprintf(buf, sizeof(buf),
                 "*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE\n"
-                "$#   eosid         a         b      xmu1      xmu2     omega        c        e0\n"
-                "%10d%10.4E%10.4E       0.0       0.0%10.4f%10.4E%10.4E\n"
-                "$#      v0        t0        q1        g1        q2        g2        q3        g3\n"
-                "%10.4f       0.0%10.4E%10.4E%10.4E%10.4E%10.4E%10.4E\n"
-                "$#   igreq     igint     igmax      fmxq      fmxm       fmx      igti      igtf\n"
-                "%10.4E%10.4E%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n",
-                eosid, getVal("ig_a"), getVal("ig_b"), getVal("ig_omega"), getVal("ig_c"), getVal("ig_e0"),
-                getVal("ig_v0"), getVal("ig_q1"), getVal("ig_g1"), getVal("ig_q2"), getVal("ig_g2"),
-                getVal("ig_q3"), getVal("ig_g3"), getVal("ig_igreq"), getVal("ig_igint"), getVal("ig_igmax"),
-                getVal("ig_fmxq"), getVal("ig_fmxm"), getVal("ig_fmx"), getVal("ig_igti"), getVal("ig_igtf")
+                "$#   eosid         a         b       xp1       xp2      frer         g        r1\n"
+                "%10d%10.4E%10.4E%10.4E%10.4E%10.4E%10.4E%10.4f\n"
+                "$#      r2        r3        r5        r6     fmxig      freq     grow1        em\n"
+                "%10.5f%10.4E%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n"
+                "$#     ar1       es1       cvp       cvr     eetal     ccrit       enq      tmp0\n"
+                "%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n"
+                "$#   grow2       ar2       es2        en     fmxgr     fmngr\n"
+                "%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n",
+                eosid, getVal("ig_a"), getVal("ig_b"), getVal("ig_xp1"), getVal("ig_xp2"),
+                getVal("ig_frer"), getVal("ig_g"), getVal("ig_r1"), getVal("ig_r2"),
+                getVal("ig_r3"), getVal("ig_r5"), getVal("ig_r6"), getVal("ig_fmxig"),
+                getVal("ig_freq"), getVal("ig_grow1"), getVal("ig_em"), getVal("ig_ar1"),
+                getVal("ig_es1"), getVal("ig_cvp"), getVal("ig_cvr"), getVal("ig_eetal"),
+                getVal("ig_ccrit"), getVal("ig_enq"), getVal("ig_tmp0"), getVal("ig_grow2"),
+                getVal("ig_ar2"), getVal("ig_es2"), getVal("ig_en"), getVal("ig_fmxgr"),
+                getVal("ig_fmngr")
             );
         }
 

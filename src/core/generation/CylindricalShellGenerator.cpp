@@ -1,8 +1,9 @@
-#include "CylindricalShellGenerator.h"
+ï»¿#include "CylindricalShellGenerator.h"
 
-QString CylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize) const {
-    // --- ÔÚ C++ ÖĞÔ¤¼ÆËã Gmsh ½Å±¾ËùĞèµÄÀëÉ¢·Ö¶ÎÊı ---
-    // nC: ÖÜÏò·Ö¶Î, nH_cap: ¶Ë¸Ç¸ß¶È·Ö¶Î, nR_wall: ±Úºñ·Ö¶Î
+// ğŸ‘‡ ä»…ä»…åœ¨è¿™é‡Œè¡¥ä¸Šäº† cx, cy, cz
+QString CylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize, double cx, double cy, double cz) const {
+    // --- åœ¨ C++ ä¸­é¢„è®¡ç®— Gmsh è„šæœ¬æ‰€éœ€çš„ç¦»æ•£åˆ†æ®µæ•° ---
+    // nC: å‘¨å‘åˆ†æ®µ, nH_cap: ç«¯ç›–é«˜åº¦åˆ†æ®µ, nR_wall: å£åšåˆ†æ®µ
     int nC = 2 * std::round((radius / (2.0 * 1.414)) / meshSize);
     if (nC < 2) nC = 2;
 
@@ -12,13 +13,13 @@ QString CylindricalShellGenerator::buildGeoScript(double radius, double height, 
     int nR_wall = std::round(wall / meshSize);
     if (nR_wall < 1) nR_wall = 1;
 
-    // ÖĞ¼ä¿ÕÇ»²¿·ÖµÄ¸ß¶È·Ö¶ÎÊı
+    // ä¸­é—´ç©ºè…”éƒ¨åˆ†çš„é«˜åº¦åˆ†æ®µæ•°
     double voidHeight = height - 2.0 * lid;
     int nH_void = std::round(voidHeight / meshSize);
     if (nH_void < 1) nH_void = 1;
 
     return QString(R"(
-// --- 1. ²ÎÊı¶¨Òå ---
+// --- 1. å‚æ•°å®šä¹‰ ---
 R_in = %1; 
 L_val = R_in / (2 * 1.414); 
 Wall = %2;
@@ -33,7 +34,7 @@ nR_wall = %6;
 nH_cap = %7; 
 nH_void = %8;
 
-// --- 2. »ù´¡Ãæ¶¨Òå (Z=0) ---
+// --- 2. åŸºç¡€é¢å®šä¹‰ (Z=0) ---
 Point(1) = {0, 0, 0}; 
 Point(2) = {L_val, L_val, 0};    Point(3) = {-L_val, L_val, 0};
 Point(4) = {-L_val, -L_val, 0};  Point(5) = {L_val, -L_val, 0};
@@ -64,31 +65,33 @@ Transfinite Surface {1:9}; Recombine Surface {1:9};
 Transfinite Curve {1:4, 9:12, 17:20} = nC;
 Transfinite Curve {5:8} = nR_in; Transfinite Curve {13:16} = nR_wall;
 
-// --- 3. Ë³ĞòÀ­Éì ---
-// µÚÒ»²ã£ºµ×²¿¶Ë¸Ç
+Translate {%9, %10, %11} { Surface{1:9}; }
+
+// --- 3. é¡ºåºæ‹‰ä¼¸ ---
+// ç¬¬ä¸€å±‚ï¼šåº•éƒ¨ç«¯ç›–
 out1[] = Extrude {0, 0, H_cap} { Surface{1:9}; Layers{nH_cap}; Recombine; };
 
-// µÚ¶ş²ã£ºÖĞ¼ä²ã
+// ç¬¬äºŒå±‚ï¼šä¸­é—´å±‚
 out2[] = Extrude {0, 0, H_void} { 
   Surface{out1[0], out1[6], out1[12], out1[18], out1[24], out1[30], out1[36], out1[42], out1[48]}; 
   Layers{nH_void}; Recombine; 
 };
 
-// µÚÈı²ã£º¶¥²¿¶Ë¸Ç
+// ç¬¬ä¸‰å±‚ï¼šé¡¶éƒ¨ç«¯ç›–
 out3[] = Extrude {0, 0, H_cap} { 
   Surface{out2[0], out2[6], out2[12], out2[18], out2[24], out2[30], out2[36], out2[42], out2[48]}; 
   Layers{nH_cap}; Recombine; 
 };
 
-// --- 4. µİ¹éÉ¾³ıÖĞ¼ä¿ÕÇ»²¿·ÖµÄÌå»ı ---
+// --- 4. é€’å½’åˆ é™¤ä¸­é—´ç©ºè…”éƒ¨åˆ†çš„ä½“ç§¯ ---
 Recursive Delete {
   Volume{out2[1], out2[7], out2[13], out2[19], out2[25]};
 }
 
-// --- 5. ÖØĞÂÔ¼Êø¶¥²¿Ìå»ı ---
+// --- 5. é‡æ–°çº¦æŸé¡¶éƒ¨ä½“ç§¯ ---
 Transfinite Volume {out3[1], out3[7], out3[13], out3[19], out3[25], out3[31], out3[37], out3[43], out3[49]};
 
-// --- 6. ÎïÀí×é¶¨Òå ---
+// --- 6. ç‰©ç†ç»„å®šä¹‰ ---
 Physical Volume("Shell_Solid") = {
   out1[1], out1[7], out1[13], out1[19], out1[25], out1[31], out1[37], out1[43], out1[49],
   out2[31], out2[37], out2[43], out2[49],
@@ -100,5 +103,6 @@ Mesh.MshFileVersion = 2.2;
 Mesh 3;
     )")
         .arg(radius).arg(wall).arg(height).arg(lid)
-        .arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void);
+        .arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void)
+        .arg(cx).arg(cy).arg(cz); 
 }

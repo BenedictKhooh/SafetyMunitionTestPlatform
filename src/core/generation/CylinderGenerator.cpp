@@ -16,6 +16,10 @@ H = %2;
 nC = %3;
 nH = %4;
 
+CX = %5;
+CY = %6;
+CZ = %7;
+
 L = R /(2 * 1.414);
 Rproj = R / 1.414;
 nR = nC / 1.414;
@@ -79,6 +83,8 @@ Transfinite Curve {9,10,11,12} = nR;
 Transfinite Surface {1,2,3,4,5};
 Recombine Surface {1,2,3,4,5};
 
+Translate {CX, CY, CZ} { Surface{1,2,3,4,5}; }
+
 // 6. и╗бс 3D
 Extrude {0, 0, H} {
   Surface{1,2,3,4,5};
@@ -92,5 +98,6 @@ Mesh.MshFileVersion = 2.2;
 .arg(radius)
 .arg(height)
 .arg(nC)
-.arg(nH);
+.arg(nH)
+.arg(cx).arg(cy).arg(cz);
 }

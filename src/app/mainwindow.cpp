@@ -1245,7 +1245,7 @@ void MainWindow::createSimulationSetupDock() {
     // 材料库选择
     matLayout->addWidget(new QLabel("材料本构 (Material Model):"));
     m_simSetupUI.materialSelector = new QComboBox();
-    m_simSetupUI.materialSelector->addItems({ "*MAT_PIECEWISE_LINEAR_PLASTICITY", "*MAT_JOHNSON_COOK", "*MAT_HIGH_EXPLOSIVE_BURN", "*MAT_NULL" });
+    m_simSetupUI.materialSelector->addItems({ "*MAT_PIECEWISE_LINEAR_PLASTICITY", "*MAT_JOHNSON_COOK", "*MAT_HIGH_EXPLOSIVE_BURN", "*MAT_ELASTIC_PLASTIC_HYDRO","*MAT_NULL" });
     matLayout->addWidget(m_simSetupUI.materialSelector);
 
     // EOS 库选择 (初始隐藏)
@@ -1267,7 +1267,7 @@ void MainWindow::createSimulationSetupDock() {
     // 动态参数容器
     m_simSetupUI.matParamContainer = new QWidget();
     m_simSetupUI.matParamLayout = new QFormLayout(m_simSetupUI.matParamContainer);
-    QScrollArea* scrollArea = new QScrollArea(); // 参数可能很多，加上滚动条
+    QScrollArea* scrollArea = new QScrollArea(); //滚动条
     scrollArea->setWidgetResizable(true);
     scrollArea->setWidget(m_simSetupUI.matParamContainer);
     matLayout->addWidget(scrollArea);
@@ -1432,6 +1432,7 @@ void MainWindow::createSimulationSetupDock() {
         if (matType == "*MAT_JOHNSON_COOK") m_simSetupUI.eosSelector->setCurrentText("*EOS_GRUNEISEN");
         else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") m_simSetupUI.eosSelector->setCurrentText("*EOS_JWL");
         else if (matType == "*MAT_NULL") m_simSetupUI.eosSelector->setCurrentText("*EOS_LINEAR_POLYNOMIAL");
+        else if (matType == "*MAT_ELASTIC_PLASTIC_HYDRO") m_simSetupUI.eosSelector->setCurrentText("*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE");
         else m_simSetupUI.eosSelector->setCurrentText("None");
         m_simSetupUI.eosSelector->blockSignals(false);
 
@@ -1487,6 +1488,12 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         addParam("压力截断 (PC):", "pc", -1.0e-6);
         addParam("动力粘度 (MU):", "mu", 0.0);
     }
+    else if (matType == "*MAT_ELASTIC_PLASTIC_HYDRO") {
+        addParam("密度 (RO):", "ro", 1.712);
+        addParam("剪切模量 (G):", "g", 0.0354);
+        addParam("屈服强度 (SIGY):", "sigy", 2.0e-4);
+        addParam("压力截断 (PC):", "pc", -9.0);
+    }
 
     // 3. 接着读取当前 EOS 选了什么，并在下方画出具体的 EOS 参数！
     QString eosType = m_simSetupUI.eosSelector->currentText();
@@ -1525,13 +1532,46 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         addParam("[TILLOTSON] BETA:", "til_beta", 0.0);
     }
     else if (eosType == "*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE") {
-        addParam("[I&G] A:", "ig_a", 0.0);
-        addParam("[I&G] B:", "ig_b", 0.0);
-        addParam("[I&G] OMEGA:", "ig_omega", 0.0);
-        addParam("[I&G] C:", "ig_c", 0.0);
-        addParam("[I&G] E0:", "ig_e0", 0.0);
-        addParam("[I&G] Q1:", "ig_q1", 0.0);
-        addParam("[I&G] G1:", "ig_g1", 0.0);
+        // --- 1. 未反应固体炸药的 JWL 参数 ---
+        addParam("[I&G] 未反应 A:", "ig_a", 5.242);
+        addParam("[I&G] 未反应 B:", "ig_b", 0.07678);
+        addParam("[I&G] 未反应 R1:", "ig_r1", 778.1);
+        addParam("[I&G] 未反应 R2:", "ig_r2", -0.05031);
+        addParam("[I&G] 未反应 OMEGA (G):", "ig_g", 5.0e-6);
+
+        // --- 2. 完全反应后爆炸产物的 JWL 参数 ---
+        addParam("[I&G] 产物 XP1 (A):", "ig_xp1", 2.84999);
+        addParam("[I&G] 产物 XP2 (B):", "ig_xp2", 0.0);
+        addParam("[I&G] 产物 R3 (R1):", "ig_r3", 2.223e-5);
+        addParam("[I&G] 产物 R5 (R2):", "ig_r5", 11.3);
+        addParam("[I&G] 产物 R6 (OMEGA):", "ig_r6", 1.13);
+
+        // --- 3. 反应速率：点火项 (Ignition) ---
+        addParam("[I&G] 点火频率 (FREQ):", "ig_freq", 4.0);
+        addParam("[I&G] 最大点火份额 (FMXIG):", "ig_fmxig", 0.022);
+        addParam("[I&G] 临界压缩度 (CCRIT):", "ig_ccrit", 0.0367);
+        addParam("[I&G] 压缩指数 (EETAL):", "ig_eetal", 7.0);
+
+        // --- 4. 反应速率：缓慢生长项 (Growth 1) ---
+        addParam("[I&G] 生长系数1 (GROW1):", "ig_grow1", 120.0);
+        addParam("[I&G] 压力指数1 (EM):", "ig_em", 2.0);
+        addParam("[I&G] 反应份额指数 (AR1):", "ig_ar1", 0.333);
+        addParam("[I&G] 未反应份额指数 (ES1):", "ig_es1", 0.667);
+        addParam("[I&G] 最大生长份额 (FMXGR):", "ig_fmxgr", 0.7);
+
+        // --- 5. 反应速率：快速爆轰项 (Growth 2) ---
+        addParam("[I&G] 生长系数2 (GROW2):", "ig_grow2", 1000.0);
+        addParam("[I&G] 反应份额指数 (AR2):", "ig_ar2", 1.0);
+        addParam("[I&G] 未反应份额指数 (ES2):", "ig_es2", 0.222);
+        addParam("[I&G] 压力指数2 (EN):", "ig_en", 3.0);
+        addParam("[I&G] 最小爆轰份额 (FMNGR):", "ig_fmngr", 0.0);
+
+        // --- 6. 热力学与能量守恒 ---
+        addParam("[I&G] 反应热/爆炸能 (ENQ):", "ig_enq", 0.085);
+        addParam("[I&G] 初始温度 (TMP0):", "ig_tmp0", 298.0);
+        addParam("[I&G] 产物比热容 (CVP):", "ig_cvp", 10.0);
+        addParam("[I&G] 反应物比热容 (CVR):", "ig_cvr", 24.78);
+        addParam("[I&G] 比例系数 (FRER):", "ig_frer", 1.1);
     }
 }
 
@@ -1653,7 +1693,7 @@ void MainWindow::handleAddMaterial() {
         paramDict["mxeps"] = m_simSetupUI.erosionMxeps->value();
     }
 
-    // 2. 实例化材料卡丢入管家
+    // 2. 实例化材料卡片
     m_deck.addCard(std::make_shared<MaterialCard>(part->pid, matType.toStdString(), paramDict));
 
     // 3. 动态解析并挂载 EOS

@@ -54,6 +54,22 @@ struct MaterialCard : public KeywordCard {
                 mid, getVal("ro"), getVal("d"), getVal("pcj")
             );
         }
+        else if (keyword == "ELASTIC_PLASTIC_HYDRO") {
+            snprintf(buf, sizeof(buf),
+                "*MAT_ELASTIC_PLASTIC_HYDRO\n"
+                "$#     mid        ro         g      sigy        eh        pc        fs     charl\n"
+                "%10d%10.4E%10.4E%10.4E       0.0%10.4f       0.0       0.0\n"
+                "$#    eps1      eps2      eps3      eps4      eps5      eps6      eps7      eps8\n"
+                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n"
+                "$#    eps9     eps10     eps11     eps12     eps13     eps14     eps15     eps16\n"
+                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n"
+                "$#     es1       es2       es3       es4       es5       es6       es7       es8\n"
+                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n"
+                "$#     es9      es10      es11      es12      es13      es14      es15      es16\n"
+                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n",
+                mid, getVal("ro"), getVal("g"), getVal("sigy"), getVal("pc")
+            );
+        }
 
         std::string res = buf;
 

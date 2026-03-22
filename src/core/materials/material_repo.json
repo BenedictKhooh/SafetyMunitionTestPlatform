@@ -1,0 +1,119 @@
+{
+  "presets": [
+    {
+      "name": "Steel_4340",
+      "matType": "*MAT_JOHNSON_COOK",
+      "eosType": "*EOS_GRUNEISEN",
+      "source": "Johnson, G. R., & Cook, W. H. (1983). A constitutive model and data for metals... Proc. of the 7th Int. Symp. on Ballistics.",
+      "params": {
+        "ro": 7.83e-6,
+        "g": 77.0,
+        "a": 0.792,
+        "b": 0.510,
+        "n": 0.26,
+        "c": 0.014,
+        "m": 1.03,
+        "tmelt": 1793,
+        "gr_c": 0.457,
+        "gr_s1": 1.33,
+        "gr_gamao": 1.67
+      }
+    },
+    {
+      "name": "Tungsten_Alloy",
+      "matType": "*MAT_JOHNSON_COOK",
+      "eosType": "*EOS_GRUNEISEN",
+      "source": "Borvik, T., et al. (1999). Ballistic penetration of steel plates. Int. Journal of Impact Engineering.",
+      "params": {
+        "ro": 17.6e-6,
+        "g": 160.0,
+        "a": 1.506,
+        "b": 0.177,
+        "n": 0.12,
+        "c": 0.016,
+        "m": 1.0,
+        "tmelt": 3695,
+        "gr_c": 0.403,
+        "gr_s1": 1.237,
+        "gr_gamao": 1.54
+      }
+    },
+    {
+      "name": "Aluminum_6061",
+      "matType": "*MAT_JOHNSON_COOK",
+      "eosType": "*EOS_GRUNEISEN",
+      "source": "Steinberg, D. J. (1996). Equation of State and Strength Properties of Selected Materials. LLNL Report.",
+      "params": {
+        "ro": 2.70e-6,
+        "g": 27.6,
+        "a": 0.324,
+        "b": 0.114,
+        "n": 0.42,
+        "c": 0.002,
+        "m": 1.34,
+        "tmelt": 925,
+        "gr_c": 0.5328,
+        "gr_s1": 1.338,
+        "gr_gamao": 2.0
+      }
+    },
+    {
+      "name": "TNT_Explosive",
+      "matType": "*MAT_HIGH_EXPLOSIVE_BURN",
+      "eosType": "*EOS_JWL",
+      "source": "Dobratz, B. M. (1985). LLNL Explosives Handbook. UCRL-52997.",
+      "params": {
+        "ro": 1.63e-6,
+        "d": 6.93,
+        "pcj": 21.0,
+        "jwl_a": 373.7,
+        "jwl_b": 3.747,
+        "jwl_r1": 4.15,
+        "jwl_r2": 0.90,
+        "jwl_omega": 0.35,
+        "jwl_e0": 6.0
+      }
+    },
+    {
+      "name": "CompB_Ignition",
+      "matType": "*MAT_ELASTIC_PLASTIC_HYDRO",
+      "eosType": "*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE",
+      "source": "Tarver, C. M., et al. (1996). Shock initiation of explosives. LLNL. / Lee-Tarver Model.",
+      "params": {
+        "ro": 1.712e-6,
+        "g": 0.0354,
+        "sigy": 2.0e-4,
+        "pc": -9.0,
+        "ig_a": 5.242,
+        "ig_b": 0.07678,
+        "ig_r1": 778.1,
+        "ig_r2": -0.05031,
+        "ig_g": 5.0e-6,
+        "ig_xp1": 2.85,
+        "ig_xp2": 0.0,
+        "ig_r3": 2.22e-5,
+        "ig_r5": 11.3,
+        "ig_r6": 1.13,
+        "ig_freq": 4.0,
+        "ig_fmxig": 0.022,
+        "ig_ccrit": 0.0367,
+        "ig_eetal": 7.0,
+        "ig_grow1": 120.0,
+        "ig_em": 2.0,
+        "ig_ar1": 0.333,
+        "ig_es1": 0.667,
+        "ig_fmxgr": 0.7,
+        "ig_grow2": 1000.0,
+        "ig_ar2": 1.0,
+        "ig_es2": 0.222,
+        "ig_en": 3.0,
+        "ig_fmngr": 0.0,
+        "ig_enq": 0.085,
+        "ig_tmp0": 298.0,
+        "ig_cvp": 10.0,
+        "ig_cvr": 24.78,
+        "ig_frer": 1.1
+      }
+    }
+  ]
+}

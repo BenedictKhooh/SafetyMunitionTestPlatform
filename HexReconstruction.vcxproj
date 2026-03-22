@@ -396,7 +396,6 @@
     <ClInclude Include="src\core\generation\SphereGenerator.h" />
     <QtMoc Include="src\app\mainwindow.h" />
     <ClInclude Include="src\core\generation\TriangularPrismGenerator.h" />
-    <ClInclude Include="src\core\materials\materials.h" />
     <ClInclude Include="src\core\reconstruction\reconstruction_engine.h" />
   </ItemGroup>
   <ItemGroup>
@@ -428,6 +427,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />
+    <None Include="src\core\materials\material_repo.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />

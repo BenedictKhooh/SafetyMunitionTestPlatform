@@ -233,5 +233,18 @@ private:
 
     // 核心桥梁：获取实体的 Part 指针，如果不存在则自动创建并丢入 m_deck
     std::shared_ptr<PartCard> getOrCreatePart(const QString& entityName);
+
+    //JSON 预设解析数据结构
+    struct MaterialPreset {
+        QString matType;
+        QString eosType;
+        QString source; // 数据来源文献
+        QMap<QString, double> params;
+    };
+    QMap<QString, MaterialPreset> m_materialPresets; // 内存中的预设字典
+    void loadMaterialPresetsFromJson(); // 读取 JSON 文件的辅助函数
+
+private slots:
+    void handlePresetChanged(const QString& presetName);
 };
 #endif // MAINWINDOW_H

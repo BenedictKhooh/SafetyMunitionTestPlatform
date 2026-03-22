@@ -15,6 +15,13 @@
 #include <QDir>
 #include <QMessageBox>
 
+//JSON file processors
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QCoreApplication>
+//
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     
@@ -1282,9 +1289,13 @@ void MainWindow::createSimulationSetupDock() {
 
 	// 新增材料预设下拉菜单
     m_simSetupUI.presetSelector = new QComboBox();
-    m_simSetupUI.presetSelector->addItems({ "Tungsten_Alloy", "Steel_4340", "Aluminum_6061" }); // 填入你需要的材料选项
-    matLayout->addWidget(new QLabel("选择材料预设:"));
+    
+    matLayout->addWidget(new QLabel("选择材料预设 (自动填充参数):"));
     matLayout->addWidget(m_simSetupUI.presetSelector);
+
+    loadMaterialPresetsFromJson();
+
+    connect(m_simSetupUI.presetSelector, &QComboBox::currentTextChanged, this, &MainWindow::handlePresetChanged);
     // ==========================================
     // Tab 2: 求解控制 (Control)
     // ==========================================
@@ -1792,4 +1803,96 @@ std::shared_ptr<PartCard> MainWindow::getOrCreatePart(const QString& entityName)
         m_entityParts[entityName] = part;
     }
     return m_entityParts[entityName];
+}
+
+void MainWindow::loadMaterialPresetsFromJson() {
+    m_simSetupUI.presetSelector->clear();
+    m_simSetupUI.presetSelector->addItem("None (自定义)");
+
+    // 🌟 智能路径查找逻辑：适配不同的运行环境和编译目录
+    QString jsonPath;
+    QString relativePath = "/src/core/materials/material_repo.json";
+
+    // 1. 尝试直接在当前工作目录下寻找 (适用于在工程根目录直接运行)
+    QFile file("." + relativePath);
+
+    if (!file.exists()) {
+        // 2. 尝试在 exe 所在目录往上一层找 (适用于常见的 build/ 目录)
+        file.setFileName(QCoreApplication::applicationDirPath() + "/.." + relativePath);
+    }
+    if (!file.exists()) {
+        // 3. 尝试在 exe 所在目录往上两层找 (适用于 build/debug/ 目录)
+        file.setFileName(QCoreApplication::applicationDirPath() + "/../.." + relativePath);
+    }
+
+    // 如果还是打不开，报错并在命令行提示
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        logCommand("System Error", "未找到 material_repo.json，请检查 src/core/materials/ 路径！材料预设功能暂时禁用。");
+        return;
+    }
+
+    // 读取并解析 JSON 文件
+    QByteArray data = file.readAll();
+    file.close();
+
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (doc.isNull() || !doc.isObject()) {
+        logCommand("System Error", "material_repo.json 格式错误，无法解析！");
+        return;
+    }
+
+    QJsonArray presetsArray = doc.object()["presets"].toArray();
+
+    // 遍历 JSON 数组，将其存入字典并添加到下拉框
+    for (int i = 0; i < presetsArray.size(); ++i) {
+        QJsonObject obj = presetsArray[i].toObject();
+        QString name = obj["name"].toString();
+
+        MaterialPreset preset;
+        preset.matType = obj["matType"].toString();
+        preset.eosType = obj["eosType"].toString();
+        preset.source = obj["source"].toString();
+
+        QJsonObject paramsObj = obj["params"].toObject();
+        for (auto it = paramsObj.begin(); it != paramsObj.end(); ++it) {
+            preset.params[it.key()] = it.value().toDouble();
+        }
+
+        m_materialPresets[name] = preset;
+        m_simSetupUI.presetSelector->addItem(name);
+    }
+
+    logCommand("System", QString("成功从 material_repo.json 加载 %1 种材料预设。").arg(m_materialPresets.size()));
+}
+
+void MainWindow::handlePresetChanged(const QString& presetName) {
+    if (presetName == "None (自定义)" || !m_materialPresets.contains(presetName)) {
+        return;
+    }
+
+    // 从我们解析好的内存字典中拿出预设数据
+    const MaterialPreset& preset = m_materialPresets[presetName];
+
+    // 1. 自动切换材料与EOS下拉框（屏蔽信号防死循环）
+    m_simSetupUI.materialSelector->blockSignals(true);
+    m_simSetupUI.eosSelector->blockSignals(true);
+
+    m_simSetupUI.materialSelector->setCurrentText(preset.matType);
+    m_simSetupUI.eosSelector->setCurrentText(preset.eosType);
+
+    m_simSetupUI.materialSelector->blockSignals(false);
+    m_simSetupUI.eosSelector->blockSignals(false);
+
+    // 2. 强制触发一次界面重绘，生成对应材料的几十个空白输入框
+    handleMaterialTypeChanged(preset.matType);
+
+    // 3. ✨ 核心：无脑遍历匹配！根据 JSON 里的 Key，直接把值塞进对应 UI 输入框
+    for (auto it = preset.params.begin(); it != preset.params.end(); ++it) {
+        if (m_simSetupUI.currentMatInputs.contains(it.key())) {
+            m_simSetupUI.currentMatInputs[it.key()]->setValue(it.value());
+        }
+    }
+
+    // 4. 将极度权威的文献来源打印在命令行日志上
+    logCommand("Material Preset", QString("已加载预设 [%1]. 数据来源文献: %2").arg(presetName).arg(preset.source));
 }

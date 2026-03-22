@@ -1,4 +1,4 @@
-#ifndef CYLINDRICALSHELLGENERATOR_H
+ #ifndef CYLINDRICALSHELLGENERATOR_H
 #define CYLINDRICALSHELLGENERATOR_H
 
 #include "src/core/common/MeshGenerator.h"

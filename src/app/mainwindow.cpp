@@ -834,10 +834,12 @@ void MainWindow::exportToKFile(const QString& fileName) {
 
     int globalNodeId = 1;  // 全局节点计数器
     int globalElemId = 1;  // 全局单元计数器
-    int partId = 1;        // Part 计数器
 
     for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
         const MeshEntity& entity = it->second;
+        QString entityName = it->first; // 获取实体名字
+
+        int realPartId = getOrCreatePart(entityName)->pid;
 
         // 映射表：局部向量索引 -> 全局文件节点 ID
         std::unordered_map<int, int> localToGlobal;
@@ -864,7 +866,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
         out << "*ELEMENT_SOLID\n";
         for (const auto& hex : entity.hexes) {
             // 解决报错的关键：直接使用 hex[j] 访问 std::array 元素
-            out << globalElemId << ", " << partId;
+            out << globalElemId << ", " << realPartId;
 
             for (int j = 0; j < 8; ++j) {
                 int localIdx = hex[j]; // 获取存储在 array 中的局部节点索引
@@ -875,7 +877,6 @@ void MainWindow::exportToKFile(const QString& fileName) {
             globalElemId++;
         }
 
-        partId++;
     }
 
     out << "*END\n";
@@ -1779,11 +1780,10 @@ void MainWindow::handleClearSummary() {
 // 在 mainwindow.cpp 空白处添加
 std::shared_ptr<PartCard> MainWindow::getOrCreatePart(const QString& entityName) {
     if (!m_entityParts.contains(entityName)) {
-        // 假设 entitySelector 里面按顺序存了所有生成的实体
-        int realIndex = m_simSetupUI.entitySelector->findText(entityName);
-        if (realIndex == -1) realIndex = m_entityParts.size(); // 安全兜底
-
-        int pid = realIndex + 1; // 真实 PID (1-based)
+        
+        // 直接使用当前已分配实体的总数 + 1 作为全局唯一 PID。
+        
+        int pid = m_entityParts.size() + 1;
 
         auto part = std::make_shared<PartCard>(pid, entityName.toStdString());
         m_deck.addCard(part);

@@ -1251,7 +1251,16 @@ void MainWindow::createSimulationSetupDock() {
     // EOS 库选择 (初始隐藏)
     QLabel* eosLabel = new QLabel("状态方程 (Equation of State):");
     m_simSetupUI.eosSelector = new QComboBox();
-    m_simSetupUI.eosSelector->addItems({ "None", "*EOS_JWL", "*EOS_GRUNEISEN", "*EOS_LINEAR_POLYNOMIAL" });
+
+    m_simSetupUI.eosSelector->addItems({
+            "None",
+            "*EOS_GRUNEISEN",
+            "*EOS_JWL",
+            "*EOS_LINEAR_POLYNOMIAL",
+            "*EOS_TILLOTSON",
+            "*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE"
+        });    
+
     matLayout->addWidget(eosLabel);
     matLayout->addWidget(m_simSetupUI.eosSelector);
 
@@ -1418,7 +1427,16 @@ void MainWindow::createSimulationSetupDock() {
     ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
 
     // 连接所有信号
-    connect(m_simSetupUI.materialSelector, &QComboBox::currentTextChanged, this, &MainWindow::handleMaterialTypeChanged);
+    connect(m_simSetupUI.materialSelector, &QComboBox::currentTextChanged, this, [this](const QString& matType) {
+        m_simSetupUI.eosSelector->blockSignals(true); // 防止自动匹配时重复触发绘制
+        if (matType == "*MAT_JOHNSON_COOK") m_simSetupUI.eosSelector->setCurrentText("*EOS_GRUNEISEN");
+        else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") m_simSetupUI.eosSelector->setCurrentText("*EOS_JWL");
+        else if (matType == "*MAT_NULL") m_simSetupUI.eosSelector->setCurrentText("*EOS_LINEAR_POLYNOMIAL");
+        else m_simSetupUI.eosSelector->setCurrentText("None");
+        m_simSetupUI.eosSelector->blockSignals(false);
+
+        handleMaterialTypeChanged(matType); // 绘制输入框
+        });
 
     connect(m_simSetupUI.btnAddMaterial, &QPushButton::clicked, this, &MainWindow::handleAddMaterial);
     connect(m_simSetupUI.btnAddContact, &QPushButton::clicked, this, &MainWindow::handleAddContact);
@@ -1438,7 +1456,7 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
     }
     m_simSetupUI.currentMatInputs.clear();
 
-    // 辅助 Lambda 表达式：快速添加一行参数
+    // 辅助 Lambda
     auto addParam = [&](const QString& label, const QString& key, double defaultVal) {
         QDoubleSpinBox* box = new QDoubleSpinBox();
         box->setRange(-999999, 999999);
@@ -1448,10 +1466,9 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         m_simSetupUI.currentMatInputs[key] = box;
         };
 
-    // 2. 根据材料类型动态构建 UI
+    // 2. 先画出纯材料 (MAT) 的参数
     if (matType == "*MAT_JOHNSON_COOK") {
-        m_simSetupUI.eosSelector->setCurrentText("*EOS_GRUNEISEN"); // 默认关联
-        addParam("密度 (RO):", "ro", 7.83e-6); // 例：钢铁 kg/mm^3
+        addParam("密度 (RO):", "ro", 7.83e-6);
         addParam("剪切模量 (G):", "g", 77.0);
         addParam("屈服强度 (A):", "a", 0.792);
         addParam("硬化常数 (B):", "b", 0.510);
@@ -1461,17 +1478,60 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         addParam("熔点 (TMELT):", "tmelt", 1793);
     }
     else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") {
-        m_simSetupUI.eosSelector->setCurrentText("*EOS_JWL"); // 炸药必须配 JWL
-        addParam("密度 (RO):", "ro", 1.63e-6); // 例：TNT
+        addParam("密度 (RO):", "ro", 1.63e-6);
         addParam("爆速 (D):", "d", 6.93);
         addParam("CJ 压力 (PCJ):", "pcj", 21.0);
-        // -- 自动追加展示 JWL 参数 --
+    }
+    else if (matType == "*MAT_NULL") {
+        addParam("密度 (RO):", "ro", 1.0e-6);
+        addParam("压力截断 (PC):", "pc", -1.0e-6);
+        addParam("动力粘度 (MU):", "mu", 0.0);
+    }
+
+    // 3. 接着读取当前 EOS 选了什么，并在下方画出具体的 EOS 参数！
+    QString eosType = m_simSetupUI.eosSelector->currentText();
+
+    if (eosType == "*EOS_GRUNEISEN") {
+        addParam("[GRUNEISEN] C (截距):", "gr_c", 0.0);
+        addParam("[GRUNEISEN] S1 (斜率):", "gr_s1", 0.0);
+        addParam("[GRUNEISEN] GAMAO:", "gr_gamao", 0.0);
+    }
+    else if (eosType == "*EOS_JWL") {
         addParam("[JWL] A:", "jwl_a", 373.77);
         addParam("[JWL] B:", "jwl_b", 3.747);
         addParam("[JWL] R1:", "jwl_r1", 4.15);
         addParam("[JWL] R2:", "jwl_r2", 0.90);
         addParam("[JWL] OMEGA:", "jwl_omega", 0.35);
         addParam("[JWL] E0:", "jwl_e0", 6.0);
+    }
+    else if (eosType == "*EOS_LINEAR_POLYNOMIAL") {
+        addParam("[LINEAR] C0:", "lp_c0", 0.0);
+        addParam("[LINEAR] C1:", "lp_c1", 0.0);
+        addParam("[LINEAR] C2:", "lp_c2", 0.0);
+        addParam("[LINEAR] C3:", "lp_c3", 0.0);
+        addParam("[LINEAR] C4:", "lp_c4", 0.4);
+        addParam("[LINEAR] C5:", "lp_c5", 0.4);
+        addParam("[LINEAR] C6:", "lp_c6", 0.0);
+        addParam("[LINEAR] E0:", "lp_e0", 2.5e-6);
+        addParam("[LINEAR] V0:", "lp_v0", 1.0);
+    }
+    else if (eosType == "*EOS_TILLOTSON") {
+        addParam("[TILLOTSON] A:", "til_a", 0.0);
+        addParam("[TILLOTSON] B:", "til_b", 0.0);
+        addParam("[TILLOTSON] OMEGA:", "til_omega", 0.0);
+        addParam("[TILLOTSON] E0:", "til_e0", 0.0);
+        addParam("[TILLOTSON] V0:", "til_v0", 1.0);
+        addParam("[TILLOTSON] ALPHA:", "til_alpha", 0.0);
+        addParam("[TILLOTSON] BETA:", "til_beta", 0.0);
+    }
+    else if (eosType == "*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE") {
+        addParam("[I&G] A:", "ig_a", 0.0);
+        addParam("[I&G] B:", "ig_b", 0.0);
+        addParam("[I&G] OMEGA:", "ig_omega", 0.0);
+        addParam("[I&G] C:", "ig_c", 0.0);
+        addParam("[I&G] E0:", "ig_e0", 0.0);
+        addParam("[I&G] Q1:", "ig_q1", 0.0);
+        addParam("[I&G] G1:", "ig_g1", 0.0);
     }
 }
 
@@ -1582,8 +1642,9 @@ void MainWindow::handleAddMaterial() {
 
     auto part = getOrCreatePart(target);
     QString matType = m_simSetupUI.materialSelector->currentText().remove("*MAT_");
+    QString eosTypeStr = m_simSetupUI.eosSelector->currentText();
 
-    // 1. 将前端所有的 QDoubleSpinBox 动态输入抓取为字典
+    // 1. 将前端动态输入全部抓取为字典（包含刚生成的 MAT 参数和 EOS 参数）
     std::map<std::string, double> paramDict;
     for (auto it = m_simSetupUI.currentMatInputs.begin(); it != m_simSetupUI.currentMatInputs.end(); ++it) {
         paramDict[it.key().toStdString()] = it.value()->value();
@@ -1595,17 +1656,20 @@ void MainWindow::handleAddMaterial() {
     // 2. 实例化材料卡丢入管家
     m_deck.addCard(std::make_shared<MaterialCard>(part->pid, matType.toStdString(), paramDict));
 
-    // 3. 根据材料类型自动挂载 EOS
-    if (matType == "JOHNSON_COOK") {
-        m_deck.addCard(std::make_shared<EOSCard>(part->pid, "GRUNEISEN", paramDict));
-        part->eosid = part->pid; // 🌟 直接通过智能指针修改实体绑定的 eosid，极其方便！
-    }
-    else if (matType == "HIGH_EXPLOSIVE_BURN") {
-        m_deck.addCard(std::make_shared<EOSCard>(part->pid, "JWL", paramDict));
-        part->eosid = part->pid;
-    }
+    // 3. 动态解析并挂载 EOS
+    if (eosTypeStr != "None") {
+        QString cleanEos = eosTypeStr;
+        cleanEos.remove("*EOS_"); // 变成 "GRUNEISEN", "JWL" 等
 
-    m_simSetupUI.setupSummaryList->addItem(QString("[材料] 实体:%1 | %2").arg(target).arg(matType));
+        m_deck.addCard(std::make_shared<EOSCard>(part->pid, cleanEos.toStdString(), paramDict));
+        part->eosid = part->pid; // 绑定到实体
+
+        m_simSetupUI.setupSummaryList->addItem(QString("[材料+EOS] 实体:%1 | %2 + %3").arg(target).arg(matType).arg(cleanEos));
+    }
+    else {
+        part->eosid = 0; // 无 EOS
+        m_simSetupUI.setupSummaryList->addItem(QString("[材料] 实体:%1 | %2").arg(target).arg(matType));
+    }
 }
 
 void MainWindow::handleAddContact() {
@@ -1638,9 +1702,27 @@ void MainWindow::handleAddIC() {
 
 void MainWindow::handleAddSection() {
     QString target = m_simSetupUI.sectionEntitySelector->currentText();
+    if (target.isEmpty()) return;
+
+    // 1. 获取目标实体的底层指针
+    auto part = getOrCreatePart(target);
+
+    // 2. 获取截面类型 (将 "*SECTION_SOLID" 截断为 "SOLID")
     QString type = m_simSetupUI.sectionTypeSelector->currentText().remove("*SECTION_");
 
-    QString summary = QString("[截面] 实体: %1 | 类型: %2").arg(target).arg(type);
+    // 3. 提取 ELFORM 数字
+    // 因为你的 UI 文字是 "1 - 单点积分 (快, 需控制沙漏)"，我们用 split 提取第一个字符并转成整数
+    QString elformStr = m_simSetupUI.sectionElformSelector->currentText();
+    int elform = elformStr.split(" ").first().toInt();
+
+    // 4. 实例化截面卡片
+    m_deck.addCard(std::make_shared<SectionCard>(part->pid, type.toStdString(), elform));
+
+    // 5. 核心逻辑：通知实体将它的 SECID 设为自身的 PID，完成挂载！
+    part->secid = part->pid;
+
+    // 更新右侧的信息列表
+    QString summary = QString("[截面] 实体: %1 | 类型: %2 | 算法: ELFORM=%3").arg(target).arg(type).arg(elform);
     m_simSetupUI.setupSummaryList->addItem(summary);
 }
 

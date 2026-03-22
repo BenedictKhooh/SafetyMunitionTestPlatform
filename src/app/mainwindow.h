@@ -31,6 +31,7 @@
 #include "src/core/common/EOS/EOS.h"
 #include "src/core/common/InitialConditions/InitialConditions.h"
 #include "src/core/common/GlobalControl/GlobalControl.h"
+#include "src/core/common/Section/SectionCard.h"
 #include <memory>
 //
 

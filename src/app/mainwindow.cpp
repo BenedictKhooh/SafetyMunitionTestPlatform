@@ -28,10 +28,12 @@
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
-    // 1. 顶层架构改造：引入多工作区隔离
+    // 引入多工作区
     // ==========================================
     mainModeTab = new QTabWidget(this);
     setCentralWidget(mainModeTab); // 让 TabWidget 成为真正的中心件
+
+    mainModeTab->setStyleSheet("QTabBar::tab { height: 0px; width: 0px; padding: 0px; margin: 0px; border: none; }");
 
     // --- Tab 1: 前处理工作区 ---
     glWidget = new GLWidget(this);
@@ -98,11 +100,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         for (QDockWidget* dock : this->findChildren<QDockWidget*>()) {
             dock->setVisible(isPreProcess);
         }
-
-        // 自动遍历并控制所有工具栏 (ToolBars) 的显示状态 (如果后处理不需要原本的画图工具栏)
-        for (QToolBar* tb : this->findChildren<QToolBar*>()) {
-            tb->setVisible(isPreProcess);
-        }
         });
 }
 
@@ -151,23 +148,61 @@ void MainWindow::createMenuBar() {
 }
 
 void MainWindow::createToolBars() {
-    // 文件工具栏
-    fileToolBar = addToolBar("File");
-    fileToolBar->addAction("New");
-    fileToolBar->addAction("Open");
-    fileToolBar->addAction("Save");
+    // 1. 创建全新的全局模式切换工具栏
+    QToolBar* modeToolBar = addToolBar("工作模式 (Mode)");
+    modeToolBar->setMovable(false); // 固定在顶部，不让用户乱拖破坏布局
 
-    // 编辑工具栏
-    editToolBar = addToolBar("Edit");
-    editToolBar->addAction("Cut");
-    editToolBar->addAction("Copy");
-    editToolBar->addAction("Paste");
+    // 2. 创建两个切换动作 (Action)
+    QAction* preModeAct = new QAction("1. 前处理与建模", this);
+    preModeAct->setCheckable(true);
+    preModeAct->setChecked(true); // 默认启动时选中前处理
 
-    // 视图工具栏
-    viewToolBar = addToolBar("View");
-    viewToolBar->addAction("Zoom In");
-    viewToolBar->addAction("Zoom Out");
-    viewToolBar->addAction("Reset View");
+    QAction* postModeAct = new QAction("2. 求解与后处理", this);
+    postModeAct->setCheckable(true);
+
+    // 3. 把它们加入互斥组 (ActionGroup)，保证一次只能按下一个
+    QActionGroup* modeGroup = new QActionGroup(this);
+    modeGroup->addAction(preModeAct);
+    modeGroup->addAction(postModeAct);
+    modeGroup->setExclusive(true);
+
+    // 4. 将动作添加到工具栏
+    modeToolBar->addAction(preModeAct);
+    modeToolBar->addSeparator();
+    modeToolBar->addAction(postModeAct);
+
+    // 5. 绑定点击事件，通过点击工具栏按钮，在底层悄悄切换 Tab 页面
+    connect(preModeAct, &QAction::triggered, this, [this]() {
+        mainModeTab->setCurrentIndex(0);
+        });
+    connect(postModeAct, &QAction::triggered, this, [this]() {
+        mainModeTab->setCurrentIndex(1);
+        });
+
+    // 6. UI 美化：把工具栏变成极具现代工业软件感的设计
+    modeToolBar->setStyleSheet(
+        "QToolBar {"
+        "   background-color: #F8F9FA;"
+        "   border-bottom: 1px solid #D0D0D0;"
+        "   padding: 4px;"
+        "}"
+        "QToolButton {"
+        "   font-size: 11pt;"
+        "   font-weight: bold;"
+        "   padding: 6px 20px;"
+        "   margin: 0px 5px;"
+        "   border-radius: 4px;"
+        "   color: #555555;"
+        "   background-color: transparent;"
+        "}"
+        "QToolButton:checked {"
+        "   background-color: #0055A4;"   /* 选中时变为醒目的品牌蓝 */
+        "   color: white;"                /* 选中时字体变白 */
+        "}"
+        "QToolButton:hover:!checked {"
+        "   background-color: #E2E6EA;"   /* 鼠标悬浮时的交互浅灰色 */
+        "}"
+    );
 }
 
 void MainWindow::createStatusBar() {

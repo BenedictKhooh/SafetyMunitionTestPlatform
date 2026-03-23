@@ -993,15 +993,21 @@ void MainWindow::setupGeneratorTab(QTabWidget* tabWidget, const QString& title, 
 }
 
 // 辅助函数：向特定的 UI 结构体中添加输入框
-void MainWindow::addNumParamToUI(GeneratorUI& ui, const QString& labelText, const QString& key, double defaultValue) {
+void MainWindow::addNumParamToUI(GeneratorUI& ui, const QString& labelText, const QString& key, double defaultValue, const QString& unit) {
     QHBoxLayout* row = new QHBoxLayout();
     row->addWidget(new QLabel(labelText));
     QDoubleSpinBox* sb = new QDoubleSpinBox(this);
     sb->setRange(-9999.0, 9999.0);
     sb->setValue(defaultValue);
+
+    // 🌟 新增：如果传入了单位，就把它作为后缀显示在数字后面
+    if (!unit.isEmpty()) {
+        sb->setSuffix(unit);
+    }
+
     row->addWidget(sb);
     ui.paramLayout->addLayout(row);
-    ui.paramInputs[key] = sb; // 记录到对应的 ui 结构体中
+    ui.paramInputs[key] = sb;
 }
 
 // 槽函数重构：处理任意一个窗口的下拉菜单变化
@@ -1026,65 +1032,65 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
 
     // 根据选中的形状生成参数
     if (text == "Cube") {
-        addNumParamToUI(ui, "Length (LX):", "lx", 10.0);
-        addNumParamToUI(ui, "Width (LY):", "ly", 10.0);
-        addNumParamToUI(ui, "Height (LZ):", "lz", 10.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Length (LX):", "lx", 10.0, " cm");
+        addNumParamToUI(ui, "Width (LY):", "ly", 10.0, " cm");
+        addNumParamToUI(ui, "Height (LZ):", "lz", 10.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
     else if (text == "Cylinder") {
-        addNumParamToUI(ui, "Radius (R):", "r", 5.0);
-        addNumParamToUI(ui, "Height (H):", "h", 15.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Radius (R):", "r", 5.0, " cm");
+        addNumParamToUI(ui, "Height (H):", "h", 15.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
     else if (text == "CylindricalShell") {
-        addNumParamToUI(ui, "Inner Radius:", "r", 5.0);
-        addNumParamToUI(ui, "Total Height:", "h", 15.0);
-        addNumParamToUI(ui, "Lid Thick:", "lid", 1.0);
-        addNumParamToUI(ui, "Wall Thick:", "wall", 1.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Inner Radius:", "r", 5.0, " cm");
+        addNumParamToUI(ui, "Total Height:", "h", 15.0, " cm");
+        addNumParamToUI(ui, "Lid Thick:", "lid", 1.0, " cm");
+        addNumParamToUI(ui, "Wall Thick:", "wall", 1.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
     else if (text == "OpenCylindricalShell") {
-        addNumParamToUI(ui, "Radius:", "r", 5.0);
-        addNumParamToUI(ui, "Wall Thick:", "wall", 1.0);
-        addNumParamToUI(ui, "Base Height:", "h_base", 1.0);
-        addNumParamToUI(ui, "Wall Height:", "h_wall", 10.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Radius:", "r", 5.0, " cm");
+        addNumParamToUI(ui, "Wall Thick:", "wall", 1.0, " cm");
+        addNumParamToUI(ui, "Base Height:", "h_base", 1.0, " cm");
+        addNumParamToUI(ui, "Wall Height:", "h_wall", 10.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
     else if (text == "Sphere" || text == "Hemisphere") {
-        addNumParamToUI(ui, "Radius:", "r", 5.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Radius:", "r", 5.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
     else if (text == "Frustum") {
-        addNumParamToUI(ui, "Base R:", "rb", 6.0);
-        addNumParamToUI(ui, "Top R:", "rt", 3.0);
-        addNumParamToUI(ui, "Height:", "h", 10.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Base R:", "rb", 6.0, " cm");
+        addNumParamToUI(ui, "Top R:", "rt", 3.0, " cm");
+        addNumParamToUI(ui, "Height:", "h", 10.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
     else if (text == "HalfCylinder") {
-        addNumParamToUI(ui, "Radius:", "r", 5.0);
-        addNumParamToUI(ui, "Height:", "h", 15.0);
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0);
-        addNumParamToUI(ui, "Center X:", "cx", 0.0);
-        addNumParamToUI(ui, "Center Y:", "cy", 0.0);
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0);
+        addNumParamToUI(ui, "Radius:", "r", 5.0, " cm");
+        addNumParamToUI(ui, "Height:", "h", 15.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
 }
 
@@ -1365,10 +1371,12 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.endtimeInput = new QDoubleSpinBox();
     m_simSetupUI.endtimeInput->setRange(0, 99999); m_simSetupUI.endtimeInput->setValue(1.0);
     ctrlLayout->addRow("结束时间 (ENDTIM):", m_simSetupUI.endtimeInput);
+    m_simSetupUI.endtimeInput->setSuffix(" μs");
 
     m_simSetupUI.d3plotFreqInput = new QDoubleSpinBox();
     m_simSetupUI.d3plotFreqInput->setRange(0, 9999); m_simSetupUI.d3plotFreqInput->setValue(0.01);
     ctrlLayout->addRow("D3PLOT 步长 (DT):", m_simSetupUI.d3plotFreqInput);
+    m_simSetupUI.d3plotFreqInput->setSuffix(" μs");
 
     m_simSetupUI.mainTab->addTab(ctrlTab, "控制(Control)");
 
@@ -1436,8 +1444,11 @@ void MainWindow::createSimulationSetupDock() {
     icLayout->addRow("目标实体 (Part):", m_simSetupUI.icEntitySelector);
 
     m_simSetupUI.icVx = new QDoubleSpinBox(); m_simSetupUI.icVx->setRange(-99999, 99999);
+    m_simSetupUI.icVx->setSuffix(" cm/μs");
     m_simSetupUI.icVy = new QDoubleSpinBox(); m_simSetupUI.icVy->setRange(-99999, 99999);
+    m_simSetupUI.icVy->setSuffix(" cm/μs");
     m_simSetupUI.icVz = new QDoubleSpinBox(); m_simSetupUI.icVz->setRange(-99999, 99999);
+    m_simSetupUI.icVz->setSuffix(" cm/μs");
     icLayout->addRow("X 向初始速度 (Vx):", m_simSetupUI.icVx);
     icLayout->addRow("Y 向初始速度 (Vy):", m_simSetupUI.icVy);
     icLayout->addRow("Z 向初始速度 (Vz):", m_simSetupUI.icVz);
@@ -1599,25 +1610,30 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
     m_simSetupUI.currentMatInputs.clear();
 
     // 辅助 Lambda
-    auto addParam = [&](const QString& label, const QString& key, double defaultVal) {
+    auto addParam = [&](const QString& label, const QString& key, double defaultVal, const QString& unit = "") {
         QDoubleSpinBox* box = new QDoubleSpinBox();
         box->setRange(-999999, 999999);
         box->setDecimals(5);
         box->setValue(defaultVal);
+
+        if (!unit.isEmpty()) {
+            box->setSuffix(unit);
+        }
+
         m_simSetupUI.matParamLayout->addRow(label, box);
         m_simSetupUI.currentMatInputs[key] = box;
         };
 
     // 2. 先画出纯材料 (MAT) 的参数
     if (matType == "*MAT_JOHNSON_COOK") {
-        addParam("密度 (RO):", "ro", 7.83e-6);
-        addParam("剪切模量 (G):", "g", 77.0);
-        addParam("屈服强度 (A):", "a", 0.792);
-        addParam("硬化常数 (B):", "b", 0.510);
+        addParam("密度 (RO):", "ro", 7.83e-6, " g/cm³");
+        addParam("剪切模量 (G):", "g", 77.0, " Mbar");
+        addParam("屈服强度 (A):", "a", 0.792, " Mbar");
+        addParam("硬化常数 (B):", "b", 0.510, " Mbar");
         addParam("硬化指数 (N):", "n", 0.26);
         addParam("应变率常数 (C):", "c", 0.014);
         addParam("软化指数 (M):", "m", 1.03);
-        addParam("熔点 (TMELT):", "tmelt", 1793);
+        addParam("熔点 (TMELT):", "tmelt", 1793, " K");
     }
     else if (matType == "*MAT_HIGH_EXPLOSIVE_BURN") {
         addParam("密度 (RO):", "ro", 1.63e-6);
@@ -1645,12 +1661,12 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         addParam("[GRUNEISEN] GAMAO:", "gr_gamao", 0.0);
     }
     else if (eosType == "*EOS_JWL") {
-        addParam("[JWL] A:", "jwl_a", 373.77);
-        addParam("[JWL] B:", "jwl_b", 3.747);
+        addParam("[JWL] A:", "jwl_a", 373.77, " Mbar");
+        addParam("[JWL] B:", "jwl_b", 3.747, " Mbar");
         addParam("[JWL] R1:", "jwl_r1", 4.15);
         addParam("[JWL] R2:", "jwl_r2", 0.90);
         addParam("[JWL] OMEGA:", "jwl_omega", 0.35);
-        addParam("[JWL] E0:", "jwl_e0", 6.0);
+        addParam("[JWL] E0:", "jwl_e0", 0.06, " Mbar");
     }
     else if (eosType == "*EOS_LINEAR_POLYNOMIAL") {
         addParam("[LINEAR] C0:", "lp_c0", 0.0);

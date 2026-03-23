@@ -144,8 +144,8 @@ private:
     void handleShapeTypeChanged(GeneratorUI& ui, const QString& text);
     void handleGenerateButtonClicked(GeneratorUI& ui);
 
-    // 更新辅助函数，加入 GeneratorUI 参数
-    void addNumParamToUI(GeneratorUI& ui, const QString& labelText, const QString& key, double defaultValue);
+    // 辅助函数：向特定的 UI 结构体中添加带单位后缀的输入框
+    void addNumParamToUI(GeneratorUI& ui, const QString& labelText, const QString& key, double defaultValue, const QString& unit = "");
 
     QTextEdit *commandHistoryEdit;
 

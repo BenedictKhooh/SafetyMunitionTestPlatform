@@ -27,6 +27,16 @@ public:
         m_cards.clear();
     }
 
+    void removeCard(KeywordCard* targetPtr) {
+        m_cards.erase(
+            std::remove_if(m_cards.begin(), m_cards.end(),
+                [targetPtr](const std::shared_ptr<KeywordCard>& card) {
+                    return card.get() == targetPtr; // 匹配底层原始指针
+                }),
+            m_cards.end()
+        );
+    }
+
     // 3. 修复报错：一键多态生成 K 文件文本的方法
     std::string generateDeck() const {
         std::string result = "";

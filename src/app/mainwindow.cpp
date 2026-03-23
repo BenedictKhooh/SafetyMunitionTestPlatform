@@ -22,6 +22,10 @@
 #include <QCoreApplication>
 //
 
+#include <QMenu>
+#include <QDialog>
+#include <QTextEdit>
+
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
     // 1. 顶层架构改造：引入多工作区隔离
@@ -633,7 +637,7 @@ void MainWindow::startMeshing() {
 		qDebug() << "Gmsh 进程启动失败或超时！";
     }
 
-    qDebug() << "网格划分完成！文件已保存在 output.msh";
+    //qDebug() << "网格划分完成！文件已保存在 output.msh";
 }
 
 void MainWindow::parseMeshFile(QString fileName) {
@@ -1385,8 +1389,11 @@ void MainWindow::createSimulationSetupDock() {
     // 2. 下半部分放入实时观察列表
     mainVLayout->addWidget(new QLabel("已添加的仿真参数 (Active Cards):"));
     m_simSetupUI.setupSummaryList = new QListWidget();
-    m_simSetupUI.setupSummaryList->setMaximumHeight(150); // 限制一下高度，别占满屏幕
+    m_simSetupUI.setupSummaryList->setMaximumHeight(150);
     mainVLayout->addWidget(m_simSetupUI.setupSummaryList);
+
+    m_simSetupUI.setupSummaryList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_simSetupUI.setupSummaryList, &QListWidget::customContextMenuRequested, this, &MainWindow::showSummaryContextMenu);
 
     // 3. 底部操作按钮
     QHBoxLayout* bottomBtnLayout = new QHBoxLayout();
@@ -1497,28 +1504,67 @@ void MainWindow::createSimulationSetupDock() {
     ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
 
     // ==========================================
-    // Tab: 传感器与观测点 (Sensors)
+    // [重写] Tab: 传感器与观测点 (Sensors) - 统一界面
     // ==========================================
     QWidget* sensorTab = new QWidget();
-    QFormLayout* sensorLayout = new QFormLayout(sensorTab);
+    QVBoxLayout* sensorMainLayout = new QVBoxLayout(sensorTab);
 
+    QFormLayout* sensorLayout = new QFormLayout();
+
+    // 1. 实体选择
     m_simSetupUI.sensorEntitySelector = new QComboBox();
     sensorLayout->addRow("目标实体 (Target):", m_simSetupUI.sensorEntitySelector);
 
-    m_simSetupUI.sensorX = new QDoubleSpinBox(); m_simSetupUI.sensorX->setRange(-99999, 99999);
-    m_simSetupUI.sensorY = new QDoubleSpinBox(); m_simSetupUI.sensorY->setRange(-99999, 99999);
-    m_simSetupUI.sensorZ = new QDoubleSpinBox(); m_simSetupUI.sensorZ->setRange(-99999, 99999);
+    // 2. 模式切换
+    m_simSetupUI.sensorModeSelector = new QComboBox();
+    m_simSetupUI.sensorModeSelector->addItems({ "单点观测 (Single Point)", "线性阵列观测 (Line Array)" });
+    sensorLayout->addRow("观测模式 (Mode):", m_simSetupUI.sensorModeSelector);
 
-    sensorLayout->addRow("目标位置 X:", m_simSetupUI.sensorX);
-    sensorLayout->addRow("目标位置 Y:", m_simSetupUI.sensorY);
-    sensorLayout->addRow("目标位置 Z:", m_simSetupUI.sensorZ);
+    // 3. 起点 / 单点坐标
+    m_simSetupUI.sensorStartX = new QDoubleSpinBox(); m_simSetupUI.sensorStartX->setRange(-99999, 99999);
+    m_simSetupUI.sensorStartY = new QDoubleSpinBox(); m_simSetupUI.sensorStartY->setRange(-99999, 99999);
+    m_simSetupUI.sensorStartZ = new QDoubleSpinBox(); m_simSetupUI.sensorStartZ->setRange(-99999, 99999);
 
+    QHBoxLayout* startLayout = new QHBoxLayout();
+    startLayout->addWidget(m_simSetupUI.sensorStartX); startLayout->addWidget(m_simSetupUI.sensorStartY); startLayout->addWidget(m_simSetupUI.sensorStartZ);
+    sensorLayout->addRow("位置/起点 (X, Y, Z):", startLayout);
+
+    // 4. 阵列专属折叠面板 (默认隐藏)
+    m_simSetupUI.sensorArrayContainer = new QWidget();
+    QFormLayout* arrayLayout = new QFormLayout(m_simSetupUI.sensorArrayContainer);
+    arrayLayout->setContentsMargins(0, 0, 0, 0); // 取消边距让它看起来无缝衔接
+
+    m_simSetupUI.sensorEndX = new QDoubleSpinBox(); m_simSetupUI.sensorEndX->setRange(-99999, 99999);
+    m_simSetupUI.sensorEndY = new QDoubleSpinBox(); m_simSetupUI.sensorEndY->setRange(-99999, 99999);
+    m_simSetupUI.sensorEndZ = new QDoubleSpinBox(); m_simSetupUI.sensorEndZ->setRange(-99999, 99999);
+
+    QHBoxLayout* endLayout = new QHBoxLayout();
+    endLayout->addWidget(m_simSetupUI.sensorEndX); endLayout->addWidget(m_simSetupUI.sensorEndY); endLayout->addWidget(m_simSetupUI.sensorEndZ);
+    arrayLayout->addRow("终点坐标 (X, Y, Z):", endLayout);
+
+    m_simSetupUI.sensorNumPoints = new QSpinBox();
+    m_simSetupUI.sensorNumPoints->setRange(2, 1000);
+    m_simSetupUI.sensorNumPoints->setValue(10);
+    arrayLayout->addRow("测点数量 (N):", m_simSetupUI.sensorNumPoints);
+
+    sensorLayout->addRow("", m_simSetupUI.sensorArrayContainer);
+    m_simSetupUI.sensorArrayContainer->setVisible(false); // 初始状态为单点，隐藏该容器
+
+    // 🌟 核心折叠逻辑：根据下拉框的值，动态显示/隐藏下半部分
+    connect(m_simSetupUI.sensorModeSelector, &QComboBox::currentTextChanged, this, [this](const QString& text) {
+        m_simSetupUI.sensorArrayContainer->setVisible(text.contains("Line Array"));
+        });
+
+    sensorMainLayout->addLayout(sensorLayout);
+
+    // 5. 统一提交按钮
     m_simSetupUI.btnAddSensor = new QPushButton("添加观测点 (Add Sensor)");
-    sensorLayout->addWidget(m_simSetupUI.btnAddSensor);
+    sensorMainLayout->addWidget(m_simSetupUI.btnAddSensor);
+    sensorMainLayout->addStretch();
 
     m_simSetupUI.mainTab->addTab(sensorTab, "测点(Sensors)");
 
-    // 绑定按钮信号
+    // 绑定信号
     connect(m_simSetupUI.btnAddSensor, &QPushButton::clicked, this, &MainWindow::handleAddSensor);
 
     // 连接所有信号
@@ -1785,7 +1831,7 @@ void MainWindow::handleAddMaterial() {
     QString matType = m_simSetupUI.materialSelector->currentText().remove("*MAT_");
     QString eosTypeStr = m_simSetupUI.eosSelector->currentText();
 
-    // 1. 将前端动态输入全部抓取为字典（包含刚生成的 MAT 参数和 EOS 参数）
+    // 1. 将前端动态输入全部抓取为字典
     std::map<std::string, double> paramDict;
     for (auto it = m_simSetupUI.currentMatInputs.begin(); it != m_simSetupUI.currentMatInputs.end(); ++it) {
         paramDict[it.key().toStdString()] = it.value()->value();
@@ -1794,23 +1840,41 @@ void MainWindow::handleAddMaterial() {
         paramDict["mxeps"] = m_simSetupUI.erosionMxeps->value();
     }
 
-    // 2. 实例化材料卡片
-    m_deck.addCard(std::make_shared<MaterialCard>(part->pid, matType.toStdString(), paramDict));
+    // 2. 实例化材料卡片并存入 Deck
+    auto matCard = std::make_shared<MaterialCard>(part->pid, matType.toStdString(), paramDict);
+    m_deck.addCard(matCard);
 
-    // 3. 动态解析并挂载 EOS
+    // 3. 动态解析并挂载 EOS 卡片
+    std::shared_ptr<EOSCard> eosCard = nullptr;
     if (eosTypeStr != "None") {
         QString cleanEos = eosTypeStr;
         cleanEos.remove("*EOS_"); // 变成 "GRUNEISEN", "JWL" 等
 
-        m_deck.addCard(std::make_shared<EOSCard>(part->pid, cleanEos.toStdString(), paramDict));
+        eosCard = std::make_shared<EOSCard>(part->pid, cleanEos.toStdString(), paramDict);
+        m_deck.addCard(eosCard);
         part->eosid = part->pid; // 绑定到实体
-
-        m_simSetupUI.setupSummaryList->addItem(QString("[材料+EOS] 实体:%1 | %2 + %3").arg(target).arg(matType).arg(cleanEos));
     }
     else {
         part->eosid = 0; // 无 EOS
-        m_simSetupUI.setupSummaryList->addItem(QString("[材料] 实体:%1 | %2").arg(target).arg(matType));
     }
+
+    // 4. 生成右侧列表文字
+    QString summary = eosCard ? QString("[材料+EOS] 实体:%1 | %2 + %3").arg(target).arg(matType).arg(eosTypeStr.remove("*EOS_"))
+        : QString("[材料] 实体:%1 | %2").arg(target).arg(matType);
+
+    // 5. 【核心修改】将卡片指针地址悄悄绑定到列表项 (UserRole隐藏域)
+    QListWidgetItem* item = new QListWidgetItem(summary);
+
+    // 绑定 MAT 卡片地址
+    item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(matCard.get())));
+
+    // 如果有 EOS，把 EOS 卡片地址绑在备用域 UserRole + 2
+    if (eosCard) {
+        item->setData(Qt::UserRole + 2, QVariant::fromValue(reinterpret_cast<quintptr>(eosCard.get())));
+    }
+    item->setData(Qt::UserRole + 1, "CARD"); // 标记类型为实体卡片
+
+    m_simSetupUI.setupSummaryList->addItem(item);
 }
 
 void MainWindow::handleAddContact() {
@@ -1819,7 +1883,12 @@ void MainWindow::handleAddContact() {
     QString slave = m_simSetupUI.contactSlaveSelector->currentText();
 
     QString summary = QString("[接触] %1 | 主面: %2 | 从面: %3").arg(type).arg(master).arg(slave);
-    m_simSetupUI.setupSummaryList->addItem(summary);
+
+    // 【修改】仅作显示，标记为 OTHER
+    QListWidgetItem* item = new QListWidgetItem(summary);
+    item->setData(Qt::UserRole + 1, "OTHER");
+
+    m_simSetupUI.setupSummaryList->addItem(item);
 }
 
 void MainWindow::handleAddIC() {
@@ -1828,17 +1897,25 @@ void MainWindow::handleAddIC() {
 
     auto part = getOrCreatePart(target); // 获取实体对应的 Part 指针
 
-    // 🌟 实例化并推入容器 (利用多态)
-    m_deck.addCard(std::make_shared<InitialVelocityGenerationCard>(
+    // 1. 实例化初始速度卡片
+    auto icCard = std::make_shared<InitialVelocityGenerationCard>(
         part->pid,
         m_simSetupUI.icVx->value(),
         m_simSetupUI.icVy->value(),
         m_simSetupUI.icVz->value()
-    ));
+    );
+    m_deck.addCard(icCard);
 
-    // 更新前端列表
-    QString summary = QString("[初始速度] 实体: %1 | V=(%2, %3, %4)").arg(target).arg(m_simSetupUI.icVx->value()).arg(m_simSetupUI.icVy->value()).arg(m_simSetupUI.icVz->value());
-    m_simSetupUI.setupSummaryList->addItem(summary);
+    // 2. 生成右侧列表文字
+    QString summary = QString("[初始速度] 实体: %1 | V=(%2, %3, %4)")
+        .arg(target).arg(m_simSetupUI.icVx->value()).arg(m_simSetupUI.icVy->value()).arg(m_simSetupUI.icVz->value());
+
+    // 3. 【核心修改】将卡片指针地址绑定到列表项
+    QListWidgetItem* item = new QListWidgetItem(summary);
+    item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(icCard.get())));
+    item->setData(Qt::UserRole + 1, "CARD");
+
+    m_simSetupUI.setupSummaryList->addItem(item);
 }
 
 void MainWindow::handleAddSection() {
@@ -1848,23 +1925,25 @@ void MainWindow::handleAddSection() {
     // 1. 获取目标实体的底层指针
     auto part = getOrCreatePart(target);
 
-    // 2. 获取截面类型 (将 "*SECTION_SOLID" 截断为 "SOLID")
+    // 2. 获取截面类型和算法
     QString type = m_simSetupUI.sectionTypeSelector->currentText().remove("*SECTION_");
-
-    // 3. 提取 ELFORM 数字
-    // 因为你的 UI 文字是 "1 - 单点积分 (快, 需控制沙漏)"，我们用 split 提取第一个字符并转成整数
     QString elformStr = m_simSetupUI.sectionElformSelector->currentText();
     int elform = elformStr.split(" ").first().toInt();
 
-    // 4. 实例化截面卡片
-    m_deck.addCard(std::make_shared<SectionCard>(part->pid, type.toStdString(), elform));
+    // 3. 实例化截面卡片
+    auto secCard = std::make_shared<SectionCard>(part->pid, type.toStdString(), elform);
+    m_deck.addCard(secCard);
+    part->secid = part->pid; // 绑定实体
 
-    // 5. 核心逻辑：通知实体将它的 SECID 设为自身的 PID，完成挂载！
-    part->secid = part->pid;
-
-    // 更新右侧的信息列表
+    // 4. 生成右侧列表文字
     QString summary = QString("[截面] 实体: %1 | 类型: %2 | 算法: ELFORM=%3").arg(target).arg(type).arg(elform);
-    m_simSetupUI.setupSummaryList->addItem(summary);
+
+    // 5. 【核心修改】将卡片指针地址绑定到列表项
+    QListWidgetItem* item = new QListWidgetItem(summary);
+    item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(secCard.get())));
+    item->setData(Qt::UserRole + 1, "CARD");
+
+    m_simSetupUI.setupSummaryList->addItem(item);
 }
 
 void MainWindow::handleClearSummary() {
@@ -1980,7 +2059,6 @@ void MainWindow::handlePresetChanged(const QString& presetName) {
         }
     }
 
-    // 4. 将极度权威的文献来源打印在命令行日志上
     logCommand("Material Preset", QString("已加载预设 [%1]. 数据来源文献: %2").arg(presetName).arg(preset.source));
 }
 
@@ -1988,38 +2066,76 @@ void MainWindow::handleAddSensor() {
     QString target = m_simSetupUI.sensorEntitySelector->currentText();
     if (target.isEmpty()) return;
 
-    // 获取底层网格实体数据
     MeshEntity* entity = m_repository.getMutableEntity(target);
     if (!entity || entity->nodes.size() < 2) return;
 
-    double tx = m_simSetupUI.sensorX->value();
-    double ty = m_simSetupUI.sensorY->value();
-    double tz = m_simSetupUI.sensorZ->value();
+    // 获取当前模式是否为阵列
+    bool isArray = m_simSetupUI.sensorModeSelector->currentText().contains("Line Array");
 
-    int closestIdx = -1;
-    double min_dist = 1e9; // 初始设为一个巨大的距离
+    // 提取通用起点
+    double sx = m_simSetupUI.sensorStartX->value();
+    double sy = m_simSetupUI.sensorStartY->value();
+    double sz = m_simSetupUI.sensorStartZ->value();
 
-    // 遍历实体内的所有节点寻找最近点 (跳过索引0的占位符)
-    for (size_t i = 1; i < entity->nodes.size(); ++i) {
-        double dx = entity->nodes[i].pos.x() - tx;
-        double dy = entity->nodes[i].pos.y() - ty;
-        double dz = entity->nodes[i].pos.z() - tz;
-        double dist = std::sqrt(dx * dx + dy * dy + dz * dz); // 计算欧氏距离
+    if (!isArray) {
+        // -----------------------------
+        // 分支 A: 单点测点逻辑
+        // -----------------------------
+        int closestIdx = -1;
+        double min_dist = 1e9;
 
-        if (dist < min_dist) {
-            min_dist = dist;
-            closestIdx = i;
+        for (size_t i = 1; i < entity->nodes.size(); ++i) {
+            double dx = entity->nodes[i].pos.x() - sx;
+            double dy = entity->nodes[i].pos.y() - sy;
+            double dz = entity->nodes[i].pos.z() - sz;
+            double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < min_dist) { min_dist = dist; closestIdx = i; }
+        }
+
+        if (closestIdx != -1 && !m_sensorNodes[target].contains(closestIdx)) {
+            m_sensorNodes[target].append(closestIdx);
+
+            QString summary = QString("[测点] 实体:%1 | 单点:(%2,%3,%4) -> 吸附误差:%5")
+                .arg(target).arg(sx).arg(sy).arg(sz).arg(min_dist, 0, 'f', 4);
+            if (m_simSetupUI.setupSummaryList) m_simSetupUI.setupSummaryList->addItem(summary);
+            logCommand("Sensor", summary);
         }
     }
+    else {
+        // -----------------------------
+        // 分支 B: 线性阵列测点逻辑
+        // -----------------------------
+        double ex = m_simSetupUI.sensorEndX->value();
+        double ey = m_simSetupUI.sensorEndY->value();
+        double ez = m_simSetupUI.sensorEndZ->value();
+        int count = m_simSetupUI.sensorNumPoints->value();
+        int successCount = 0;
 
-    if (closestIdx != -1) {
-        // 将局部索引记录到字典中
-        m_sensorNodes[target].append(closestIdx);
+        for (int k = 0; k < count; ++k) {
+            double t = static_cast<double>(k) / (count - 1);
+            double tx = sx + t * (ex - sx);
+            double ty = sy + t * (ey - sy);
+            double tz = sz + t * (ez - sz);
 
-        // 打印到面板供用户确认
-        QString summary = QString("[测点] 实体:%1 | 坐标:(%2,%3,%4) -> 绑定网格点误差: %5")
-            .arg(target).arg(tx).arg(ty).arg(tz).arg(min_dist, 0, 'f', 4);
-        m_simSetupUI.setupSummaryList->addItem(summary);
+            int closestIdx = -1;
+            double min_dist = 1e9;
+            for (size_t i = 1; i < entity->nodes.size(); ++i) {
+                double dx = entity->nodes[i].pos.x() - tx;
+                double dy = entity->nodes[i].pos.y() - ty;
+                double dz = entity->nodes[i].pos.z() - tz;
+                double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+                if (dist < min_dist) { min_dist = dist; closestIdx = i; }
+            }
+
+            if (closestIdx != -1 && !m_sensorNodes[target].contains(closestIdx)) {
+                m_sensorNodes[target].append(closestIdx);
+                successCount++;
+            }
+        }
+
+        QString summary = QString("[阵列测点] 实体:%1 | %2个点 | 从(%3,%4,%5)到(%6,%7,%8)")
+            .arg(target).arg(successCount).arg(sx).arg(sy).arg(sz).arg(ex).arg(ey).arg(ez);
+        if (m_simSetupUI.setupSummaryList) m_simSetupUI.setupSummaryList->addItem(summary);
         logCommand("Sensor", summary);
     }
 }
@@ -2232,4 +2348,75 @@ void MainWindow::launchPostProcessor() {
         "后处理接口",
         "d3plot 可视化接口模块正在开发中...\n\n后续可以在这里唤起官方的 LS-PrePost 软件，或者集成我们自己的 OpenGL 后处理渲染器！"
     );
+}
+
+// ==========================================
+// 右键菜单与预览功能 (全新增)
+// ==========================================
+void MainWindow::showSummaryContextMenu(const QPoint& pos) {
+    QListWidgetItem* item = m_simSetupUI.setupSummaryList->itemAt(pos);
+    if (!item) return;
+
+    QMenu menu(this);
+    QAction* viewAct = menu.addAction("查看关键字格式 (View K-File)");
+    QAction* delAct = menu.addAction("删除该项 (Delete)");
+
+    QAction* selected = menu.exec(m_simSetupUI.setupSummaryList->mapToGlobal(pos));
+    if (!selected) return;
+
+    // 提取隐藏在 item 中的卡片指针和类型
+    QString type = item->data(Qt::UserRole + 1).toString();
+    quintptr ptrVal = item->data(Qt::UserRole).value<quintptr>();
+    KeywordCard* cardPtr = reinterpret_cast<KeywordCard*>(ptrVal);
+
+    if (selected == viewAct) {
+        if (type == "CARD" && cardPtr) {
+            // 弹出一个黑客风代码预览框
+            QDialog dialog(this);
+            dialog.setWindowTitle("LS-DYNA 关键字预览");
+            dialog.resize(600, 400);
+
+            QVBoxLayout layout(&dialog);
+            QTextEdit textEdit;
+            textEdit.setReadOnly(true);
+            textEdit.setStyleSheet("background-color: #1E1E1E; color: #D4D4D4; font-family: Consolas; font-size: 11pt;");
+
+            // 解析主卡片
+            QString kText = QString::fromStdString(cardPtr->to_string());
+
+            // 如果有绑定的 EOS 附加卡片，拼接在一起显示
+            if (item->data(Qt::UserRole + 2).isValid()) {
+                quintptr eosPtrVal = item->data(Qt::UserRole + 2).value<quintptr>();
+                KeywordCard* eosCardPtr = reinterpret_cast<KeywordCard*>(eosPtrVal);
+                if (eosCardPtr) {
+                    kText += "\n" + QString::fromStdString(eosCardPtr->to_string());
+                }
+            }
+
+            textEdit.setPlainText(kText);
+            layout.addWidget(&textEdit);
+            dialog.exec();
+        }
+        else {
+            QMessageBox::information(this, "提示", "该项暂未生成标准卡片(如测点、接触等将在导出时动态生成)。");
+        }
+    }
+    else if (selected == delAct) {
+        if (type == "CARD" && cardPtr) {
+            // 从大管家中注销这张主卡片
+            m_deck.removeCard(cardPtr);
+
+            // 如果有绑定的 EOS 卡片，一并注销
+            if (item->data(Qt::UserRole + 2).isValid()) {
+                quintptr eosPtrVal = item->data(Qt::UserRole + 2).value<quintptr>();
+                KeywordCard* eosCardPtr = reinterpret_cast<KeywordCard*>(eosPtrVal);
+                if (eosCardPtr) {
+                    m_deck.removeCard(eosCardPtr);
+                }
+            }
+        }
+        // 清理 UI 列表项
+        delete item;
+        logCommand("System", "已撤销指定的仿真参数配置。");
+    }
 }

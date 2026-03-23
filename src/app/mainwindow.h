@@ -45,6 +45,7 @@ class QPushButton;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
+
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
@@ -81,6 +82,9 @@ private slots:
     void openResultFolder();
     void launchPostProcessor();
     //
+
+    void showSummaryContextMenu(const QPoint& pos);
+
 
 private:
     void createMenuBar();
@@ -257,9 +261,20 @@ private:
         // Sensors
 
         QComboBox* sensorEntitySelector;
-        QDoubleSpinBox* sensorX;
-        QDoubleSpinBox* sensorY;
-        QDoubleSpinBox* sensorZ;
+        QComboBox* sensorModeSelector;
+
+        // 2. 通用坐标 (起点或单点位置)
+        QDoubleSpinBox* sensorStartX;
+        QDoubleSpinBox* sensorStartY;
+        QDoubleSpinBox* sensorStartZ;
+        QDoubleSpinBox* sensorEndX;      // 阵列终点 X
+        QDoubleSpinBox* sensorEndY;      // 阵列终点 Y
+        QDoubleSpinBox* sensorEndZ;      // 阵列终点 Z
+
+        QWidget* sensorArrayContainer;
+        QSpinBox* sensorNumPoints;
+
+        QDoubleSpinBox* sensorX; QDoubleSpinBox* sensorY; QDoubleSpinBox* sensorZ;
         QPushButton* btnAddSensor;
     };
 
@@ -279,7 +294,7 @@ private:
     void onSetWorkingDirectory();
 
     // ==========================================
-    // 🌟 后端核心数据集与实体指针映射
+    // 数据集与实体指针映射
     // ==========================================
     LSDynaDeck m_deck; // 纯粹的容器管家
 

@@ -162,24 +162,15 @@ private:
     QToolBar *editToolBar;
     QToolBar *viewToolBar;
     QStatusBar *statusBar;
-    QDockWidget *propertiesDock;
-    QDockWidget *layersDock;
-    QDockWidget *commandDock;
-    QDockWidget *substanceDock;
-    QDockWidget *boundaryDock;
-    QDockWidget* interactionDock;
+    QDockWidget* substanceDock;
+    QTreeWidget* substanceTree;
+    QDockWidget* commandDock; 
+    CommandLine* commandLine;
 
-    CommandLine *commandLine;
-    QTextEdit *propertiesEditor;
-    QTreeWidget *layersTree;
-    QTreeWidget *substanceTree;
     void updateSubstanceTree();
     void onSubstanceTreeContextMenu(const QPoint& pos);
 
     void handleDeleteEntity(QString name);
-
-    QTreeWidget *boundaryTree;
-    QTreeWidget* interactionTree;
 
    /*  Data containers for the reconstruction process
     std::vector<MeshPoint> m_points;

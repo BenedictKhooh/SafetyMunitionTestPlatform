@@ -214,37 +214,19 @@ void MainWindow::createStatusBar() {
 }
 
 void MainWindow::createDockWidgets() {
-    // 属性停靠窗口
-    propertiesDock = new QDockWidget("Properties", this);
-    propertiesDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    propertiesEditor = new QTextEdit();
-    propertiesEditor->setPlainText("Object Properties:\n- Color: Red\n- Size: 1x1x1");
-    propertiesDock->setWidget(propertiesEditor);
-    propertiesDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    addDockWidget(Qt::RightDockWidgetArea, propertiesDock);
-
-    // 图层停靠窗口
-    layersDock = new QDockWidget("Layers", this);
-    layersDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    layersTree = new QTreeWidget();
-    layersTree->setHeaderLabel("Layer Name");
-    QTreeWidgetItem *layer1 = new QTreeWidgetItem(layersTree);
-    layer1->setText(0, "Layer 1");
-    QTreeWidgetItem *layer2 = new QTreeWidgetItem(layersTree);
-    layer2->setText(0, "Layer 2");
-    layersDock->setWidget(layersTree);
-    addDockWidget(Qt::RightDockWidgetArea, layersDock);
-
-    // 命令停靠窗口
+    // ==========================================
+    // 1. 命令历史停靠窗口 (保留在底部不变)
+    // ==========================================
     commandDock = new QDockWidget("Command History", this);
     commandDock->setAllowedAreas(Qt::BottomDockWidgetArea);
     commandHistoryEdit = new QTextEdit();  // 初始化 commandHistoryEdit
     commandHistoryEdit->setReadOnly(true);
-    //QListWidget *commandHistoryList = new QListWidget();
     commandDock->setWidget(commandHistoryEdit);
     addDockWidget(Qt::BottomDockWidgetArea, commandDock);
 
-    // substanceDock
+    // ==========================================
+    // 2. 实体树停靠窗口 (Substances)
+    // ==========================================
     substanceDock = new QDockWidget("Substances", this);
     substanceDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     substanceTree = new QTreeWidget();
@@ -252,38 +234,19 @@ void MainWindow::createDockWidgets() {
     substanceDock->setWidget(substanceTree);
     substanceDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
     substanceTree->setContextMenuPolicy(Qt::CustomContextMenu);
-    addDockWidget(Qt::LeftDockWidgetArea, substanceDock);
 
-    //boundaryDock
-    boundaryDock = new QDockWidget("Boundaries", this);
-    boundaryDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    boundaryTree = new QTreeWidget();
-    boundaryTree->setHeaderLabel("boundaryTree");
-    boundaryDock->setWidget(boundaryTree);
-    boundaryDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    addDockWidget(Qt::LeftDockWidgetArea, boundaryDock);
+    // 🌟 核心修改 1：原本是 LeftDockWidgetArea，现在移到【右侧】
+    addDockWidget(Qt::RightDockWidgetArea, substanceDock);
 
-    //interactionDock
-    interactionDock = new QDockWidget("Interactions", this);
-    interactionDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    interactionTree = new QTreeWidget();
-    interactionTree->setHeaderLabel("interactionTree");
-    interactionDock->setWidget(interactionTree);
-    interactionDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    addDockWidget(Qt::LeftDockWidgetArea, interactionDock);
-
-    if (propertiesDock) propertiesDock->hide();   // 隐藏属性面板
-    if (layersDock) layersDock->hide();           // 隐藏图层面板
-    if (boundaryDock) boundaryDock->hide();       // 隐藏边界树面板
-    if (interactionDock) interactionDock->hide(); // 隐藏相互作用面板
-
-    //connect slot funcs
+    // 绑定右键菜单信号
     connect(substanceTree, &QTreeWidget::customContextMenuRequested,
         this, &MainWindow::onSubstanceTreeContextMenu);
 
+    // ==========================================
+    // 3. 实体生成器停靠窗口 (Entity Generator)
+    // ==========================================
     QDockWidget* generatorDock = new QDockWidget(tr("Entity Generator"), this);
     generatorDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    // 只允许移动和浮动，不可关闭
     generatorDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
 
     // 创建标签页控件作为 Dock 的核心组件
@@ -303,6 +266,9 @@ void MainWindow::createDockWidgets() {
     generatorDock->setWidget(tabWidget);
     addDockWidget(Qt::RightDockWidgetArea, generatorDock);
 
+    // 🌟 核心修改 2：把右侧的 Substance Tree 和 Entity Generator 合并成标签页组！
+    tabifyDockWidget(substanceDock, generatorDock);
+    substanceDock->raise(); // 默认让 Substance Tree 显示在前面
 }
 
 void MainWindow::createCommandLine() {

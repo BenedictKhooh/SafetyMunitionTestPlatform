@@ -22,51 +22,84 @@
 #include <QCoreApplication>
 //
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+    // ==========================================
+    // 1. 顶层架构改造：引入多工作区隔离
+    // ==========================================
+    mainModeTab = new QTabWidget(this);
+    setCentralWidget(mainModeTab); // 让 TabWidget 成为真正的中心件
 
-    
-        glWidget = new GLWidget(this);
-        setCentralWidget(glWidget);
-        glWidget->setRepository(&m_repository); // ptr to the entities repo
+    // --- Tab 1: 前处理工作区 ---
+    glWidget = new GLWidget(this);
+    glWidget->setRepository(&m_repository); // ptr to the entities repo
+    mainModeTab->addTab(glWidget, "1. 前处理与建模 (Pre-Processing)");
 
-        startMeshing();
-        // 连接绘图完成信号
-        connect(glWidget, &GLWidget::drawingComplete, this, &MainWindow::onDrawingComplete);
+    // --- Tab 2: 后处理工作区 ---
+    postProcessWidget = new QWidget();
+    setupPostProcessUI(); // 在这里面把后处理控件都加到 postProcessWidget 上
+    mainModeTab->addTab(postProcessWidget, "2. 求解与后处理 (Solve & Post)");
 
-        // 初始化菜单栏
-        createMenuBar();
 
-        // 初始化工具栏
-        createToolBars();
+    // ==========================================
+    // 2. 原有的初始化逻辑 (保持不变)
+    // ==========================================
+    startMeshing();
+    // 连接绘图完成信号
+    connect(glWidget, &GLWidget::drawingComplete, this, &MainWindow::onDrawingComplete);
 
-        // 初始化状态栏
-        createStatusBar();
+    // 初始化菜单栏、工具栏、状态栏、停靠窗口
+    createMenuBar();
+    createToolBars();
+    createStatusBar();
+    createDockWidgets();
+    createCommandLine();
+    createSimulationSetupDock();
 
-        // 初始化停靠窗口
-        createDockWidgets();
+    setWindowTitle("SafetyMunitionTestPlatform");
+    resize(1024, 768);
 
-        // 初始化命令行
-        createCommandLine();
+    // clear()
+    clean();
 
-        createSimulationSetupDock();
+    m_meshManager = new MeshManager(this);
 
-        setWindowTitle("SafetyMunitionTestPlatform");
-        resize(1024, 768);
+    // 核心：当网格文件准备好后，自动触发 parseMeshFile 进行解析和渲染
+    connect(m_meshManager, &MeshManager::meshReady, this, &MainWindow::parseMeshFile);
 
-        //clear()
-        clean();
-        
-        m_meshManager = new MeshManager(this);
+    // 错误处理：如果 Gmsh 报错，打印到日志
+    connect(m_meshManager, &MeshManager::errorOccurred, this, [this](QString msg) {
+        logCommand("Error", msg);
+        });
 
-        // 核心：当网格文件准备好后，自动触发 parseMeshFile 进行解析和渲染
-        connect(m_meshManager, &MeshManager::meshReady, this, &MainWindow::parseMeshFile);
+    // 初始化默认工作目录为当前程序运行的目录
+    m_workingDirectory = QDir::currentPath();
 
-        // 错误处理：如果 Gmsh 报错，打印到日志
-        connect(m_meshManager, &MeshManager::errorOccurred, this, [this](QString msg) {
-            logCommand("Error", msg);
-            });
-        //初始化默认工作目录为当前程序运行的目录
-        m_workingDirectory = QDir::currentPath();
+
+    // ==========================================
+    // 3. 新增：后处理进程与工作区智能联动
+    // ==========================================
+
+    // 初始化求解器后台进程
+    m_solverProcess = new QProcess(this);
+    connect(m_solverProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::readSolverOutput);
+    connect(m_solverProcess, &QProcess::readyReadStandardError, this, &MainWindow::readSolverOutput);
+    connect(m_solverProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MainWindow::handleSolverFinished);
+
+    // ✨ 杀手锏功能：工作区智能切换 (类似 ABAQUS 切换 Module)
+    // 只要检测到用户切换了 Tab 页面，自动隐藏/显示外围的 Dock 和工具栏
+    connect(mainModeTab, &QTabWidget::currentChanged, this, [this](int index) {
+        bool isPreProcess = (index == 0); // 只有在第一页时，才显示前处理面板
+
+        // 自动遍历并控制所有停靠窗口 (Docks) 的显示状态
+        for (QDockWidget* dock : this->findChildren<QDockWidget*>()) {
+            dock->setVisible(isPreProcess);
+        }
+
+        // 自动遍历并控制所有工具栏 (ToolBars) 的显示状态 (如果后处理不需要原本的画图工具栏)
+        for (QToolBar* tb : this->findChildren<QToolBar*>()) {
+            tb->setVisible(isPreProcess);
+        }
+        });
 }
 
 MainWindow::~MainWindow() {}
@@ -1989,4 +2022,214 @@ void MainWindow::handleAddSensor() {
         m_simSetupUI.setupSummaryList->addItem(summary);
         logCommand("Sensor", summary);
     }
+}
+
+// ==========================================
+// 界面搭建：后处理与监控模块
+// ==========================================
+void MainWindow::setupPostProcessUI() {
+    QVBoxLayout* mainLayout = new QVBoxLayout(postProcessWidget);
+
+    // --- 模块 A: 工况提交区 ---
+    QGroupBox* submitGroup = new QGroupBox("工况提交 (Job Submission)");
+    QFormLayout* submitLayout = new QFormLayout(submitGroup);
+
+    kFilePathEdit = new QLineEdit();
+    QPushButton* btnBrowseK = new QPushButton("浏览...");
+    QHBoxLayout* kLayout = new QHBoxLayout();
+    kLayout->addWidget(kFilePathEdit); kLayout->addWidget(btnBrowseK);
+    submitLayout->addRow("控制文件 (.k):", kLayout);
+
+    solverPathEdit = new QLineEdit();
+    solverPathEdit->setPlaceholderText("例如: C:/LSDYNA/ls-dyna_smp_d_R11_0_winx64.exe");
+    QPushButton* btnBrowseSolver = new QPushButton("浏览...");
+    QHBoxLayout* solverLayout = new QHBoxLayout();
+    solverLayout->addWidget(solverPathEdit); solverLayout->addWidget(btnBrowseSolver);
+    submitLayout->addRow("求解器路径 (EXE):", solverLayout);
+
+    cpuCoresSpin = new QSpinBox();
+    cpuCoresSpin->setRange(1, 128);
+    cpuCoresSpin->setValue(4); // 默认 4 核计算
+    submitLayout->addRow("计算核心数 (NCPU):", cpuCoresSpin);
+
+    btnRunSolver = new QPushButton("▶ 开始求解 (Run LS-DYNA)");
+    btnRunSolver->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;");
+    btnStopSolver = new QPushButton("■ 终止计算 (Kill)");
+    btnStopSolver->setEnabled(false); // 默认不可点，运行后解锁
+
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    btnLayout->addWidget(btnRunSolver);
+    btnLayout->addWidget(btnStopSolver);
+    submitLayout->addRow("", btnLayout);
+
+    mainLayout->addWidget(submitGroup);
+
+    // --- 模块 B: 计算监控区 ---
+    QGroupBox* monitorGroup = new QGroupBox("计算监控 (Solver Console)");
+    QVBoxLayout* monitorLayout = new QVBoxLayout(monitorGroup);
+
+    solverConsole = new QTextEdit();
+    solverConsole->setReadOnly(true);
+    solverConsole->setStyleSheet("background-color: #1E1E1E; color: #00FF00; font-family: Consolas;"); // 黑底绿字，黑客风
+    monitorLayout->addWidget(solverConsole);
+
+    mainLayout->addWidget(monitorGroup, 1); // 1表示让控制台占据主要拉伸空间
+
+    // --- 模块 C: d3plot 后处理接口区 ---
+    QGroupBox* postGroup = new QGroupBox("结果处理 (d3plot Visualization)");
+    QHBoxLayout* postLayout = new QHBoxLayout(postGroup);
+
+    btnOpenFolder = new QPushButton("打开结果所在目录");
+    btnLaunchD3plot = new QPushButton("加载 d3plot 进行分析 (开发中...)");
+    postLayout->addWidget(btnOpenFolder);
+    postLayout->addWidget(btnLaunchD3plot);
+
+    mainLayout->addWidget(postGroup);
+
+    // 绑定按钮信号
+    connect(btnBrowseK, &QPushButton::clicked, this, &MainWindow::browseKFile);
+    connect(btnBrowseSolver, &QPushButton::clicked, this, &MainWindow::browseSolver);
+    connect(btnRunSolver, &QPushButton::clicked, this, &MainWindow::startCalculation);
+    connect(btnStopSolver, &QPushButton::clicked, this, &MainWindow::stopCalculation);
+    // 预留的后处理信号
+    connect(btnOpenFolder, &QPushButton::clicked, this, &MainWindow::openResultFolder);
+    connect(btnLaunchD3plot, &QPushButton::clicked, this, &MainWindow::launchPostProcessor);
+}
+
+// ==========================================
+// 逻辑实现：求解器控制与日志读取
+// ==========================================
+void MainWindow::startCalculation() {
+    QString kFile = kFilePathEdit->text();
+    QString solver = solverPathEdit->text();
+
+    if (kFile.isEmpty() || solver.isEmpty()) {
+        solverConsole->append("<b><font color='red'>[错误] 请先选择 .k 文件和求解器路径！</font></b>");
+        return;
+    }
+
+    // 拼接 LS-DYNA 命令行参数： i=xxx.k ncpu=4 memory=100m
+    QStringList arguments;
+    arguments << QString("i=%1").arg(kFile);
+    arguments << QString("ncpu=%1").arg(cpuCoresSpin->value());
+    arguments << "memory=200m"; // 预设内存，可根据需求提取为UI输入
+
+    // 设置工作目录为 .k 文件所在的目录，这样 d3plot 就会生成在那里
+    QFileInfo kFileInfo(kFile);
+    m_solverProcess->setWorkingDirectory(kFileInfo.absolutePath());
+
+    solverConsole->clear();
+    solverConsole->append(QString("<b><font color='yellow'>[系统] 正在启动求解器...</font></b>"));
+    solverConsole->append(QString("执行命令: %1 %2").arg(solver).arg(arguments.join(" ")));
+    solverConsole->append("--------------------------------------------------");
+
+    // 启动进程
+    m_solverProcess->start(solver, arguments);
+
+    // 更新界面状态
+    btnRunSolver->setEnabled(false);
+    btnStopSolver->setEnabled(true);
+}
+
+void MainWindow::readSolverOutput() {
+    // 读取来自 LS-DYNA 的控制台输出
+    QByteArray output = m_solverProcess->readAllStandardOutput();
+    QByteArray error = m_solverProcess->readAllStandardError();
+
+    if (!output.isEmpty()) {
+        solverConsole->insertPlainText(QString::fromLocal8Bit(output));
+    }
+    if (!error.isEmpty()) {
+        solverConsole->insertPlainText(QString::fromLocal8Bit(error));
+    }
+
+    // 自动滚动到最底部
+    QScrollBar* sb = solverConsole->verticalScrollBar();
+    sb->setValue(sb->maximum());
+}
+
+void MainWindow::stopCalculation() {
+    if (m_solverProcess->state() == QProcess::Running) {
+        m_solverProcess->kill(); // 强制终止进程
+        solverConsole->append("<b><font color='red'>[系统] 收到用户指令，计算已强行终止！</font></b>");
+    }
+}
+
+void MainWindow::handleSolverFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+    btnRunSolver->setEnabled(true);
+    btnStopSolver->setEnabled(false);
+
+    if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+        solverConsole->append("--------------------------------------------------");
+        solverConsole->append("<b><font color='cyan'>[系统] LS-DYNA 求解正常完成 (Normal Termination)！</font></b>");
+    }
+    else {
+        solverConsole->append("--------------------------------------------------");
+        solverConsole->append("<b><font color='red'>[系统] 求解异常退出或被终止 (Error Termination)。</font></b>");
+    }
+}
+
+// ==========================================
+// 后处理界面：按钮槽函数实现
+// ==========================================
+
+// 1. 浏览选择 K 文件
+void MainWindow::browseKFile() {
+    // 弹出文件选择框，只过滤 .k 或 .key 文件
+    QString fileName = QFileDialog::getOpenFileName(
+        this,
+        "选择 LS-DYNA 控制文件",
+        m_workingDirectory, // 默认打开之前的工作目录
+        "LS-DYNA 文件 (*.k *.key);;所有文件 (*.*)"
+    );
+
+    if (!fileName.isEmpty()) {
+        kFilePathEdit->setText(fileName);
+        // 同步更新系统的工作目录为该文件所在的目录
+        m_workingDirectory = QFileInfo(fileName).absolutePath();
+        logCommand("System", "已加载控制文件: " + fileName);
+    }
+}
+
+// 2. 浏览选择求解器
+void MainWindow::browseSolver() {
+    // 弹出文件选择框，只过滤 .exe 可执行文件
+    QString fileName = QFileDialog::getOpenFileName(
+        this,
+        "选择 LS-DYNA 求解器程序",
+        "C:/", // 默认从 C 盘开始找
+        "可执行文件 (*.exe)"
+    );
+
+    if (!fileName.isEmpty()) {
+        solverPathEdit->setText(fileName);
+        logCommand("System", "已手动配置求解器路径: " + fileName);
+    }
+}
+
+// 3. 一键打开结果文件夹
+void MainWindow::openResultFolder() {
+    QString kFile = kFilePathEdit->text();
+    if (kFile.isEmpty()) {
+        // 如果用户还没选择文件，弹出警告并记录日志
+        logCommand("Warning", "请先选择一个 .k 文件！");
+        return;
+    }
+
+    // 提取 .k 文件所在的纯目录路径
+    QString dirPath = QFileInfo(kFile).absolutePath();
+
+    // 调用操作系统的资源管理器打开这个路径
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dirPath));
+    logCommand("System", "已打开结果所在目录: " + dirPath);
+}
+
+// 4. 加载 d3plot 后处理程序 (占位接口)
+void MainWindow::launchPostProcessor() {
+    // 目前处于开发阶段，使用信息弹窗占位
+    QMessageBox::information(
+        this,
+        "后处理接口",
+        "d3plot 可视化接口模块正在开发中...\n\n后续可以在这里唤起官方的 LS-PrePost 软件，或者集成我们自己的 OpenGL 后处理渲染器！"
+    );
 }

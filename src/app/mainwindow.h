@@ -35,6 +35,9 @@
 #include <memory>
 //
 
+#include <QTabWidget>    // 用于顶层隔离
+#include <QProcess>      // 用于调用和监控 LS-DYNA 求解器
+
 // Forward declaration
 class GLWidget;
 class QPushButton;
@@ -64,6 +67,21 @@ private slots:
 
     void handleAddSensor();
 
+
+	//Postprocessing
+    // --- 求解与监控相关槽函数 ---
+    void browseKFile();
+    void browseSolver();
+    void startCalculation();
+    void stopCalculation();
+    void readSolverOutput(); // 实时读取求解器日志
+    void handleSolverFinished(int exitCode, QProcess::ExitStatus exitStatus);
+
+    // --- 后处理 d3plot 接口槽函数 ---
+    void openResultFolder();
+    void launchPostProcessor();
+    //
+
 private:
     void createMenuBar();
     void createToolBars();
@@ -74,9 +92,32 @@ private:
     void clean();
     void showHelp();
 
+	//Postprocessing
     //记录每个实体被选中的传感器局部节点索引
     QMap<QString, QList<int>> m_sensorNodes;
 
+    // --- 顶层布局控件 ---
+    QTabWidget* mainModeTab;
+    QWidget* preProcessWidget;  // 存放你原有的所有前处理界面
+    QWidget* postProcessWidget; // 新的后处理界面
+
+    // --- 求解器控制台控件 ---
+    QLineEdit* kFilePathEdit;
+    QLineEdit* solverPathEdit;
+    QSpinBox* cpuCoresSpin;
+    QPushButton* btnRunSolver;
+    QPushButton* btnStopSolver;
+    QTextEdit* solverConsole;   // 实时日志输出窗口
+
+    // --- 后处理接口控件 ---
+    QPushButton* btnOpenFolder;
+    QPushButton* btnLaunchD3plot;
+
+    // --- 异步进程对象 ---
+    QProcess* m_solverProcess;
+
+    void setupPostProcessUI(); // 初始化后处理界面的函数
+	//Postprocessing
 
 private:
     // 定义一个结构体来管理每个独立窗口的 UI 控件

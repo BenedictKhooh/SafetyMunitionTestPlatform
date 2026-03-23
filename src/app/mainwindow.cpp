@@ -1301,6 +1301,7 @@ void MainWindow::applyTransformation(const QString& entityName, const QMatrix4x4
 }
 
 void MainWindow::createSimulationSetupDock() {
+
     QDockWidget* setupDock = new QDockWidget(tr("Simulation Setup (物理与求解设置)"), this);
     setupDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     setupDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
@@ -1413,13 +1414,6 @@ void MainWindow::createSimulationSetupDock() {
     bottomBtnLayout->addWidget(m_simSetupUI.btnExportKFile);
     mainVLayout->addLayout(bottomBtnLayout);
 
-    setupDock->setWidget(mainContainer);
-
-    setupDock->setWidget(mainContainer);
-    addDockWidget(Qt::LeftDockWidgetArea, setupDock);
-
-    // 触发一次初始化
-    handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
 
     // ==========================================
     // Tab 材料标签页的底部加入“侵蚀(Erosion)设置”
@@ -1598,6 +1592,43 @@ void MainWindow::createSimulationSetupDock() {
     connect(m_simSetupUI.btnClearSummary, &QPushButton::clicked, this, &MainWindow::handleClearSummary);
     // 这里的 btnExportKFile 连接到你之前写的 handleApplySimulationSettings
     connect(m_simSetupUI.btnExportKFile, &QPushButton::clicked, this, &MainWindow::handleApplySimulationSettings);
+
+    // ==========================================
+    //全局控件随窗口自适应缩放 (Fluid Layout)
+    // ==========================================
+
+    // 1. 批量解除【所有】输入控件和按钮的宽度锁定
+    QList<QWidget*> allWidgets = mainContainer->findChildren<QWidget*>();
+    for (QWidget* w : allWidgets) {
+        // 利用 qobject_cast 过滤出所有的下拉框、数字框、文本框和按钮
+        if (qobject_cast<QComboBox*>(w) ||
+            qobject_cast<QDoubleSpinBox*>(w) ||
+            qobject_cast<QSpinBox*>(w) ||
+            qobject_cast<QLineEdit*>(w) ||
+            qobject_cast<QPushButton*>(w)) {
+
+            w->setMinimumWidth(40); // 允许压缩到底线 40 像素
+            // 🌟 核心：横向策略设为 Expanding (自动跟随窗口拉伸/压缩)
+            // 纵向策略设为 Fixed (高度保持原生尺寸不变)
+            w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        }
+    }
+
+    // 2. 加入透明滚动区 (QScrollArea) 
+    QScrollArea* mainScrollArea = new QScrollArea();
+    mainScrollArea->setWidget(mainContainer);
+    mainScrollArea->setWidgetResizable(true);       // 必须开启：内部面板跟随外框灵活伸缩
+    mainScrollArea->setFrameShape(QFrame::NoFrame); // 去除自带的凹陷边框
+
+    mainScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    // 3. 将被滚动区保护的面板放入 Dock 中
+    setupDock->setWidget(mainScrollArea);
+
+    addDockWidget(Qt::LeftDockWidgetArea, setupDock);
+
+    // 触发一次初始化
+    handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
 }
 
 void MainWindow::handleMaterialTypeChanged(const QString& matType) {

@@ -28,6 +28,8 @@ struct InitialVelocityGenerationCard : public KeywordCard {
             "*INITIAL_VELOCITY_GENERATION\n"
             "$#nsid/pid      styp     omega        vx        vy        vz      ivat      icid\n"
             "%10d%10d       0.0%10.4f%10.4f%10.4f         0         0\n",
+            "$#      xc        yc        zc        nx        ny        nz     phase    irigid\n"
+            "       0.0       0.0       0.0       0.0       0.0       0.0         0         0\n",
             nsid, styp, vx, vy, vz);
         return std::string(buf);
     }

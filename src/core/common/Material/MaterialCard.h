@@ -32,7 +32,9 @@ struct MaterialCard : public KeywordCard {
                 "$#       a         b         n         c         m     tmelt      tr     epso\n"
                 "%10.4E%10.4E%10.4f%10.4f%10.4f%10.1f       0.0       0.0\n"
                 "$#      cp        pc     spall        it        d1        d2        d3        d4\n"
-                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n",
+                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n"
+                "$#      d5      c2/p      erod     efmin    numint\n"
+                "       0.0       0.0       0.0       0.0         0\n",
                 mid, getVal("ro"), getVal("g"), getVal("a"), getVal("b"), getVal("n"), getVal("c"), getVal("m"), getVal("tmelt")
             );
         }
@@ -81,7 +83,13 @@ struct MaterialCard : public KeywordCard {
                 "$#     mid      excl    mxpres     mneps    effeps    voleps    numfip       ncs\n"
                 "%10d       0.0       0.0       0.0       0.0       0.0       1.0       1.0\n"
                 "$#  mnpres     sigp1     sigvm     mxeps     epssh     sigth   impulse    failtm\n"
-                "       0.0       0.0       0.0%10.4f       0.0       0.0       0.0       0.0\n",
+                "       0.0       0.0       0.0%10.4f       0.0       0.0       0.0       0.0\n"
+                "$#    idam    lcregd\n"
+                "         0         0         0         0         0         0         0         0\n"
+                "$#   lcfld      nsff   epsthin    engcrt    radcrt   lceps12   lceps13   lcepsmx\n"
+                "         0        10       0.0       0.0       0.0         0         0         0\n"
+                "$#  dteflt    unused     mxtmp     dtmin\n"
+                "       0.0       0.0       0.0       0.0\n",
                 mid, p.at("mxeps")
             );
             res += eroBuf;

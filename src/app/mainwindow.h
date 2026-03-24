@@ -62,6 +62,7 @@ private slots:
     void handleAddContact();
     void handleAddIC();
     void handleAddSection();
+    void handleAddGlobalControl();
 
     //清空列表
     void handleClearSummary();
@@ -241,6 +242,7 @@ private:
         QPushButton* btnAddContact;
         QPushButton* btnAddIC;
         QPushButton* btnAddSection;
+        QPushButton* btnAddControl;
 
         // ---底部实时观察面板 ---
         QListWidget* setupSummaryList; // 用于显示已添加的参数条目
@@ -304,6 +306,10 @@ private:
     };
     QMap<QString, MaterialPreset> m_materialPresets; // 内存中的预设字典
     void loadMaterialPresetsFromJson(); // 读取 JSON 文件的辅助函数
+
+
+    // 🌟 [新增] 专门追踪唯一的控制卡片，确保它在 K 文件中最先输出
+    std::shared_ptr<GlobalControlCard> m_globalControlCard = nullptr;
 
 private slots:
     void handlePresetChanged(const QString& presetName);

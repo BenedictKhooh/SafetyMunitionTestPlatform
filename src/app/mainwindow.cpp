@@ -1377,11 +1377,14 @@ void MainWindow::createSimulationSetupDock() {
 
     m_simSetupUI.d3plotFreqInput = new QDoubleSpinBox();
     m_simSetupUI.d3plotFreqInput->setRange(0, 9999); m_simSetupUI.d3plotFreqInput->setValue(0.01);
+
+    
     ctrlLayout->addRow("D3PLOT 步长 (DT):", m_simSetupUI.d3plotFreqInput);
     m_simSetupUI.d3plotFreqInput->setSuffix(" μs");
 
     m_simSetupUI.mainTab->addTab(ctrlTab, "控制(Control)");
-
+    m_simSetupUI.btnAddControl = new QPushButton("应用全局控制 (Add Control)");
+	ctrlLayout->addWidget(m_simSetupUI.btnAddControl);
     // ==========================================
     // 底部应用按钮
     // ==========================================
@@ -1591,6 +1594,7 @@ void MainWindow::createSimulationSetupDock() {
     connect(m_simSetupUI.btnAddIC, &QPushButton::clicked, this, &MainWindow::handleAddIC);
     connect(m_simSetupUI.btnAddSection, &QPushButton::clicked, this, &MainWindow::handleAddSection);
     connect(m_simSetupUI.btnClearSummary, &QPushButton::clicked, this, &MainWindow::handleClearSummary);
+    connect(m_simSetupUI.btnAddControl, &QPushButton::clicked, this, &MainWindow::handleAddGlobalControl);
     // 这里的 btnExportKFile 连接到你之前写的 handleApplySimulationSettings
     connect(m_simSetupUI.btnExportKFile, &QPushButton::clicked, this, &MainWindow::handleApplySimulationSettings);
 
@@ -1792,6 +1796,10 @@ void MainWindow::handleApplySimulationSettings() {
         out << "*KEYWORD MEMORY=399999999\n";
         out << "*TITLE\n" << jobTitle << "\n";
         out << "*INCLUDE\n" << meshFileName << "\n"; // Include网格
+
+        if (m_globalControlCard != nullptr) {
+            out << QString::fromStdString(m_globalControlCard->to_string());
+        }
 
         //把全局控制卡丢给管家（读取时间步、结束时间等）
         auto globalCtrl = std::make_shared<GlobalControlCard>(
@@ -2470,8 +2478,12 @@ void MainWindow::showSummaryContextMenu(const QPoint& pos) {
     }
     else if (selected == delAct) {
         if (type == "CARD" && cardPtr) {
-            // 从大管家中注销这张主卡片
+ 
             m_deck.removeCard(cardPtr);
+
+            if (cardPtr == m_globalControlCard.get()) {
+                m_globalControlCard = nullptr;
+            }
 
             // 如果有绑定的 EOS 卡片，一并注销
             if (item->data(Qt::UserRole + 2).isValid()) {
@@ -2486,4 +2498,35 @@ void MainWindow::showSummaryContextMenu(const QPoint& pos) {
         delete item;
         logCommand("System", "已撤销指定的仿真参数配置。");
     }
+}
+
+void MainWindow::handleAddGlobalControl() {
+    // 1. 获取界面上的值
+    double endtim = m_simSetupUI.endtimeInput->value();
+    double tssfac = m_simSetupUI.tssfacInput->value();
+    double dt = m_simSetupUI.d3plotFreqInput->value();
+
+    // 2. 【核心防漏水】如果列表里已经有全局控制了，先删掉旧的（保证控制卡片的唯一性）
+    for (int i = m_simSetupUI.setupSummaryList->count() - 1; i >= 0; --i) {
+        QListWidgetItem* existingItem = m_simSetupUI.setupSummaryList->item(i);
+        if (existingItem->text().contains("[全局控制]")) {
+            delete m_simSetupUI.setupSummaryList->takeItem(i);
+        }
+    }
+
+    // 3. 实例化全局控制卡片（单独存在 m_globalControlCard 里，不放入 m_deck，以便排在 K 文件顶部）
+    m_globalControlCard = std::make_shared<GlobalControlCard>(endtim, tssfac, dt);
+
+    // 4. 生成右侧列表文字
+    QString summary = QString("[全局控制] 结束时间:%1 | 步长缩放:%2 | D3PLOT:%3")
+        .arg(endtim).arg(tssfac).arg(dt);
+
+    // 5. 将卡片指针地址悄悄绑定到列表项 (UserRole隐藏域)，和材料卡片逻辑完全一致
+    QListWidgetItem* item = new QListWidgetItem(summary);
+    item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(m_globalControlCard.get())));
+    item->setData(Qt::UserRole + 1, "CARD");
+
+    // 强制插入到列表的最顶端（第 0 行）
+    m_simSetupUI.setupSummaryList->insertItem(0, item);
+    logCommand("System", "全局控制参数已生成并自动置顶。");
 }

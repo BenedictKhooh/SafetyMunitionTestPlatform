@@ -6,7 +6,7 @@
 
 struct ContactCard : public KeywordCard {
     std::string keyword;
-    int ssid, msid;
+    int ssid = 1, msid = 1;
     double fs, fd;
 
     ContactCard() = default;

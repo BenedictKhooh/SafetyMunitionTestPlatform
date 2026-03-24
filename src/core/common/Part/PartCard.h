@@ -5,10 +5,10 @@
 #include "src/core/common/KeywordCard.h"
 
 struct PartCard : public KeywordCard {
-    int pid;
-    int secid;
-    int mid;
-    int eosid;
+    int pid = 1;
+    int secid = 1;
+    int mid = 1;
+    int eosid = 1;
     std::string heading;
 
     PartCard() = default;

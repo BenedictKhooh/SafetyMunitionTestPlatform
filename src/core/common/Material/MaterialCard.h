@@ -6,7 +6,7 @@
 #include "src/core/common/KeywordCard.h"
 
 struct MaterialCard : public KeywordCard {
-    int mid;
+    int mid = 1;
     std::string keyword;
     std::map<std::string, double> p;
 
@@ -84,7 +84,7 @@ struct MaterialCard : public KeywordCard {
                 "%10d       0.0       0.0       0.0       0.0       0.0       1.0       1.0\n"
                 "$#  mnpres     sigp1     sigvm     mxeps     epssh     sigth   impulse    failtm\n"
                 "       0.0       0.0       0.0%10.4f       0.0       0.0       0.0       0.0\n"
-                "$#    idam    lcregd\n"
+                "$#    idam         -         -         -         -         -         -    lcregd\n"
                 "         0         0         0         0         0         0         0         0\n"
                 "$#   lcfld      nsff   epsthin    engcrt    radcrt   lceps12   lceps13   lcepsmx\n"
                 "         0        10       0.0       0.0       0.0         0         0         0\n"

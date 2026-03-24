@@ -1071,7 +1071,7 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
     }
     else if (text == "Sphere" || text == "Hemisphere") {
         addNumParamToUI(ui, "Radius:", "r", 0.38, " cm");
-        addNumParamToUI(ui, "Mesh Size:", "ms", 0.02, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.2, " cm");
         addNumParamToUI(ui, "Center X:", "cx", 6.0, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 4.0, " cm");

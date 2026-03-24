@@ -23,7 +23,7 @@ struct InitialVelocityGenerationCard : public KeywordCard {
 
     // 🌟 核心多态方法实现
     std::string to_string() const override {
-        char buf[256];
+        char buf[2048];
         snprintf(buf, sizeof(buf),
             "*INITIAL_VELOCITY_GENERATION\n"
             "$#nsid/pid      styp     omega        vx        vy        vz      ivat      icid\n"

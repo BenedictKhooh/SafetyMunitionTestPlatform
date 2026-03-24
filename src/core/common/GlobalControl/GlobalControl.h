@@ -61,7 +61,7 @@ struct GlobalControlCard : public KeywordCard {
             "$#  cmpflg    ieverp    beamip     dcomp      shge     stssz    n3thdt   ialemat\n"
             "         0         0         0         0         0         0         0         0\n"
             "$# nintsld   pkp_sen      sclp     hspid     msscl     therm    intout    nodout\n"
-            "         0         0         0         0         0         6         0         0\n"
+            "         0         0         0         0         0         0         0         0\n"
             "*DATABASE_GLSTAT\n%10.4E         0         0         0         0         0\n"
             "*DATABASE_MATSUM\n%10.4E         0         0         0         0         0\n"
             "*DATABASE_RCFORC\n%10.4E         0         0         0         0         0\n"

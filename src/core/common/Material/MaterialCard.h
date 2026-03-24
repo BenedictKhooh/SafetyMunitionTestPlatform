@@ -30,9 +30,9 @@ struct MaterialCard : public KeywordCard {
                 "$#     mid        ro         g         e        pr     dtf     vp    rateop\n"
                 "%10d%10.4E%10.4E       0.3       0.0       0.0       0.0\n"
                 "$#       a         b         n         c         m     tmelt      tr     epso\n"
-                "%10.4E%10.4E%10.4f%10.4f%10.4f%10.1f       0.0       0.0\n"
+                "%10.4E%10.4E%10.4f%10.4f%10.4f%10.1f     293.0       1.0\n"
                 "$#      cp        pc     spall        it        d1        d2        d3        d4\n"
-                "       0.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n"
+                "     450.0       0.0       0.0       0.0       0.0       0.0       0.0       0.0\n"
                 "$#      d5      c2/p      erod     efmin    numint\n"
                 "       0.0       0.0       0.0       0.0         0\n",
                 mid, getVal("ro"), getVal("g"), getVal("a"), getVal("b"), getVal("n"), getVal("c"), getVal("m"), getVal("tmelt")

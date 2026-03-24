@@ -77,7 +77,7 @@ struct MaterialCard : public KeywordCard {
 
         // 如果用户在UI上勾选了侵蚀，这里会自动追加侵蚀卡
         if (p.count("mxeps") && p.at("mxeps") > 0.0) {
-            char eroBuf[512];
+            char eroBuf[2048];
             snprintf(eroBuf, sizeof(eroBuf),
                 "*MAT_ADD_EROSION\n"
                 "$#     mid      excl    mxpres     mneps    effeps    voleps    numfip       ncs\n"
@@ -89,7 +89,7 @@ struct MaterialCard : public KeywordCard {
                 "$#   lcfld      nsff   epsthin    engcrt    radcrt   lceps12   lceps13   lcepsmx\n"
                 "         0        10       0.0       0.0       0.0         0         0         0\n"
                 "$#  dteflt    unused     mxtmp     dtmin\n"
-                "       0.0       0.0       0.0       0.0\n",
+                "       0.0                 0.0       0.0\n",
                 mid, p.at("mxeps")
             );
             res += eroBuf;

@@ -1793,7 +1793,7 @@ void MainWindow::handleApplySimulationSettings() {
         out << "*TITLE\n" << jobTitle << "\n";
         out << "*INCLUDE\n" << meshFileName << "\n"; // Include网格
 
-        // 🌟 核心点 1：把全局控制卡丢给管家（读取时间步、结束时间等）
+        //把全局控制卡丢给管家（读取时间步、结束时间等）
         auto globalCtrl = std::make_shared<GlobalControlCard>(
             m_simSetupUI.endtimeInput->value(),
             m_simSetupUI.tssfacInput->value(),
@@ -1801,7 +1801,6 @@ void MainWindow::handleApplySimulationSettings() {
         );
         out << QString::fromStdString(globalCtrl->to_string());
 
-        // 🌟 核心点 2：一键多态序列化！
         // m_deck 会遍历内部所有的 shared_ptr<KeywordCard>，挨个调用它们自己的 to_string()
         out << QString::fromStdString(m_deck.generateDeck());
 
@@ -1928,15 +1927,33 @@ void MainWindow::handleAddMaterial() {
 }
 
 void MainWindow::handleAddContact() {
-    QString type = m_simSetupUI.contactTypeSelector->currentText().remove("*CONTACT_"); // 简化显示名称
+    QString type = m_simSetupUI.contactTypeSelector->currentText().remove("*CONTACT_");
     QString master = m_simSetupUI.contactMasterSelector->currentText();
     QString slave = m_simSetupUI.contactSlaveSelector->currentText();
 
-    QString summary = QString("[接触] %1 | 主面: %2 | 从面: %3").arg(type).arg(master).arg(slave);
+    if (master.isEmpty() || slave.isEmpty()) return;
 
-    // 【修改】仅作显示，标记为 OTHER
+    // 🌟 1. 获取主从面实体的 PID
+    auto masterPart = getOrCreatePart(master);
+    auto slavePart = getOrCreatePart(slave);
+
+    // 🌟 2. 真正实例化接触卡片，并存入后台管家！
+    auto contactCard = std::make_shared<ContactCard>(
+        type.toStdString(),
+        slavePart->pid,
+        masterPart->pid,
+        m_simSetupUI.contactFs->value(),
+        m_simSetupUI.contactFd->value()
+    );
+    m_deck.addCard(contactCard);
+
+    // 🌟 3. 在 UI 上显示，并绑定真实的卡片指针
+    QString summary = QString("[接触] %1 | 主面: %2 | 从面: %3").arg(type).arg(master).arg(slave);
     QListWidgetItem* item = new QListWidgetItem(summary);
-    item->setData(Qt::UserRole + 1, "OTHER");
+
+    // 绑定真实数据，导出时才能找到它
+    item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<quintptr>(contactCard.get())));
+    item->setData(Qt::UserRole + 1, "CARD");
 
     m_simSetupUI.setupSummaryList->addItem(item);
 }

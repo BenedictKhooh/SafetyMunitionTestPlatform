@@ -82,7 +82,7 @@ void GLWidget::paintGL() {
     glLoadMatrixf(finalModelView.constData());
 
     // Draw scene elements
-    drawAxes();
+    //drawAxes();
 
     if (!m_repository) return;
 
@@ -133,6 +133,8 @@ void GLWidget::paintGL() {
 
         entityIndex++; // 画完一个实体，序号+1，下一个实体换颜色
     }
+
+    drawCornerAxes();
 }
 
 // --- Drawing Functions ---
@@ -298,4 +300,113 @@ void GLWidget::drawLines(const std::vector<Vector3>& points) {
     glEnd();
 
     update(); // 触发重绘
+}
+
+// ==========================================
+// [更新] 绘制左下角固定悬浮坐标轴，带文字标注 (X Y Z)
+// ==========================================
+void GLWidget::drawCornerAxes() {
+    // 1. 保存当前的视口 (Viewport)
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    // 2. 将绘图区域限制在左下角的一个小正方形 (120x120 像素)
+    glViewport(20, 20, 120, 120);
+
+    // 3. 切换到投影矩阵并保存
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    // 使用正交投影，保证坐标轴和文字大小绝对固定
+    glOrtho(-1.3, 1.3, -1.3, 1.3, -10.0, 10.0); // 稍微放大一点投影范围给文字留空间
+
+    // 4. 切换到模型视图矩阵并保存
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // 核心逻辑：直接应用你代码中的四元数旋转 (m_rotation)
+    QMatrix4x4 rotMatrix;
+    rotMatrix.rotate(m_rotation);
+    glMultMatrixf(rotMatrix.constData());
+
+    // 关闭深度测试，确保坐标轴和文字永远浮在最上层
+    glDisable(GL_DEPTH_TEST);
+
+    // ------------------------------------------
+    // A. 绘制 XYZ 坐标轴的线条 (加粗)
+    // ------------------------------------------
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+    // X 轴 (红色)
+    glColor3f(1.0f, 0.2f, 0.2f);
+    glVertex3f(0.0f, 0.0f, 0.0f);
+    glVertex3f(1.0f, 0.0f, 0.0f);
+    // Y 轴 (绿色)
+    glColor3f(0.2f, 1.0f, 0.2f);
+    glVertex3f(0.0f, 0.0f, 0.0f);
+    glVertex3f(0.0f, 1.0f, 0.0f);
+    // Z 轴 (蓝色)
+    glColor3f(0.2f, 0.6f, 1.0f);
+    glVertex3f(0.0f, 0.0f, 0.0f);
+    glVertex3f(0.0f, 0.0f, 1.0f);
+    glEnd();
+
+    // ------------------------------------------
+    // B. [新增] 绘制文字标注 (X Y Z) 使用线条手工绘制
+    // ------------------------------------------
+    glLineWidth(2.0f); // 文字线条稍微细一点
+    float size = 0.08f;  // 字母的大小
+    float offset = 1.15f; // 字母距离原点的偏移量 (刚好在轴末端外面)
+
+    glBegin(GL_LINES);
+
+    // --- 绘制 'X' (在 X 轴末端) - 红色 ---
+    glColor3f(1.0f, 0.2f, 0.2f);
+    // 线条 1 (左上到右下)
+    glVertex3f(offset - size / 2, size / 2, 0.0f);
+    glVertex3f(offset + size / 2, -size / 2, 0.0f);
+    // 线条 2 (右上到左下)
+    glVertex3f(offset + size / 2, size / 2, 0.0f);
+    glVertex3f(offset - size / 2, -size / 2, 0.0f);
+
+    // --- 绘制 'Y' (在 Y 轴末端) - 绿色 ---
+    glColor3f(0.2f, 1.0f, 0.2f);
+    // 左上臂
+    glVertex3f(-size / 2, offset + size / 2, 0.0f);
+    glVertex3f(0.0f, offset, 0.0f);
+    // 右上臂
+    glVertex3f(size / 2, offset + size / 2, 0.0f);
+    glVertex3f(0.0f, offset, 0.0f);
+    // 下部直干
+    glVertex3f(0.0f, offset, 0.0f);
+    glVertex3f(0.0f, offset - size / 2, 0.0f);
+
+    // --- 绘制 'Z' (在 Z 轴末端) - 蓝色 ---
+    glColor3f(0.2f, 0.6f, 1.0f);
+    // 顶部横线
+    glVertex3f(-size / 2, 0.0f, offset + size / 2);
+    glVertex3f(size / 2, 0.0f, offset + size / 2);
+    // 斜线 (右上到左下)
+    glVertex3f(size / 2, 0.0f, offset + size / 2);
+    glVertex3f(-size / 2, 0.0f, offset - size / 2);
+    // 底部横线
+    glVertex3f(-size / 2, 0.0f, offset - size / 2);
+    glVertex3f(size / 2, 0.0f, offset - size / 2);
+
+    glEnd();
+
+    // ------------------------------------------
+    // 6. 还原现场
+    // ------------------------------------------
+    glLineWidth(1.0f); // 恢复默认线宽
+    glEnable(GL_DEPTH_TEST);
+
+    glPopMatrix(); // 弹出模型视图矩阵
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix(); // 弹出投影矩阵
+    glMatrixMode(GL_MODELVIEW); // 恢复默认矩阵模式
+
+    // 恢复原来的视口
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
 }

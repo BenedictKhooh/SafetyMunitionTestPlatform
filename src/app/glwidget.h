@@ -94,6 +94,7 @@ public:
 private: 
 
     EntityRepository* m_repository = nullptr;
+    void drawCornerAxes();
 
 signals:
     void drawingComplete();

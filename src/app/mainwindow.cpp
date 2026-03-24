@@ -1794,11 +1794,12 @@ void MainWindow::handleApplySimulationSettings() {
         out << "*INCLUDE\n" << meshFileName << "\n"; // Include网格
 
         // 🌟 核心点 1：把全局控制卡丢给管家（读取时间步、结束时间等）
-        m_deck.addCard(std::make_shared<GlobalControlCard>(
+        auto globalCtrl = std::make_shared<GlobalControlCard>(
             m_simSetupUI.endtimeInput->value(),
             m_simSetupUI.tssfacInput->value(),
             m_simSetupUI.d3plotFreqInput->value()
-        ));
+        );
+        out << QString::fromStdString(globalCtrl->to_string());
 
         // 🌟 核心点 2：一键多态序列化！
         // m_deck 会遍历内部所有的 shared_ptr<KeywordCard>，挨个调用它们自己的 to_string()
@@ -1891,6 +1892,7 @@ void MainWindow::handleAddMaterial() {
     // 2. 实例化材料卡片并存入 Deck
     auto matCard = std::make_shared<MaterialCard>(part->pid, matType.toStdString(), paramDict);
     m_deck.addCard(matCard);
+    part->mid = part->pid;
 
     // 3. 动态解析并挂载 EOS 卡片
     std::shared_ptr<EOSCard> eosCard = nullptr;

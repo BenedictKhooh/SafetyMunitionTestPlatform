@@ -1725,46 +1725,42 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         addParam("[TILLOTSON] BETA:", "til_beta", 0.0);
     }
     else if (eosType == "*EOS_IGNITION_AND_GROWTH_OF_REACTION_IN_HE") {
-        // --- 1. 未反应固体炸药的 JWL 参数 ---
-        addParam("[I&G] 未反应 A:", "ig_a", 5.242);
-        addParam("[I&G] 未反应 B:", "ig_b", 0.07678);
-        addParam("[I&G] 未反应 R1:", "ig_r1", 778.1);
-        addParam("[I&G] 未反应 R2:", "ig_r2", -0.05031);
-        addParam("[I&G] 未反应 OMEGA (G):", "ig_g", 5.0e-6);
+        // 第一行
+        addParam("[I&G] A:", "ig_a", 5.242);
+        addParam("[I&G] B:", "ig_b", 0.07678);
+        addParam("[I&G] XP1:", "ig_xp1", 2.84999);
+        addParam("[I&G] XP2:", "ig_xp2", 1.1);
+        addParam("[I&G] FRER:", "ig_frer", 0.667);
+        addParam("[I&G] G:", "ig_g", 5.0e-6);
+        addParam("[I&G] R1:", "ig_r1", 778.1);
 
-        // --- 2. 完全反应后爆炸产物的 JWL 参数 ---
-        addParam("[I&G] 产物 XP1 (A):", "ig_xp1", 2.84999);
-        addParam("[I&G] 产物 XP2 (B):", "ig_xp2", 0.0);
-        addParam("[I&G] 产物 R3 (R1):", "ig_r3", 2.223e-5);
-        addParam("[I&G] 产物 R5 (R2):", "ig_r5", 11.3);
-        addParam("[I&G] 产物 R6 (OMEGA):", "ig_r6", 1.13);
+        // 第二行
+        addParam("[I&G] R2:", "ig_r2", -0.05031);
+        addParam("[I&G] R3:", "ig_r3", 2.223e-5);
+        addParam("[I&G] R5:", "ig_r5", 11.3);
+        addParam("[I&G] R6:", "ig_r6", 1.13);
+        addParam("[I&G] FMXIG:", "ig_fmxig", 0.022);
+        addParam("[I&G] FREQ:", "ig_freq", 4.0);
+        addParam("[I&G] GROW1:", "ig_grow1", 120.0);
+        addParam("[I&G] EM:", "ig_em", 2.0);
 
-        // --- 3. 反应速率：点火项 (Ignition) ---
-        addParam("[I&G] 点火频率 (FREQ):", "ig_freq", 4.0);
-        addParam("[I&G] 最大点火份额 (FMXIG):", "ig_fmxig", 0.022);
-        addParam("[I&G] 临界压缩度 (CCRIT):", "ig_ccrit", 0.0367);
-        addParam("[I&G] 压缩指数 (EETAL):", "ig_eetal", 7.0);
+        // 第三行
+        addParam("[I&G] AR1:", "ig_ar1", 0.333);
+        addParam("[I&G] ES1:", "ig_es1", 0.667);
+        addParam("[I&G] CVP:", "ig_cvp", 10.0);
+        addParam("[I&G] CVR:", "ig_cvr", 24.78);
+        addParam("[I&G] EETAL:", "ig_eetal", 7.0);
+        addParam("[I&G] CCRIT:", "ig_ccrit", 0.0367);
+        addParam("[I&G] ENQ:", "ig_enq", 0.085);
+        addParam("[I&G] TMP0:", "ig_tmp0", 298.0);
 
-        // --- 4. 反应速率：缓慢生长项 (Growth 1) ---
-        addParam("[I&G] 生长系数1 (GROW1):", "ig_grow1", 120.0);
-        addParam("[I&G] 压力指数1 (EM):", "ig_em", 2.0);
-        addParam("[I&G] 反应份额指数 (AR1):", "ig_ar1", 0.333);
-        addParam("[I&G] 未反应份额指数 (ES1):", "ig_es1", 0.667);
-        addParam("[I&G] 最大生长份额 (FMXGR):", "ig_fmxgr", 0.7);
-
-        // --- 5. 反应速率：快速爆轰项 (Growth 2) ---
-        addParam("[I&G] 生长系数2 (GROW2):", "ig_grow2", 1000.0);
-        addParam("[I&G] 反应份额指数 (AR2):", "ig_ar2", 1.0);
-        addParam("[I&G] 未反应份额指数 (ES2):", "ig_es2", 0.222);
-        addParam("[I&G] 压力指数2 (EN):", "ig_en", 3.0);
-        addParam("[I&G] 最小爆轰份额 (FMNGR):", "ig_fmngr", 0.0);
-
-        // --- 6. 热力学与能量守恒 ---
-        addParam("[I&G] 反应热/爆炸能 (ENQ):", "ig_enq", 0.085);
-        addParam("[I&G] 初始温度 (TMP0):", "ig_tmp0", 298.0);
-        addParam("[I&G] 产物比热容 (CVP):", "ig_cvp", 10.0);
-        addParam("[I&G] 反应物比热容 (CVR):", "ig_cvr", 24.78);
-        addParam("[I&G] 比例系数 (FRER):", "ig_frer", 1.1);
+        // 第四行
+        addParam("[I&G] GROW2:", "ig_grow2", 1000.0);
+        addParam("[I&G] AR2:", "ig_ar2", 1.0);
+        addParam("[I&G] ES2:", "ig_es2", 0.222);
+        addParam("[I&G] EN:", "ig_en", 3.0);
+        addParam("[I&G] FMXGR:", "ig_fmxgr", 0.7);
+        addParam("[I&G] FMNGR:", "ig_fmngr", 0.0);
     }
 }
 

@@ -353,6 +353,7 @@
     <ClCompile Include="src\core\generation\CylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\FrustumGenerator.cpp" />
     <ClCompile Include="src\core\generation\FrustumShellGenerator.cpp" />
+    <ClCompile Include="src\core\generation\FSPGenerator.cpp" />
     <ClCompile Include="src\core\generation\HalfCylinderGenerator.cpp" />
     <ClCompile Include="src\core\generation\HalfCylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\HemisphereGenerator.cpp" />
@@ -387,6 +388,7 @@
     <ClInclude Include="src\core\generation\CylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\FrustumGenerator.h" />
     <ClInclude Include="src\core\generation\FrustumShellGenerator.h" />
+    <ClInclude Include="src\core\generation\FSPGenerator.h" />
     <ClInclude Include="src\core\generation\HalfCylinderGenerator.h" />
     <ClInclude Include="src\core\generation\HalfCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\HemisphereGenerator.h" />

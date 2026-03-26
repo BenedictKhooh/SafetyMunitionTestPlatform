@@ -255,7 +255,7 @@ void MainWindow::createDockWidgets() {
 
     // 将三个分类作为不同的 Tab 添加进去
     setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
-        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism" }, m_fragmentUI);
+        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism", "Fragment Simulating Projectile"}, m_fragmentUI);
 
     setupGeneratorTab(tabWidget, tr("壳体 (Shell)"),
         { "CylindricalShell", "OpenCylindricalShell", "Frustum", "HalfCylindricalShell" }, m_shellUI);
@@ -1145,6 +1145,16 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
+    else if (text == "Fragment Simulating Projectile") {
+        addNumParamToUI(ui, "身管半径 (R):", "r", 5.0, " cm");
+        addNumParamToUI(ui, "身管高度 (Hb):", "hb", 10.0, " cm");
+        addNumParamToUI(ui, "头部高度 (Hn):", "hn", 4.0, " cm");
+        addNumParamToUI(ui, "头部顶端半径 (Rt):", "rt", 2.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.6, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+    }
 }
 
 // 槽函数重构：处理任意一个窗口的生成按钮点击
@@ -1217,6 +1227,11 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     else if (type == "HalfCylindricalShell") {
         HalfCylindricalShellGenerator gen;
         gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Fragment Simulating Projectile") {
+        FSPGenerator gen;
+        gen.setParameters(val("r"), val("hb"), val("hn"), val("rt"), val("ms"), val("cx"), val("cy"), val("cz"));
         m_meshManager->buildAndLoad(gen, name);
     }
 

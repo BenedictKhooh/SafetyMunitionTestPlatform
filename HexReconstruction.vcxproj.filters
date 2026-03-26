@@ -85,27 +85,6 @@
     <ClCompile Include="src\core\generation\HalfCylindricalShellGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\common\Part\PartCard.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common\Contact\ContactCard.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common\Material\MaterialCard.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common\LSDynaDeck.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common\Control\ControlCards.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common\Database\DatabaseCards.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common\Boundary\BoundaryCards.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\core\generation\OpenCylindricalShellGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -116,6 +95,12 @@
       <Filter>Generated Files</Filter>
     </ClCompile>
     <ClCompile Include="src\core\generation\PentagonalPrismGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common\EOS\EOS.h">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\generation\FSPGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -132,18 +117,12 @@
     <ClInclude Include="src\core\common\common_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\eos\eos.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <QtMoc Include="src\app\glwidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="src\app\mainwindow.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <ClInclude Include="src\core\materials\materials.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\core\reconstruction\reconstruction_engine.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -201,19 +180,10 @@
     <ClInclude Include="src\core\common\LSDynaDeck.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\common\Control\ControlCards.h">
-      <Filter>Generated Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\common\Database\DatabaseCards.h">
-      <Filter>Generated Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\core\common\Boundary\BoundaryCards.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\common\InitialConditions\InitialConditions.h">
-      <Filter>Generated Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\common\Miscellany\MiscCards.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\OpenCylindricalShellGenerator.h">
@@ -226,6 +196,15 @@
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\PentagonalPrismGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\GlobalControl\GlobalControl.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\common\Section\SectionCard.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\FSPGenerator.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -249,5 +228,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />
+    <None Include="src\core\materials\material_repo.json" />
   </ItemGroup>
 </Project>

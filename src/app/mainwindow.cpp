@@ -862,6 +862,17 @@ void MainWindow::handleDeleteEntity(QString name) {
     // 1. 从实体仓库(Repository)中移除数据
     if (m_repository.deleteEntity(name)) {
 
+        if (m_entityParts.contains(name)) {
+            // 获取这个 Part 卡片的智能指针
+            auto partPtr = m_entityParts[name];
+
+            // 从 LS-DYNA 总牌组中移出这张卡片
+            m_deck.removeCard(partPtr.get());
+
+            // 从实体名称映射字典中抹除
+            m_entityParts.remove(name);
+        }
+
         // 2. 刷新 3D 画面 (清空指令 -> 重新遍历剩余实体提交给 GLWidget)
         redrawAllEntities();
 

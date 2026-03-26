@@ -55,11 +55,10 @@ v_list[] = Extrude {0, 0, H} {
   Surface{1, 2, 3}; 
   Layers{nH}; 
   Recombine;
-}
+};
 
 // 7. 物理组与导出设置
-Physical Volume("TriPrism_Solid") = {v_list[1], v_list[6], v_list[11]};
-
+Physical Volume("TriPrism_Solid") = {1, 2, 3};
 Mesh.RecombineAll = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh.SaveAll = 0; // 只导出六面体

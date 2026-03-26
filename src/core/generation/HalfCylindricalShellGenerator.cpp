@@ -1,29 +1,16 @@
-#include "HalfCylindricalShellGenerator.h"
+ï»¿#include "HalfCylindricalShellGenerator.h"
 #include <QtMath>
 
-QString HalfCylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize,
-    double cx, double cy, double cz) const {
+QString HalfCylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize, double cx, double cy, double cz) const {
 
-    // --- 1. Ô¤¼ÆËãÀëÉ¢·Ö¶ÎÊı ---
-    // nC: ÖÜÏò·Ö¶Î (90¶È¶ÔÓ¦ Rproj/ms)
-    int nC = qMax(2, (int)qRound((radius / 1.414) / meshSize));
-
-    // nR_wall: ±Úºñ·Ö¶Î
-    int nR_wall = qMax(1, (int)qRound(wall / meshSize));
-
-    // nH_cap: ¶Ë¸Ç·Ö¶Î
+    int nC = qMax(2, (int)qRound((radius / 1.41421356) / meshSize)) + 1;
+    int nR_wall = qMax(1, (int)qRound(wall / meshSize)) + 1;
     int nH_cap = qMax(1, (int)qRound(lid / meshSize));
-
-    // nH_void: ¿ÕÇ»¸ß¶È·Ö¶Î
     double voidHeight = height - 2.0 * lid;
     int nH_void = qMax(1, (int)qRound(voidHeight / meshSize));
 
     return QString(R"(
-////////////////////////////////////////////////////
-// Half-Cylindrical Shell (Parameterized & Offset)
-////////////////////////////////////////////////////
-
-// --- 1. ²ÎÊıÓë¼¸ºÎ¼ÆËã ---
+// å‚æ•°å®šä¹‰
 R_in = %1; Wall = %2; H_height = %3; H_cap = %4;
 R_out = R_in + Wall;
 H_void = H_height - 2 * H_cap;
@@ -31,73 +18,84 @@ H_void = H_height - 2 * H_cap;
 nC = %5; nR_wall = %6; nH_cap = %7; nH_void = %8;
 CX = %9; CY = %10; CZ = %11;
 
-L_in = R_in / (2 * 1.414);
-p_in = R_in / 1.414;
-p_out = R_out / 1.414;
+L_in = R_in / (2 * 1.41421356);
+p_in = R_in / 1.41421356;
+p_out = R_out / 1.41421356;
 
-// --- 2. »ù´¡Ãæ¶¨Òå (Z=0) ---
-Point(1) = {CX + 0, CY + 0, CZ + 0}; 
-
-Point(2) = {CX - L_in, CY + 0,    CZ + 0}; Point(3) = {CX + L_in, CY + 0,    CZ + 0};
+// ç‚¹å®šä¹‰
+Point(1) = {CX + 0, CY + 0, CZ + 0};
+Point(2) = {CX - L_in, CY + 0, CZ + 0}; Point(3) = {CX + L_in, CY + 0, CZ + 0};
 Point(4) = {CX + L_in, CY + L_in, CZ + 0}; Point(5) = {CX - L_in, CY + L_in, CZ + 0};
-Point(6) = {CX - R_in, CY + 0,    CZ + 0}; Point(7) = {CX + R_in, CY + 0,    CZ + 0};
+Point(6) = {CX - R_in, CY + 0, CZ + 0}; Point(7) = {CX + R_in, CY + 0, CZ + 0};
 Point(8) = {CX + p_in, CY + p_in, CZ + 0}; Point(9) = {CX - p_in, CY + p_in, CZ + 0};
-
-Point(10) = {CX - R_out, CY + 0,     CZ + 0}; Point(11) = {CX + R_out, CY + 0,     CZ + 0};
+Point(10) = {CX - R_out, CY + 0, CZ + 0}; Point(11) = {CX + R_out, CY + 0, CZ + 0};
 Point(12) = {CX + p_out, CY + p_out, CZ + 0}; Point(13) = {CX - p_out, CY + p_out, CZ + 0};
 
+// çº¿å®šä¹‰
 Line(1)={2,3}; Line(2)={3,4}; Line(3)={4,5}; Line(4)={5,2};
 Line(5)={6,2}; Line(6)={3,7}; Line(7)={4,8}; Line(8)={5,9};
 Circle(9)={7,1,8}; Circle(10)={8,1,9}; Circle(11)={9,1,6};
-
 Line(12)={7,11}; Line(13)={8,12}; Line(14)={9,13}; Line(15)={6,10};
 Circle(16)={11,1,12}; Circle(17)={12,1,13}; Circle(18)={13,1,10};
 
-// Ãæ¶¨Òå: 1-4 ÄÚ²¿, 5-7 ±Úºñ
-Curve Loop(101)={1,2,3,4};    Plane Surface(1)={101};
-Curve Loop(102)={6,9,-7,-2};  Plane Surface(2)={102};
-Curve Loop(103)={7,10,-8,-3}; Plane Surface(3)={103};
-Curve Loop(104)={8,11,5,-4};  Plane Surface(4)={104};
-Curve Loop(105)={12,16,-13,-9}; Plane Surface(5)={105};
-Curve Loop(106)={13,17,-14,-10};Plane Surface(6)={106};
-Curve Loop(107)={14,18,-15,-11};Plane Surface(7)={107};
+// é¢å®šä¹‰
+Curve Loop(101) = {1, 2, 3, 4};        Plane Surface(1) = {101};
+Curve Loop(102) = {6, 9, -7, -2};      Plane Surface(2) = {102};
+Curve Loop(103) = {7, 10, -8, -3};     Plane Surface(3) = {103};
+Curve Loop(104) = {8, 11, 5, -4};      Plane Surface(4) = {104};
+Curve Loop(105) = {12, 16, -13, -9};   Plane Surface(5) = {105};
+Curve Loop(106) = {13, 17, -14, -10};  Plane Surface(6) = {106};
+Curve Loop(107) = {14, 18, -15, -11};  Plane Surface(7) = {107};
 
-Transfinite Surface {1:7}; Recombine Surface {1:7};
+// ç»“æ„åŒ–çº¦æŸ
 Transfinite Curve {1, 3, 10, 17} = nC;
-Transfinite Curve {2, 4, 9, 11, 16, 18} = Max(2, nC/2);
+Transfinite Curve {2, 4, 9, 11, 16, 18} = nC; 
 Transfinite Curve {5, 6, 7, 8} = nC; 
 Transfinite Curve {12, 13, 14, 15} = nR_wall;
 
-// --- 3. Ë³ĞòÀ­Éì ---
-// µÚÒ»²ã£ºµ×²¿¶Ë¸Ç
-out1[] = Extrude {0, 0, H_cap} { Surface{1:7}; Layers{nH_cap}; Recombine; };
+Transfinite Surface {1:7}; 
+Recombine Surface {1:7};
 
-// µÚ¶ş²ã£ºÖĞ¼ä¿ÕÇ»²ã
-out2[] = Extrude {0, 0, H_void} { 
-    Surface{out1[0], out1[6], out1[12], out1[18], out1[24], out1[30], out1[36]}; 
-    Layers{nH_void}; Recombine; 
-};
+// åˆ†æ­¥æ‹‰ä¼¸ä¸‰å±‚ï¼šåº•ç›–ã€ä¸­é—´å£³ã€é¡¶ç›–
+out1_1[] = Extrude {0, 0, H_cap} { Surface{1}; Layers{nH_cap}; Recombine; };
+out1_2[] = Extrude {0, 0, H_cap} { Surface{2}; Layers{nH_cap}; Recombine; };
+out1_3[] = Extrude {0, 0, H_cap} { Surface{3}; Layers{nH_cap}; Recombine; };
+out1_4[] = Extrude {0, 0, H_cap} { Surface{4}; Layers{nH_cap}; Recombine; };
+out1_5[] = Extrude {0, 0, H_cap} { Surface{5}; Layers{nH_cap}; Recombine; };
+out1_6[] = Extrude {0, 0, H_cap} { Surface{6}; Layers{nH_cap}; Recombine; };
+out1_7[] = Extrude {0, 0, H_cap} { Surface{7}; Layers{nH_cap}; Recombine; };
 
-// µÚÈı²ã£º¶¥²¿¶Ë¸Ç
-out3[] = Extrude {0, 0, H_cap} { 
-    Surface{out2[0], out2[6], out2[12], out2[18], out2[24], out2[30], out2[36]}; 
-    Layers{nH_cap}; Recombine; 
-};
+out2_1[] = Extrude {0, 0, H_void} { Surface{out1_1[0]}; Layers{nH_void}; Recombine; };
+out2_2[] = Extrude {0, 0, H_void} { Surface{out1_2[0]}; Layers{nH_void}; Recombine; };
+out2_3[] = Extrude {0, 0, H_void} { Surface{out1_3[0]}; Layers{nH_void}; Recombine; };
+out2_4[] = Extrude {0, 0, H_void} { Surface{out1_4[0]}; Layers{nH_void}; Recombine; };
+out2_5[] = Extrude {0, 0, H_void} { Surface{out1_5[0]}; Layers{nH_void}; Recombine; };
+out2_6[] = Extrude {0, 0, H_void} { Surface{out1_6[0]}; Layers{nH_void}; Recombine; };
+out2_7[] = Extrude {0, 0, H_void} { Surface{out1_7[0]}; Layers{nH_void}; Recombine; };
 
-// --- 4. ÍÚ¿ÕÖĞ¼ä²ã ---
-Recursive Delete { Volume{out2[1], out2[7], out2[13], out2[19]}; }
+out3_1[] = Extrude {0, 0, H_cap} { Surface{out2_1[0]}; Layers{nH_cap}; Recombine; };
+out3_2[] = Extrude {0, 0, H_cap} { Surface{out2_2[0]}; Layers{nH_cap}; Recombine; };
+out3_3[] = Extrude {0, 0, H_cap} { Surface{out2_3[0]}; Layers{nH_cap}; Recombine; };
+out3_4[] = Extrude {0, 0, H_cap} { Surface{out2_4[0]}; Layers{nH_cap}; Recombine; };
+out3_5[] = Extrude {0, 0, H_cap} { Surface{out2_5[0]}; Layers{nH_cap}; Recombine; };
+out3_6[] = Extrude {0, 0, H_cap} { Surface{out2_6[0]}; Layers{nH_cap}; Recombine; };
+out3_7[] = Extrude {0, 0, H_cap} { Surface{out2_7[0]}; Layers{nH_cap}; Recombine; };
 
-// --- 5. ÎïÀí×é ---
-Physical Volume("Half_Shell_Solid") = {
-    out1[1], out1[7], out1[13], out1[19], out1[25], out1[31], out1[37],
-    out2[25], out2[31], out2[37],
-    out3[1], out3[7], out3[13], out3[19], out3[25], out3[31], out3[37]
-};
+// æŒ–ç©ºè£…è¯åŒºåŸŸ
+Delete { Volume{out2_1[1], out2_2[1], out2_3[1], out2_4[1]}; }
 
+// ğŸŒŸ ç‰©ç†ç²˜åˆå‰‚ï¼šæ¶ˆé™¤å„å±‚ç‹¬ç«‹æ‹‰ä¼¸é€ æˆçš„é‡å è¾¹ç•Œï¼Œå°†å…¶å˜æˆå®Œç¾ä¸€ä½“çš„ç½‘æ ¼ï¼
+Coherence;
+
+// ğŸŒŸ åŠ¨æ€åˆ†é…å‰©ä½™çš„æ‰€æœ‰å®ä½“åˆ°ç‰©ç†ç»„
+Physical Volume("Half_Shell_Solid") = Volume "*";
+
+// ğŸŒŸ å¼ºåˆ¶å…¼å®¹æ€§è¾“å‡º
 Mesh.MshFileVersion = 2.2;
+Mesh.SaveAll = 0; 
 Mesh 3;
-    )")
-        .arg(radius).arg(wall).arg(height).arg(lid)
-        .arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void)
-        .arg(cx).arg(cy).arg(cz);
+)")
+.arg(radius).arg(wall).arg(height).arg(lid)
+.arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void)
+.arg(cx).arg(cy).arg(cz);
 }

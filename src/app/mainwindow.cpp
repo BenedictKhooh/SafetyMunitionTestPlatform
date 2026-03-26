@@ -255,10 +255,10 @@ void MainWindow::createDockWidgets() {
 
     // 将三个分类作为不同的 Tab 添加进去
     setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
-        { "Cube", "Sphere", "Hemisphere" }, m_fragmentUI);
+        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism" }, m_fragmentUI);
 
     setupGeneratorTab(tabWidget, tr("壳体 (Shell)"),
-        { "CylindricalShell", "OpenCylindricalShell", "Frustum" }, m_shellUI);
+        { "CylindricalShell", "OpenCylindricalShell", "Frustum", "HalfCylindricalShell" }, m_shellUI);
 
     setupGeneratorTab(tabWidget, tr("装药 (Charge)"),
         { "Cylinder", "HalfCylinder", "Cube", "Sphere" }, m_chargeUI);
@@ -1125,6 +1125,26 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
+    else if (text == "TriangularPrism" || text == "PentagonalPrism" || text == "HexagonalPrism") {
+        // 这三种多边形棱柱的参数是一模一样的
+        addNumParamToUI(ui, "Radius (外接圆半径 R):", "r", 5.0, " cm");
+        addNumParamToUI(ui, "Height (高度 H):", "h", 10.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+    }
+    else if (text == "HalfCylindricalShell") {
+        // 半圆柱壳需要内径、高度、端盖和壁厚
+        addNumParamToUI(ui, "Inner Radius (内径 R):", "r", 4.0, " cm");
+        addNumParamToUI(ui, "Total Height (总高 H):", "h", 9.2, " cm");
+        addNumParamToUI(ui, "Lid Thick (端盖厚度):", "lid", 0.6, " cm");
+        addNumParamToUI(ui, "Wall Thick (壁厚):", "wall", 0.6, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.1, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+    }
 }
 
 // 槽函数重构：处理任意一个窗口的生成按钮点击
@@ -1177,6 +1197,26 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     else if (type == "HalfCylinder") {
         HalfCylinderGenerator gen;
         gen.setParameters(val("r"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "TriangularPrism") {
+        TriangularPrismGenerator gen;
+        gen.setParameters(val("r"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "PentagonalPrism") {
+        PentagonalPrismGenerator gen;
+        gen.setParameters(val("r"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "HexagonalPrism") {
+        HexagonalPrismGenerator gen;
+        gen.setParameters(val("r"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "HalfCylindricalShell") {
+        HalfCylindricalShellGenerator gen;
+        gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
         m_meshManager->buildAndLoad(gen, name);
     }
 

@@ -1,85 +1,50 @@
-#include "HalfCylinderGenerator.h"
+ï»¿#include "HalfCylinderGenerator.h"
 #include <QtMath>
 
-/**
- * @brief ¹¹½¨ÓÃÓÚÉú³ÉÍêÕû°ëÔ²Öù O-Grid Íø¸ñµÄ Gmsh ½Å±¾
- */
 QString HalfCylinderGenerator::buildGeoScript(double radius, double height, double meshSize, double cx, double cy, double cz) const {
 
-    // --- 1. »ùÓÚ meshSize ×Ô¶¯¼ÆËã¸÷·½ÏòµÄÍø¸ñ·Ö¶ÎÊı ---
-    // Rproj ÊÇÍ¶Ó°µ½ 45 ¶ÈÎ»ÖÃµÄ×ø±êÖµ
     double Rproj_val = radius / 1.41421356;
     double L_val = Rproj_val / 2.0;
 
-    // nC: ¶¥²¿»¡Ïß(90deg)ºÍÖĞĞÄ¾ØĞÎºá±ßµÄµãÊı
-    int nC = qMax(2, (int)qRound(Rproj_val / meshSize));
-    // nL: Á½²à 45deg »¡ÏßºÍÖĞĞÄ¾ØĞÎÊú±ßµÄµãÊı
-    int nL = qMax(2, (int)qRound(L_val / meshSize));
-    // nR: ¾¶Ïò£¨´ÓÄÚÏòÍâ£©µÄµãÊı
-    int nR = qMax(2, (int)qRound((radius - L_val) / meshSize));
-    // nH: ¸ß¶È·½ÏòµÄµãÊı
-    int nH = qMax(2, (int)qRound(height / meshSize));
+    // è‡ªåŠ¨è®¡ç®—åˆ†æ®µæ•° (+1 æ˜¯å› ä¸º Transfinite ç®—çš„æ˜¯èŠ‚ç‚¹æ•°)
+    int nC = qMax(2, (int)qRound(Rproj_val / meshSize)) + 1;
+    int nL = qMax(2, (int)qRound(L_val / meshSize)) + 1;
+    int nR = qMax(2, (int)qRound((radius - L_val) / meshSize)) + 1;
+    int nH = qMax(2, (int)qRound(height / meshSize)); // Layers é‡Œå¡«çš„æ˜¯æ®µæ•°ï¼Œä¸åŠ 1
 
     return QString(R"(
-////////////////////////////////////////////////////
-// Half-Cylindrical O-grid mesh (Full Volume Version)
-////////////////////////////////////////////////////
-
-// 1. ²ÎÊı¶¨Òå (ÓÉ C++ ×¢Èë)
-R = %1;
-H = %2;
-nC = %3;
-nL = %4;
-nR = %5;
-nH = %6;
-
-// Æ«ÒÆÎ»ÖÃ
+// 1. å‚æ•°å®šä¹‰
+R = %1; H = %2;
+nC = %3; nL = %4; nR = %5; nH = %6;
 CX = %7; CY = %8; CZ = %9;
 
-// ³ß´çÔ¤¼ÆËã
 Rproj = R / 1.41421356; 
 L = Rproj / 2.0; 
 
-// 2. µã¶¨Òå (¼ÓÈë¿Õ¼äÆ«ÒÆ)
-Point(1) = {CX + 0, CY + 0, CZ + 0}; // Ô²ĞÄ»ù×¼
-
-// ÖĞĞÄ¾ØĞÎ¿é¶¥µã
+// 2. ç‚¹å®šä¹‰
+Point(1) = {CX + 0, CY + 0, CZ + 0};
 Point(2) = {CX - L, CY + 0, CZ + 0};
 Point(3) = {CX + L, CY + 0, CZ + 0};
 Point(4) = {CX + L, CY + L, CZ + 0};
 Point(5) = {CX - L, CY + L, CZ + 0};
 
-// ÍâÎ§°ëÔ²¶¥µã
 Point(6) = {CX - R,     CY + 0,     CZ + 0};
 Point(7) = {CX + R,     CY + 0,     CZ + 0};
 Point(8) = {CX + Rproj, CY + Rproj, CZ + 0};
 Point(9) = {CX - Rproj, CY + Rproj, CZ + 0};
 
-// 3. Ïß¶¨Òå
-// ÄÚ²¿¾ØĞÎ±ß¿ò
-Line(1) = {2, 3}; 
-Line(2) = {3, 4}; 
-Line(3) = {4, 5}; 
-Line(4) = {5, 2}; 
+// 3. çº¿å®šä¹‰
+Line(1) = {2, 3}; Line(2) = {3, 4}; Line(3) = {4, 5}; Line(4) = {5, 2}; 
+Line(5) = {6, 2}; Line(6) = {3, 7}; Line(7) = {4, 8}; Line(8) = {5, 9}; 
+Circle(9)  = {7, 1, 8}; Circle(10) = {8, 1, 9}; Circle(11) = {9, 1, 6}; 
 
-// ¾¶ÏòÁ¬½ÓÏß
-Line(5) = {6, 2}; 
-Line(6) = {3, 7}; 
-Line(7) = {4, 8}; 
-Line(8) = {5, 9}; 
+// 4. é¢å®šä¹‰
+Curve Loop(1) = {1, 2, 3, 4};        Plane Surface(1) = {1};
+Curve Loop(2) = {6, 9, -7, -2};      Plane Surface(2) = {2};
+Curve Loop(3) = {7, 10, -8, -3};     Plane Surface(3) = {3};
+Curve Loop(4) = {8, 11, 5, -4};      Plane Surface(4) = {4};
 
-// ÍâÎ§Ô²»¡
-Circle(9)  = {7, 1, 8}; 
-Circle(10) = {8, 1, 9}; 
-Circle(11) = {9, 1, 6}; 
-
-// 4. Ãæ¶¨Òå (¶¨Òå¹¹³É°ëÔ²µ×ÃæµÄ 4 ¸ö×ÓÃæ)
-Curve Loop(1) = {1, 2, 3, 4};       Plane Surface(1) = {1}; // ÖĞĞÄ¿é
-Curve Loop(2) = {6, 9, -7, -2};     Plane Surface(2) = {2}; // ÓÒ²à¿é
-Curve Loop(3) = {7, 10, -8, -3};    Plane Surface(3) = {3}; // ¶¥²¿¿é
-Curve Loop(4) = {8, 11, 5, -4};     Plane Surface(4) = {4}; // ×ó²à¿é
-
-// 5. ½á¹¹»¯Ô¼Êø (Transfinite)
+// 5. ç»“æ„åŒ–çº¦æŸ
 Transfinite Curve {1, 3, 10} = nC;
 Transfinite Curve {2, 4, 9, 11} = nL;
 Transfinite Curve {5, 6, 7, 8} = nR;
@@ -87,21 +52,22 @@ Transfinite Curve {5, 6, 7, 8} = nR;
 Transfinite Surface {1, 2, 3, 4};
 Recombine Surface {1, 2, 3, 4};
 
-// 6. É¨ÂÓ 3D (Extrude) 
-// ¹Ø¼ü£º·Ö±ğÀ­ÉìÃ¿¸öÃæ£¬²¢Ê¹ÓÃ±äÁ¿²¶×½Éú³ÉµÄÌå»ı ID (v[1])
-v1[] = Extrude {0, 0, H} { Surface{1}; Layers{nH}; Recombine; };
-v2[] = Extrude {0, 0, H} { Surface{2}; Layers{nH}; Recombine; };
-v3[] = Extrude {0, 0, H} { Surface{3}; Layers{nH}; Recombine; };
-v4[] = Extrude {0, 0, H} { Surface{4}; Layers{nH}; Recombine; };
+// 6. æ‰«æ  3D (æ•´ä½“æ‹‰ä¼¸ä¿è¯èŠ‚ç‚¹è¿æ¥)
+Extrude {0, 0, H} {
+  Surface{1, 2, 3, 4};
+  Layers{nH};
+  Recombine;
+}
 
-// ºËĞÄĞŞ¸Ä£º½«ËùÓĞ 4 ¸öÌå»ı²¿·Ö¶¼ÄÉÈëÎïÀí×é£¬È·±£äÖÈ¾ºÍ½âÎöÍêÕû
-Physical Volume("Half_Cylinder_Substance") = {v1[1], v2[1], v3[1], v4[1]};
+// ğŸŒŸ ç‰©ç†ç»„æŠ“å–ï¼šä½¿ç”¨ Volume "*" ä¸€ç½‘æ‰“å°½æ‰€æœ‰ä½“ç§¯ï¼Œæœç»æ¼æŠ“
+Physical Volume("Half_Cylinder_Solid") = Volume "*";
 
-// 7. µ¼³öÉèÖÃ
+// ğŸŒŸ å¯¼å‡ºå®‰å…¨é”ï¼šå¼ºåˆ¶ä½¿ç”¨ 2.2 æ ¼å¼ï¼Œä¿æŠ¤ C++ è§£æå™¨ä¸å´©æºƒ
 Mesh.MshFileVersion = 2.2;
+Mesh.SaveAll = 0; 
 Mesh 3;
-    )")
-        .arg(radius).arg(height)
-        .arg(nC).arg(nL).arg(nR).arg(nH)
-        .arg(cx).arg(cy).arg(cz);
+)")
+.arg(radius).arg(height)
+.arg(nC).arg(nL).arg(nR).arg(nH)
+.arg(cx).arg(cy).arg(cz);
 }

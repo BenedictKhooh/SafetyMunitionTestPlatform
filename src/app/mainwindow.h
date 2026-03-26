@@ -314,5 +314,6 @@ private:
 
 private slots:
     void handlePresetChanged(const QString& presetName);
+    void handleViewEntityKeyword(const QString& entityName);
 };
 #endif // MAINWINDOW_H

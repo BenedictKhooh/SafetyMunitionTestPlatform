@@ -837,6 +837,10 @@ void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
     QString entityName = item->text(0);
     QMenu menu(this);
 
+    QAction* viewAct = menu.addAction("查看关键字卡片 (View Keyword Card)");
+    connect(viewAct, &QAction::triggered, this, [this, entityName]() { handleViewEntityKeyword(entityName); });
+
+    menu.addSeparator();
     // 1. 删除
     QAction* delAct = menu.addAction("删除实体 (Delete)");
     connect(delAct, &QAction::triggered, this, [this, entityName]() { handleDeleteEntity(entityName); });
@@ -2616,4 +2620,46 @@ void MainWindow::handleAddGlobalControl() {
     // 强制插入到列表的最顶端（第 0 行）
     m_simSetupUI.setupSummaryList->insertItem(0, item);
     logCommand("System", "全局控制参数已生成并自动置顶。");
+}
+
+// ==========================================
+// 实体树：查看实体对应的 Part 关键字卡片
+// ==========================================
+void MainWindow::handleViewEntityKeyword(const QString& entityName) {
+    // 1. 尝试获取该实体对应的 PartCard
+    // 注意：这里我们使用 contains 检查，而不是直接用 getOrCreatePart
+    // 因为用户可能只是建了模型，还没给它分配材质等导致没触发生成 Part
+    std::shared_ptr<PartCard> partCard = nullptr;
+    if (m_entityParts.contains(entityName)) {
+        partCard = m_entityParts[entityName];
+    }
+    else {
+        // 如果还没有 Part 卡片（例如刚生成几何，还没点生成材料/截面等），则临时生成一个展示
+        partCard = getOrCreatePart(entityName);
+    }
+
+    if (partCard) {
+        
+        QDialog dialog(this);
+        dialog.setWindowTitle(QString("LS-DYNA 关键字预览 - %1").arg(entityName));
+        dialog.resize(600, 400);
+
+        QVBoxLayout layout(&dialog);
+        QTextEdit textEdit;
+        textEdit.setReadOnly(true);
+        textEdit.setStyleSheet("background-color: #1E1E1E; color: #D4D4D4; font-family: Consolas; font-size: 11pt;");
+
+        // 3. 解析主卡片 (*PART)
+        QString kText = QString::fromStdString(partCard->to_string());
+
+        // 提示信息
+        kText.prepend(QString("$ 实体 [%1] 的 Part 卡片\n").arg(entityName));
+
+        textEdit.setPlainText(kText);
+        layout.addWidget(&textEdit);
+        dialog.exec();
+    }
+    else {
+        QMessageBox::warning(this, "警告", "无法获取该实体的关键字卡片。");
+    }
 }

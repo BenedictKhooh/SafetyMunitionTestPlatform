@@ -25,6 +25,7 @@
 #include <QMenu>
 #include <QDialog>
 #include <QTextEdit>
+#include <set>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
@@ -652,6 +653,7 @@ void MainWindow::parseMeshFile(QString fileName) {
 	std::vector<Hexahedron> hexes;
 
     QString entityName = QFileInfo(fileName).baseName();
+    std::map<int, int> gmshToLocalIdx;
 
     while (!in.atEnd()) {
         line = in.readLine().trimmed();
@@ -660,14 +662,17 @@ void MainWindow::parseMeshFile(QString fileName) {
         if (line == "$Nodes") {
             int numNodes = in.readLine().trimmed().toInt();
             for (int i = 0; i < numNodes; ++i) {
-                QStringList data = in.readLine().split(" ");
+                QStringList data = in.readLine().split(" ", Qt::SkipEmptyParts);
                 if (data.size() >= 4) {
                     MeshPoint node;
-                   
+                    int gmshId = data[0].toInt(); // 🌟 提取出 Gmsh 赋予的原始 ID
+
                     node.pos.setX( data[1].toDouble() );
                     node.pos.setY(data[2].toDouble());
                     node.pos.setZ(data[3].toDouble());
 					nodes.push_back(node);
+
+                    gmshToLocalIdx[gmshId] = nodes.size() - 1;
                 }
             }
         }
@@ -688,7 +693,10 @@ void MainWindow::parseMeshFile(QString fileName) {
 					int numTags = data[2].toInt();
                     for (int j = 0; j < 8; j++) {
                     
-                        hex[j] = data[3 +numTags+ j].toInt();
+                        int gmshNodeId = data[3 + numTags + j].toInt();
+                        // 🌟 核心修复：通过映射表，将外部 Gmsh ID 转换成你内部的真实数组下标！
+                        hex[j] = gmshToLocalIdx[gmshNodeId];
+                       // hex[j] = data[3 +numTags+ j].toInt();
                     }
 					hexes.push_back(hex);
                 }
@@ -879,6 +887,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
     int globalNodeId = 1;  // 全局节点计数器
     int globalElemId = 1;  // 全局单元计数器
     std::vector<int> globalSensorIds; // 收集所有传感器的全局 ID
+    std::set<int> globalSensorElemIds;
 
     for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
         const MeshEntity& entity = it->second;
@@ -915,14 +924,24 @@ void MainWindow::exportToKFile(const QString& fileName) {
         out << "*ELEMENT_SOLID\n";
         for (const auto& hex : entity.hexes) {
             // 解决报错的关键：直接使用 hex[j] 访问 std::array 元素
-            out << globalElemId << ", " << realPartId;
+            out << QString("%1").arg(globalElemId, 8)
+                << QString("%1").arg(realPartId, 8);            
+            bool isSensorElement = false;
 
             for (int j = 0; j < 8; ++j) {
                 int localIdx = hex[j]; // 获取存储在 array 中的局部节点索引
-                out << ", " << localToGlobal[localIdx]; // 映射为全局 ID
+
+                out << QString("%1").arg(localToGlobal[localIdx], 8);
+
+                if (m_sensorNodes.contains(entityName) && m_sensorNodes[entityName].contains(localIdx)) {
+                    isSensorElement = true;
+                }
             }
             out << "\n";
 
+            if (isSensorElement) {
+                globalSensorElemIds.insert(globalElemId);
+            }
             globalElemId++;
         }
 
@@ -943,6 +962,19 @@ void MainWindow::exportToKFile(const QString& fileName) {
         // 2. 指定节点数据的输出时间步长 (这里默认0.005，越小数据点越密，曲线越平滑)
         out << "*DATABASE_NODOUT\n";
         out << "$#      dt      lcdt      beam     npltc    psetid\n";
+        out << "     0.005         0         0         0         0\n";
+
+        out << "*DATABASE_HISTORY_SOLID\n";
+        out << "$#    id1       id2       id3       id4       id5       id6       id7       id8\n";
+        int count = 0;
+        for (int elemId : globalSensorElemIds) {
+            out << QString("%1").arg(elemId, 10, 10, QChar(' '));
+            count++;
+            if (count % 8 == 0) out << "\n";
+        }
+        if (count % 8 != 0) out << "\n";
+
+        out << "*DATABASE_ELOUT\n"; // Element Output 单元输出卡片
         out << "     0.005         0         0         0         0\n";
     }
 

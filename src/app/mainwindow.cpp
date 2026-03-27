@@ -847,6 +847,19 @@ void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
 
     menu.addSeparator(); // 加条分割线
 
+    QMenu* symMenu = menu.addMenu("添加对称边界 (Symmetry)");
+
+    QAction* symXAct = symMenu->addAction("X 平面对称 (Fix X)");
+    connect(symXAct, &QAction::triggered, this, [this, entityName]() { handleApplySymmetryBoundary(entityName, 'X'); });
+
+    QAction* symYAct = symMenu->addAction("Y 平面对称 (Fix Y)");
+    connect(symYAct, &QAction::triggered, this, [this, entityName]() { handleApplySymmetryBoundary(entityName, 'Y'); });
+
+    QAction* symZAct = symMenu->addAction("Z 平面对称 (Fix Z)");
+    connect(symZAct, &QAction::triggered, this, [this, entityName]() { handleApplySymmetryBoundary(entityName, 'Z'); });
+
+    menu.addSeparator(); // 加条分割线
+
     // 2. 平移
     QAction* transAct = menu.addAction("平移 (Translate)");
     connect(transAct, &QAction::triggered, this, [this, entityName]() { handleTranslateEntity(entityName); });
@@ -2662,4 +2675,75 @@ void MainWindow::handleViewEntityKeyword(const QString& entityName) {
     else {
         QMessageBox::warning(this, "警告", "无法获取该实体的关键字卡片。");
     }
+}
+
+// ==========================================
+// 处理实体对称边界条件添加
+// ==========================================
+void MainWindow::handleApplySymmetryBoundary(const QString& entityName, char axis) {
+    // 1. 获取当前需要操作的实体数据
+    const MeshEntity* entity = m_repository.getEntity(entityName);
+    if (!entity) return;
+
+    // 2. 调用外部的高级算法，提取特定轴向剖面上的局部节点索引
+    std::set<int> localNodes = getSymmetryPlaneNodes(*entity, axis);
+
+    if (localNodes.empty()) {
+        QMessageBox::warning(this, "警告", QString("未能在 [%1] 的 %2 轴截面上找到任何节点！").arg(entityName).arg(axis));
+        return;
+    }
+
+    // ==========================================
+    // 计算全局节点偏移量
+    // ==========================================
+    int nodeOffset = 0;
+
+    for (const auto& pair : m_repository.getEntities()) {
+        if (pair.first == entityName) {
+            break;
+        }
+        // 核心修复 1：因为 nodes[0] 通常是废弃占位符
+        // 因此这个实体真实的节点数应该是 nodes.size() - 1
+        int realNodeCount = pair.second.nodes.empty() ? 0 : (pair.second.nodes.size() - 1);
+        nodeOffset += realNodeCount;
+    }
+
+    // ==========================================
+    // 🌟 4. 将局部索引转化为真正的全局 LS-DYNA 节点 ID
+    // ==========================================
+    std::vector<int> globalNodes;
+    for (int localIdx : localNodes) {
+        if (localIdx == 0) continue; // 核心修复 2：绝对不要把 nodes[0] 那个占位点选进去
+
+        // 核心修复 3：因为 localIdx 本身已经对应真实的 1 起步标签，千万不能再 +1 了！
+        globalNodes.push_back(nodeOffset + localIdx);
+    }
+
+    // ==========================================
+    // 5. 实例化边界条件卡片对象并加入全局后台牌组
+    // ==========================================
+    static int currentSetId = 2000; // 自动分配的集合ID
+    int setId = currentSetId++;
+
+    std::string title = QString("%1_Symmetry_%2").arg(entityName).arg(axis).toStdString();
+    auto setCard = std::make_shared<SetNodeListCard>(setId, title);
+    for (int nid : globalNodes) {
+        setCard->addNode(nid);
+    }
+
+    auto spcCard = std::make_shared<SpcSetCard>();
+    int tx = (axis == 'X') ? 1 : 0;
+    int ty = (axis == 'Y') ? 1 : 0;
+    int tz = (axis == 'Z') ? 1 : 0;
+
+    // 限制对应轴的平动自由度，实体单元的三个旋转自由度全为 0
+    spcCard->addConstraint(setId, tx, ty, tz, 0, 0, 0);
+
+    m_deck.addCard(setCard);
+    m_deck.addCard(spcCard);
+
+    QMessageBox::information(this, "成功",
+        QString("已成功为 [%1] 提取 %2 平面对称节点（共 %3 个）。\n\n"
+            "前置节点偏移量为：%4\n\n")
+        .arg(entityName).arg(axis).arg(globalNodes.size()).arg(nodeOffset));
 }

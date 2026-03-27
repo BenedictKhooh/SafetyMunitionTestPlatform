@@ -41,6 +41,8 @@ public:
     // 查：获取特定实体（只读）
     const MeshEntity* getEntity(const QString& name) const;
 
+    const auto& getEntities() const { return m_entities; }
+
     // 查：获取所有实体的引用（用于遍历渲染）
     const std::map<QString, MeshEntity>& getAllEntities() const;
 

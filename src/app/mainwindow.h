@@ -30,6 +30,7 @@
 #include "src/core/common/Contact/ContactCard.h"
 #include "src/core/common/Material/MaterialCard.h"
 #include "src/core/common/EOS/EOS.h"
+#include "src/core/common/Boundary/BoundaryCards.h"
 #include "src/core/common/InitialConditions/InitialConditions.h"
 #include "src/core/common/GlobalControl/GlobalControl.h"
 #include "src/core/common/Section/SectionCard.h"
@@ -315,5 +316,7 @@ private:
 private slots:
     void handlePresetChanged(const QString& presetName);
     void handleViewEntityKeyword(const QString& entityName);
+
+    void handleApplySymmetryBoundary(const QString& entityName, char axis);
 };
 #endif // MAINWINDOW_H

@@ -43,3 +43,41 @@ convertHexElements(const std::vector<HexElement>& elems) {
     }
     return hexes;
 }
+std::set<int> getSymmetryPlaneNodes(const MeshEntity& entity, char axis) {
+    std::set<int> symNodes;
+    if (entity.nodes.empty()) return symNodes;
+
+    // 1. 寻找极小值，同时寻找极大值以便计算包围盒尺寸
+    double minVal = 1e10;
+    double maxVal = -1e10;
+    for (const auto& node : entity.nodes) {
+        double val = (axis == 'X') ? node.pos.x() :
+            (axis == 'Y') ? node.pos.y() : node.pos.z();
+        if (val < minVal) minVal = val;
+        if (val > maxVal) maxVal = val;
+    }
+
+    // 2. 动态计算极度安全的容差
+    double span = maxVal - minVal;
+    double tol = 1e-6; // 默认基准值
+
+    if (span > 1e-8 && entity.nodes.size() > 1) {
+        double approxLayers = std::cbrt(entity.nodes.size());
+        double avgElementSize = span / approxLayers;
+        tol = avgElementSize * 0.01;
+    }
+
+    if (tol < 1e-9) tol = 1e-9;
+
+    // 3. 使用自适应容差进行安全过滤
+    for (size_t i = 0; i < entity.nodes.size(); ++i) {
+        double val = (axis == 'X') ? entity.nodes[i].pos.x() :
+            (axis == 'Y') ? entity.nodes[i].pos.y() : entity.nodes[i].pos.z();
+
+        if (std::abs(val - minVal) < tol) {
+            symNodes.insert(i); // 记录相对索引
+        }
+    }
+
+    return symNodes;
+}

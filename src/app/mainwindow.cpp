@@ -154,11 +154,11 @@ void MainWindow::createToolBars() {
     modeToolBar->setMovable(false); // 固定在顶部，不让用户乱拖破坏布局
 
     // 2. 创建两个切换动作 (Action)
-    QAction* preModeAct = new QAction("1. 前处理与建模", this);
+    QAction* preModeAct = new QAction("前处理与建模", this);
     preModeAct->setCheckable(true);
     preModeAct->setChecked(true); // 默认启动时选中前处理
 
-    QAction* postModeAct = new QAction("2. 求解与后处理", this);
+    QAction* postModeAct = new QAction("求解与仿真试验方案设计", this);
     postModeAct->setCheckable(true);
 
     // 3. 把它们加入互斥组 (ActionGroup)，保证一次只能按下一个

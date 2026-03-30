@@ -41,10 +41,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     glWidget->setRepository(&m_repository); // ptr to the entities repo
     mainModeTab->addTab(glWidget, "前处理与建模 (Pre-Processing)");
 
-    // --- Tab 2: 后处理工作区 ---
+    // --- Tab 2: 求解器工作区 ---
     postProcessWidget = new QWidget();
     setupPostProcessUI(); // 在这里面把后处理控件都加到 postProcessWidget 上
     mainModeTab->addTab(postProcessWidget, "求解与仿真试验方案设计 (Solve & Post)");
+
+    PostProcessWidget* postProcessTab = new PostProcessWidget(this);
+    mainModeTab->addTab(postProcessTab, "后处理可视化");
 
 
     // ==========================================
@@ -102,6 +105,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             dock->setVisible(isPreProcess);
         }
         });
+
 }
 
 MainWindow::~MainWindow() {}
@@ -161,16 +165,21 @@ void MainWindow::createToolBars() {
     QAction* postModeAct = new QAction("求解与仿真试验方案设计", this);
     postModeAct->setCheckable(true);
 
+    QAction* vizModeAct = new QAction("后处理可视化分析", this);
+    vizModeAct->setCheckable(true);
+
     // 3. 把它们加入互斥组 (ActionGroup)，保证一次只能按下一个
     QActionGroup* modeGroup = new QActionGroup(this);
     modeGroup->addAction(preModeAct);
     modeGroup->addAction(postModeAct);
+    modeGroup->addAction(vizModeAct);
     modeGroup->setExclusive(true);
 
     // 4. 将动作添加到工具栏
     modeToolBar->addAction(preModeAct);
     modeToolBar->addSeparator();
     modeToolBar->addAction(postModeAct);
+    modeToolBar->addAction(vizModeAct);
 
     // 5. 绑定点击事件，通过点击工具栏按钮，在底层悄悄切换 Tab 页面
     connect(preModeAct, &QAction::triggered, this, [this]() {
@@ -178,6 +187,9 @@ void MainWindow::createToolBars() {
         });
     connect(postModeAct, &QAction::triggered, this, [this]() {
         mainModeTab->setCurrentIndex(1);
+        });
+    connect(vizModeAct, &QAction::triggered, this, [this]() {
+        mainModeTab->setCurrentIndex(2);
         });
 
     // 6. UI 美化：把工具栏变成极具现代工业软件感的设计

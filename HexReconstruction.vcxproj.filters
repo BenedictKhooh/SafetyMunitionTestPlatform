@@ -103,6 +103,12 @@
     <ClCompile Include="src\core\generation\FSPGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\app\PostProcessing\PostProcessWidget.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\PostProcessing\qcustomplot.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -223,6 +229,12 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="src\core\common\MeshManager.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+    <QtMoc Include="src\app\PostProcessing\PostProcessWidget.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+    <QtMoc Include="src\app\PostProcessing\qcustomplot.h">
       <Filter>Generated Files</Filter>
     </QtMoc>
   </ItemGroup>

@@ -39,6 +39,7 @@
 
 #include <QTabWidget>    // 用于顶层隔离
 #include <QProcess>      // 用于调用和监控 LS-DYNA 求解器
+#include "src/app/PostProcessing/PostProcessWidget.h"
 
 // Forward declaration
 class GLWidget;
@@ -107,6 +108,8 @@ private:
     QTabWidget* mainModeTab;
     QWidget* preProcessWidget;  // 存放你原有的所有前处理界面
     QWidget* postProcessWidget; // 新的后处理界面
+
+    PostProcessWidget* dataVisualizerWidget;
 
     // --- 求解器控制台控件 ---
     QLineEdit* kFilePathEdit;

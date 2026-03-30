@@ -32,19 +32,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // 引入多工作区
     // ==========================================
     mainModeTab = new QTabWidget(this);
-    setCentralWidget(mainModeTab); // 让 TabWidget 成为真正的中心件
+    setCentralWidget(mainModeTab); 
 
     mainModeTab->setStyleSheet("QTabBar::tab { height: 0px; width: 0px; padding: 0px; margin: 0px; border: none; }");
 
     // --- Tab 1: 前处理工作区 ---
     glWidget = new GLWidget(this);
     glWidget->setRepository(&m_repository); // ptr to the entities repo
-    mainModeTab->addTab(glWidget, "1. 前处理与建模 (Pre-Processing)");
+    mainModeTab->addTab(glWidget, "前处理与建模 (Pre-Processing)");
 
     // --- Tab 2: 后处理工作区 ---
     postProcessWidget = new QWidget();
     setupPostProcessUI(); // 在这里面把后处理控件都加到 postProcessWidget 上
-    mainModeTab->addTab(postProcessWidget, "2. 求解与后处理 (Solve & Post)");
+    mainModeTab->addTab(postProcessWidget, "求解与仿真试验方案设计 (Solve & Post)");
 
 
     // ==========================================
@@ -879,6 +879,12 @@ void MainWindow::handleDeleteEntity(QString name) {
     // 1. 从实体仓库(Repository)中移除数据
     if (m_repository.deleteEntity(name)) {
 
+        m_symmetryRules.erase(
+            std::remove_if(m_symmetryRules.begin(), m_symmetryRules.end(),
+                [&](const SymmetryRule& rule) { return rule.entityName == name; }),
+            m_symmetryRules.end()
+        );
+
         if (m_entityParts.contains(name)) {
             // 获取这个 Part 卡片的智能指针
             auto partPtr = m_entityParts[name];
@@ -1005,6 +1011,54 @@ void MainWindow::exportToKFile(const QString& fileName) {
         out << "*DATABASE_ELOUT\n"; // Element Output 单元输出卡片
         out << "     0.005         0         0         0         0\n";
     }
+
+    // ==============================================================
+    //
+    // ==============================================================
+    if (!m_symmetryRules.empty()) {
+        static int currentSetId = 2000;
+
+        for (const auto& rule : m_symmetryRules) {
+             
+            const MeshEntity* entity = m_repository.getEntity(rule.entityName);
+            if (!entity) continue;
+
+            std::set<int> localNodes = getSymmetryPlaneNodes(*entity, rule.axis);
+
+            // 计算全局节点偏移量 (与上面导出 *NODE 时的逻辑绝对同步)
+            int nodeOffset = 0;
+            for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
+                if (it->first == rule.entityName) break;
+                int realNodeCount = it->second.nodes.empty() ? 0 : (it->second.nodes.size() - 1);
+                nodeOffset += realNodeCount;
+            }
+
+            std::vector<int> globalNodes;
+            for (int localIdx : localNodes) {
+                if (localIdx == 0) continue; // 避开 nodes[0] 占位符
+                globalNodes.push_back(nodeOffset + localIdx);
+            }
+
+            if (globalNodes.empty()) continue;
+
+            // 实例化对象，使用对象自带的 to_string 方法直接输出到文件
+            int setId = currentSetId++;
+            std::string title = QString("%1_Symmetry_%2").arg(rule.entityName).arg(rule.axis).toStdString();
+
+            SetNodeListCard setCard(setId, title);
+            for (int nid : globalNodes) setCard.addNode(nid);
+
+            SpcSetCard spcCard;
+            int tx = (rule.axis == 'X') ? 1 : 0;
+            int ty = (rule.axis == 'Y') ? 1 : 0;
+            int tz = (rule.axis == 'Z') ? 1 : 0;
+            spcCard.addConstraint(setId, tx, ty, tz, 0, 0, 0);
+
+            out << QString::fromStdString(setCard.to_string());
+            out << QString::fromStdString(spcCard.to_string());
+        }
+    }
+    // ==============================================================
 
     out << "*END\n";
     file.close();
@@ -2681,69 +2735,31 @@ void MainWindow::handleViewEntityKeyword(const QString& entityName) {
 // 处理实体对称边界条件添加
 // ==========================================
 void MainWindow::handleApplySymmetryBoundary(const QString& entityName, char axis) {
-    // 1. 获取当前需要操作的实体数据
     const MeshEntity* entity = m_repository.getEntity(entityName);
     if (!entity) return;
 
-    // 2. 调用外部的高级算法，提取特定轴向剖面上的局部节点索引
+    // 1. 验证一下是否能抓到节点（提供即时反馈）
     std::set<int> localNodes = getSymmetryPlaneNodes(*entity, axis);
-
     if (localNodes.empty()) {
         QMessageBox::warning(this, "警告", QString("未能在 [%1] 的 %2 轴截面上找到任何节点！").arg(entityName).arg(axis));
         return;
     }
 
-    // ==========================================
-    // 计算全局节点偏移量
-    // ==========================================
-    int nodeOffset = 0;
-
-    for (const auto& pair : m_repository.getEntities()) {
-        if (pair.first == entityName) {
-            break;
+    // 2. 🌟 核心改变：不再立刻生成卡片塞进 m_deck！而是把规则记录到小本本上
+    // 检查是否已经添加过同样的规则，防止重复
+    bool exists = false;
+    for (const auto& rule : m_symmetryRules) {
+        if (rule.entityName == entityName && rule.axis == axis) {
+            exists = true; break;
         }
-        // 核心修复 1：因为 nodes[0] 通常是废弃占位符
-        // 因此这个实体真实的节点数应该是 nodes.size() - 1
-        int realNodeCount = pair.second.nodes.empty() ? 0 : (pair.second.nodes.size() - 1);
-        nodeOffset += realNodeCount;
     }
 
-    // ==========================================
-    // 🌟 4. 将局部索引转化为真正的全局 LS-DYNA 节点 ID
-    // ==========================================
-    std::vector<int> globalNodes;
-    for (int localIdx : localNodes) {
-        if (localIdx == 0) continue; // 核心修复 2：绝对不要把 nodes[0] 那个占位点选进去
-
-        // 核心修复 3：因为 localIdx 本身已经对应真实的 1 起步标签，千万不能再 +1 了！
-        globalNodes.push_back(nodeOffset + localIdx);
+    if (!exists) {
+        m_symmetryRules.push_back({ entityName, axis });
     }
-
-    // ==========================================
-    // 5. 实例化边界条件卡片对象并加入全局后台牌组
-    // ==========================================
-    static int currentSetId = 2000; // 自动分配的集合ID
-    int setId = currentSetId++;
-
-    std::string title = QString("%1_Symmetry_%2").arg(entityName).arg(axis).toStdString();
-    auto setCard = std::make_shared<SetNodeListCard>(setId, title);
-    for (int nid : globalNodes) {
-        setCard->addNode(nid);
-    }
-
-    auto spcCard = std::make_shared<SpcSetCard>();
-    int tx = (axis == 'X') ? 1 : 0;
-    int ty = (axis == 'Y') ? 1 : 0;
-    int tz = (axis == 'Z') ? 1 : 0;
-
-    // 限制对应轴的平动自由度，实体单元的三个旋转自由度全为 0
-    spcCard->addConstraint(setId, tx, ty, tz, 0, 0, 0);
-
-    m_deck.addCard(setCard);
-    m_deck.addCard(spcCard);
 
     QMessageBox::information(this, "成功",
-        QString("已成功为 [%1] 提取 %2 平面对称节点（共 %3 个）。\n\n"
-            "前置节点偏移量为：%4\n\n")
-        .arg(entityName).arg(axis).arg(globalNodes.size()).arg(nodeOffset));
+        QString("已记录对 [%1] 施加 %2 轴对称的规则（探测到 %3 个节点）。\n\n"
+            "🌟 为防止实体增删导致 ID 错位，边界卡片将在您最终导出 K 文件时动态结算生成！")
+        .arg(entityName).arg(axis).arg(localNodes.size()));
 }

@@ -318,5 +318,13 @@ private slots:
     void handleViewEntityKeyword(const QString& entityName);
 
     void handleApplySymmetryBoundary(const QString& entityName, char axis);
+private:
+
+    struct SymmetryRule {
+        QString entityName;
+        char axis;
+    };
+    std::vector<SymmetryRule> m_symmetryRules;
+
 };
 #endif // MAINWINDOW_H

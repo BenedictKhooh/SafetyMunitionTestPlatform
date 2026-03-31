@@ -321,6 +321,11 @@ private slots:
     void handleViewEntityKeyword(const QString& entityName);
 
     void handleApplySymmetryBoundary(const QString& entityName, char axis);
+
+    void handleGenerateMeshConvergenceBatch();  // 槽函数：生成网格收敛性批处理
+    void handleGenerateVelocityThresholdBatch(); // 槽函数：生成起爆梯度批处理
+    void handleAnalyzeConvergence();
+
 private:
 
     struct SymmetryRule {
@@ -329,5 +334,19 @@ private:
     };
     std::vector<SymmetryRule> m_symmetryRules;
 
+    //重建算法
+    void remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize);
+
+    //网格收敛性分析 UI 控件
+    QDoubleSpinBox* spinBaseMeshSize;
+    QDoubleSpinBox* spinMeshFactor;
+    QSpinBox* spinMeshSteps;
+    QComboBox* comboTargetMetric;
+    QDoubleSpinBox* spinTolerance;
+
+    //起爆阈值梯度寻优 UI 控件
+    QDoubleSpinBox* spinStartVelocity;
+    QDoubleSpinBox* spinEndVelocity;
+    QDoubleSpinBox* spinVelocityStep;
 };
 #endif // MAINWINDOW_H

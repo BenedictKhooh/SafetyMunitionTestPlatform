@@ -221,8 +221,8 @@ void MainWindow::createToolBars() {
 void MainWindow::createStatusBar() {
     statusBar = new QStatusBar(this);
     setStatusBar(statusBar);
-    QLabel *coordLabel = new QLabel("X: 0, Y: 0, Z: 0", this);
-    statusBar->addPermanentWidget(coordLabel);
+    //QLabel *coordLabel = new QLabel("X: 0, Y: 0, Z: 0", this);
+    //statusBar->addPermanentWidget(coordLabel);
     statusBar->showMessage("Ready");
 }
 
@@ -1329,6 +1329,20 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         m_meshManager->buildAndLoad(gen, name);
     }
 
+    // ==========================================
+    // 在实体诞生并挂载后写入几何参数字典
+    // ==========================================
+    MeshEntity* entity = m_repository.getMutableEntity(name);
+    if (entity) {
+        
+        entity->type = type;
+
+        for (auto it = ui.paramInputs.begin(); it != ui.paramInputs.end(); ++it) {
+            entity->geoParams[it.key()] = it.value()->value();
+        }
+    }
+    // ==========================================
+
     logCommand("GUI Generate (" + type + "): " + name);
     glWidget->update();
 }
@@ -1974,12 +1988,10 @@ void MainWindow::handleApplySimulationSettings() {
         out << "*TITLE\n" << jobTitle << "\n";
         out << "*INCLUDE\n" << meshFileName << "\n"; // Include网格
 
-        // 🌟 1. 最先输出界面上新加的、唯一的全局控制卡片！
         if (m_globalControlCard != nullptr) {
             out << QString::fromStdString(m_globalControlCard->to_string());
         }
 
-        // 🌟 2. 输出管家里的大部队（材料、截面、实体、初速度、接触）
         out << QString::fromStdString(m_deck.generateDeck());
 
         out << "*END\n";
@@ -2386,13 +2398,36 @@ void MainWindow::handleAddSensor() {
 }
 
 // ==========================================
-// 界面搭建：后处理与监控模块
+// 界面搭建：后处理与监控模块 (终极滚动防遮挡版)
 // ==========================================
 void MainWindow::setupPostProcessUI() {
-    QVBoxLayout* mainLayout = new QVBoxLayout(postProcessWidget);
+    // 强行清空可能残留的旧布局
+    if (postProcessWidget->layout() != nullptr) {
+        QWidget().setLayout(postProcessWidget->layout());
+    }
 
-    // --- 模块 A: 工况提交区 ---
-    QGroupBox* submitGroup = new QGroupBox("工况提交 (Job Submission)");
+    QVBoxLayout* mainLayout = new QVBoxLayout(postProcessWidget);
+    QTabWidget* solveTaskTabs = new QTabWidget(postProcessWidget);
+
+    // 🌟 核心修复 1：强行赋予 min-width 和 min-height，彻底打破父级 width:0px 的隐身诅咒！
+    solveTaskTabs->setStyleSheet(
+        "QTabBar::tab {"
+        "  min-width: 180px; min-height: 35px; " // 绝对不能删！这是对抗 width:0px 的唯一武器
+        "  padding: 5px; margin: 2px; "
+        "  font-weight: bold; font-size: 13px; color: #111111; " // 字体调大、颜色加深防融色
+        "  background-color: #E0E0E0; border: 1px solid #A0A0A0; border-radius: 4px; "
+        "}"
+        "QTabBar::tab:selected { background-color: #FFFFFF; color: #0055A4; border-bottom: 2px solid #0055A4; }"
+    );
+    mainLayout->addWidget(solveTaskTabs);
+
+    // ---------------------------------------------------------
+    // 🏷️ 选项卡 1：单次工况求解与监控
+    // ---------------------------------------------------------
+    QWidget* singleRunWidget = new QWidget();
+    QVBoxLayout* singleLayout = new QVBoxLayout(singleRunWidget);
+
+    QGroupBox* submitGroup = new QGroupBox("单次工况提交 (Single Job)");
     QFormLayout* submitLayout = new QFormLayout(submitGroup);
 
     kFilePathEdit = new QLineEdit();
@@ -2402,61 +2437,123 @@ void MainWindow::setupPostProcessUI() {
     submitLayout->addRow("控制文件 (.k):", kLayout);
 
     solverPathEdit = new QLineEdit();
-    solverPathEdit->setPlaceholderText("例如: C:/LSDYNA/ls-dyna_smp_d_R11_0_winx64.exe");
+    solverPathEdit->setPlaceholderText("例如: C:/LSDYNA/ls-dyna_smp_d_R13.exe");
     QPushButton* btnBrowseSolver = new QPushButton("浏览...");
     QHBoxLayout* solverLayout = new QHBoxLayout();
     solverLayout->addWidget(solverPathEdit); solverLayout->addWidget(btnBrowseSolver);
     submitLayout->addRow("求解器路径 (EXE):", solverLayout);
 
     cpuCoresSpin = new QSpinBox();
-    cpuCoresSpin->setRange(1, 128);
-    cpuCoresSpin->setValue(4); // 默认 4 核计算
+    cpuCoresSpin->setRange(1, 128); cpuCoresSpin->setValue(4);
     submitLayout->addRow("计算核心数 (NCPU):", cpuCoresSpin);
 
-    btnRunSolver = new QPushButton("▶ 开始求解 (Run LS-DYNA)");
-    btnRunSolver->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;");
-    btnStopSolver = new QPushButton("■ 终止计算 (Kill)");
-    btnStopSolver->setEnabled(false); // 默认不可点，运行后解锁
+    btnRunSolver = new QPushButton("▶ 开始单次求解");
+    btnRunSolver->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
+    btnStopSolver = new QPushButton("■ 终止计算");
+    btnStopSolver->setStyleSheet("min-height: 35px;");
+    btnStopSolver->setEnabled(false);
 
     QHBoxLayout* btnLayout = new QHBoxLayout();
-    btnLayout->addWidget(btnRunSolver);
-    btnLayout->addWidget(btnStopSolver);
+    btnLayout->addWidget(btnRunSolver); btnLayout->addWidget(btnStopSolver);
     submitLayout->addRow("", btnLayout);
+    singleLayout->addWidget(submitGroup);
 
-    mainLayout->addWidget(submitGroup);
-
-    // --- 模块 B: 计算监控区 ---
-    QGroupBox* monitorGroup = new QGroupBox("计算监控 (Solver Console)");
+    QGroupBox* monitorGroup = new QGroupBox("计算监控台 (Console)");
     QVBoxLayout* monitorLayout = new QVBoxLayout(monitorGroup);
-
     solverConsole = new QTextEdit();
     solverConsole->setReadOnly(true);
-    solverConsole->setStyleSheet("background-color: #1E1E1E; color: #00FF00; font-family: Consolas;"); // 黑底绿字，黑客风
+    solverConsole->setStyleSheet("background-color: #1E1E1E; color: #00FF00; font-family: Consolas;");
     monitorLayout->addWidget(solverConsole);
+    singleLayout->addWidget(monitorGroup, 1);
 
-    mainLayout->addWidget(monitorGroup, 1); // 1表示让控制台占据主要拉伸空间
+    solveTaskTabs->addTab(singleRunWidget, "单次求解与监控");
 
-    // --- 模块 C: d3plot 后处理接口区 ---
-    QGroupBox* postGroup = new QGroupBox("结果处理 (d3plot Visualization)");
+    // ---------------------------------------------------------
+    // 🏷️ 选项卡 2：自动化批处理与分析 (🌟 独立模块 + 滚动条防压扁)
+    // ---------------------------------------------------------
+    // 🌟 核心修复 2：引入 QScrollArea，即使屏幕再矮，内容也绝对不会被切断或合并！
+    QScrollArea* scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame); // 去掉丑陋的边框
+
+    QWidget* batchWidget = new QWidget();
+    QVBoxLayout* batchMainLayout = new QVBoxLayout(batchWidget);
+
+    // --- 模块 A1：网格批处理生成 ---
+    QGroupBox* meshSetupGroup = new QGroupBox("【任务 A-1】网格收敛性分析批处理");
+    QFormLayout* meshLayout = new QFormLayout(meshSetupGroup);
+    spinBaseMeshSize = new QDoubleSpinBox(); spinBaseMeshSize->setValue(5.0); spinBaseMeshSize->setSuffix(" mm");
+    spinMeshFactor = new QDoubleSpinBox(); spinMeshFactor->setValue(0.5); spinMeshFactor->setSingleStep(0.1);
+    spinMeshSteps = new QSpinBox(); spinMeshSteps->setValue(3); spinMeshSteps->setRange(2, 10);
+    meshLayout->addRow("初始基础尺寸:", spinBaseMeshSize);
+    meshLayout->addRow("网格缩放因子:", spinMeshFactor);
+    meshLayout->addRow("自动细化次数:", spinMeshSteps);
+    QPushButton* btnGenerateMeshBatch = new QPushButton("一键生成网格收敛 .bat 脚本");
+    btnGenerateMeshBatch->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
+    meshLayout->addRow("", btnGenerateMeshBatch);
+    batchMainLayout->addWidget(meshSetupGroup);
+
+    // --- 模块 A2：收敛性研判 (恢复被我错误合并的这块内容！) ---
+    QGroupBox* meshAnalyzeGroup = new QGroupBox("【任务 A-2】后处理收敛性研判");
+    QFormLayout* analyzeLayout = new QFormLayout(meshAnalyzeGroup);
+    comboTargetMetric = new QComboBox();
+    comboTargetMetric->addItems({ "靶板总内能 (Internal Energy)", "系统总动能 (Kinetic Energy)" });
+    analyzeLayout->addRow("全局判定指标:", comboTargetMetric);
+    spinTolerance = new QDoubleSpinBox();
+    spinTolerance->setRange(0.1, 20.0); spinTolerance->setValue(5.0); spinTolerance->setSuffix(" %");
+    analyzeLayout->addRow("容差阈值标准:", spinTolerance);
+    QPushButton* btnAnalyzeConvergence = new QPushButton("读取算例结果并生成收敛报告");
+    btnAnalyzeConvergence->setStyleSheet("min-height: 35px; font-weight: bold;");
+    analyzeLayout->addRow("", btnAnalyzeConvergence);
+    batchMainLayout->addWidget(meshAnalyzeGroup);
+
+    // --- 模块 B：起爆阈值寻优 ---
+    QGroupBox* velSetupGroup = new QGroupBox("【任务 B】起爆阈值升降法寻优");
+    QFormLayout* velLayout = new QFormLayout(velSetupGroup);
+    spinStartVelocity = new QDoubleSpinBox(); spinStartVelocity->setRange(0, 5000); spinStartVelocity->setValue(1000.0);
+    spinEndVelocity = new QDoubleSpinBox(); spinEndVelocity->setRange(0, 5000); spinEndVelocity->setValue(2000.0);
+    spinVelocityStep = new QDoubleSpinBox(); spinVelocityStep->setRange(10, 500); spinVelocityStep->setValue(100.0);
+    velLayout->addRow("起始撞击速度 (m/s):", spinStartVelocity);
+    velLayout->addRow("终止撞击速度 (m/s):", spinEndVelocity);
+    velLayout->addRow("速度梯度步长 (m/s):", spinVelocityStep);
+    QPushButton* btnGenerateVelBatch = new QPushButton("一键生成速度梯度 .bat 脚本");
+    btnGenerateVelBatch->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
+    velLayout->addRow("", btnGenerateVelBatch);
+    batchMainLayout->addWidget(velSetupGroup);
+
+    batchMainLayout->addStretch(1);
+
+    // 把装满 3 个大块的 Widget 塞进滚动区
+    scrollArea->setWidget(batchWidget);
+    solveTaskTabs->addTab(scrollArea, "自动化批处理与分析");
+
+    // ---------------------------------------------------------
+    // 底部：公用结果处理区
+    // ---------------------------------------------------------
+    QGroupBox* postGroup = new QGroupBox("结果目录与后处理入口");
     QHBoxLayout* postLayout = new QHBoxLayout(postGroup);
 
-    btnOpenFolder = new QPushButton("打开结果所在目录");
-    btnLaunchD3plot = new QPushButton("加载 d3plot 进行分析 (开发中...)");
+    btnOpenFolder = new QPushButton("📂 打开当前结果目录");
+    btnOpenFolder->setStyleSheet("min-height: 35px;");
+    btnLaunchD3plot = new QPushButton("📊 切换至三维曲线分析工作区");
+    btnLaunchD3plot->setStyleSheet("min-height: 35px;");
     postLayout->addWidget(btnOpenFolder);
     postLayout->addWidget(btnLaunchD3plot);
 
     mainLayout->addWidget(postGroup);
 
-    // 绑定按钮信号
+    // 绑定所有的信号槽
     connect(btnBrowseK, &QPushButton::clicked, this, &MainWindow::browseKFile);
     connect(btnBrowseSolver, &QPushButton::clicked, this, &MainWindow::browseSolver);
     connect(btnRunSolver, &QPushButton::clicked, this, &MainWindow::startCalculation);
     connect(btnStopSolver, &QPushButton::clicked, this, &MainWindow::stopCalculation);
-    // 预留的后处理信号
     connect(btnOpenFolder, &QPushButton::clicked, this, &MainWindow::openResultFolder);
     connect(btnLaunchD3plot, &QPushButton::clicked, this, &MainWindow::launchPostProcessor);
-}
 
+    connect(btnGenerateMeshBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateMeshConvergenceBatch);
+    connect(btnGenerateVelBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateVelocityThresholdBatch);
+    connect(btnAnalyzeConvergence, &QPushButton::clicked, this, &MainWindow::handleAnalyzeConvergence);
+}
 // ==========================================
 // 逻辑实现：求解器控制与日志读取
 // ==========================================
@@ -2616,10 +2713,10 @@ void MainWindow::showSummaryContextMenu(const QPoint& pos) {
 
     if (selected == viewAct) {
         if (type == "CARD" && cardPtr) {
-            // 弹出一个黑客风代码预览框
+
             QDialog dialog(this);
             dialog.setWindowTitle("LS-DYNA 关键字预览");
-            dialog.resize(600, 400);
+            dialog.resize(1200, 800);
 
             QVBoxLayout layout(&dialog);
             QTextEdit textEdit;
@@ -2774,4 +2871,168 @@ void MainWindow::handleApplySymmetryBoundary(const QString& entityName, char axi
         QString("已记录对 [%1] 施加 %2 轴对称的规则（探测到 %3 个节点）。\n\n"
             "🌟 为防止实体增删导致 ID 错位，边界卡片将在您最终导出 K 文件时动态结算生成！")
         .arg(entityName).arg(axis).arg(localNodes.size()));
+}
+
+// ==============================================================
+// 网格重构方法
+// ==============================================================
+void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize) {
+    if (!entity || entity->geoParams.isEmpty()) return;
+
+    // 1. 🌟 核心操作：先把它原本的名字、类型和参数“记忆”备份下来
+    // 因为接下来的 buildAndLoad 会覆盖旧实体，导致记忆丢失！
+    QString name = entity->name;
+    QString type = entity->type;
+    QMap<QString, double> savedParams = entity->geoParams;
+
+    // 2. 根据实体的原始几何参数，替换网格尺寸并重新生成
+    if (type == "Cube") {
+        CubeGenerator gen;
+        gen.setParameters(
+            savedParams["lx"], savedParams["ly"], savedParams["lz"],
+            newMeshSize, // 🌟 唯独替换这个新的网格尺寸！
+            savedParams["cx"], savedParams["cy"], savedParams["cz"]);
+
+        // 调用你现有的真实函数！这会重新生成 Gmsh 网格并装载进仓库
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Cylinder") {
+        CylinderGenerator gen;
+        gen.setParameters(
+            savedParams["r"], newMeshSize, savedParams["h"],
+            savedParams["cx"], savedParams["cy"], savedParams["cz"]);
+
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    // (如果你还有 Sphere、FSP 等其他实体，请直接照抄这里的 else if)
+
+    // 3. 🌟 核心操作：从仓库里重新抓取这个“崭新出厂”的实体，把记忆给它塞回去！
+    MeshEntity* newEntity = m_repository.getMutableEntity(name);
+    if (newEntity) {
+        newEntity->type = type;
+        newEntity->geoParams = savedParams;
+    }
+}
+
+// ==============================================================
+// 网格收敛性 .bat 生成
+// ==============================================================
+void MainWindow::handleGenerateMeshConvergenceBatch() {
+    if (m_workingDirectory.isEmpty()) {
+        QMessageBox::warning(this, "警告", "请先在菜单栏设置工作目录！"); return;
+    }
+
+    double currentSize = spinBaseMeshSize->value();
+    double factor = spinMeshFactor->value();
+    int steps = spinMeshSteps->value();
+
+    QString batFilePath = QDir(m_workingDirectory).filePath("run_mesh_convergence.bat");
+    QFile batFile(batFilePath);
+    if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
+    QTextStream batStream(&batFile);
+
+    QString solverPath = solverPathEdit->text().isEmpty() ? "ls-dyna_smp_d_R13.exe" : solverPathEdit->text();
+    batStream << "@echo off\n";
+    batStream << "set DYNA_PATH=\"" << solverPath << "\"\n\n";
+
+    QProgressDialog progress("正在生成各尺寸网格并导出算例...", "取消", 0, steps, this);
+    progress.setWindowModality(Qt::WindowModal);
+
+    for (int i = 0; i < steps; ++i) {
+        progress.setValue(i);
+        if (progress.wasCanceled()) break;
+
+        // 1. 让所有实体重新进行网格划分
+        for (const auto& pair : m_repository.getAllEntities()) {
+            MeshEntity* mutableEntity = m_repository.getMutableEntity(pair.first);
+            remeshEntityWithNewSize(mutableEntity, currentSize);
+        }
+
+        // 2. 导出当前尺寸下的 K 文件
+        QString jobName = QString("MeshConv_Step%1_Size%2").arg(i + 1).arg(currentSize);
+        QString kFileName = jobName + ".k";
+        exportToKFile(QDir(m_workingDirectory).filePath(kFileName));
+
+        // 3. 写入批处理执行队列
+        batStream << "echo Running Mesh Convergence Step " << i + 1 << " (Size: " << currentSize << " mm)\n";
+        batStream << "%DYNA_PATH% I=" << kFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
+
+        currentSize *= factor; // 计算下一次迭代的网格尺寸
+    }
+
+    batStream << "echo All Mesh Convergence Jobs Finished!\npause\n";
+    batFile.close();
+    progress.setValue(steps);
+    glWidget->update(); // 刷新显示最后的网格
+
+    QMessageBox::information(this, "成功", "网格收敛性 .bat 脚本及 K 文件已生成！\n请前往工作目录双击脚本开始排队计算。");
+}
+
+// ==============================================================
+// 速度梯度 .bat
+// ==============================================================
+void MainWindow::handleGenerateVelocityThresholdBatch() {
+    if (m_workingDirectory.isEmpty()) {
+        QMessageBox::warning(this, "警告", "请先设置工作目录！"); return;
+    }
+
+    double vStart = spinStartVelocity->value();
+    double vEnd = spinEndVelocity->value();
+    double vStep = spinVelocityStep->value();
+    if (vStep <= 0) return;
+
+    // 1. 导出纯网格文件以供复用 (几何不变，节约空间)
+    QString sharedMeshFileName = "Shared_Mesh_For_Threshold.k";
+    exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
+
+    QString batFilePath = QDir(m_workingDirectory).filePath("run_velocity_threshold.bat");
+    QFile batFile(batFilePath);
+    if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
+    QTextStream batStream(&batFile);
+
+    QString solverPath = solverPathEdit->text().isEmpty() ? "ls-dyna_smp_d_R13.exe" : solverPathEdit->text();
+    batStream << "@echo off\n";
+    batStream << "set DYNA_PATH=\"" << solverPath << "\"\n\n";
+
+    // 2. 遍历速度生成控制文件
+    for (double currentVel = vStart; currentVel <= vEnd; currentVel += vStep) {
+        QString jobName = QString("VelocityOpt_V%1").arg(currentVel);
+        QString controlFileName = jobName + "_control.k";
+
+        // （逻辑占位：在此处更新 m_deck 中的 INITIAL_VELOCITY 卡片，设定速度为 currentVel）
+        // 伪代码：
+        // auto icCard = std::dynamic_pointer_cast<InitialVelocityGenerationCard>(m_deck.getCard("INITIAL_VELOCITY_GENERATION"));
+        // if(icCard) icCard->setVz(-currentVel); 
+
+        QFile controlFile(QDir(m_workingDirectory).filePath(controlFileName));
+        if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&controlFile);
+            out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
+            out << "*INCLUDE\n" << sharedMeshFileName << "\n"; // 复用网格
+
+            if (m_globalControlCard != nullptr) out << QString::fromStdString(m_globalControlCard->to_string());
+            out << QString::fromStdString(m_deck.generateDeck());
+            out << "*END\n";
+            controlFile.close();
+        }
+
+        batStream << "echo Running Detonation Test V = " << currentVel << " m/s\n";
+        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
+    }
+
+    batStream << "echo All Threshold Jobs Finished!\npause\n";
+    batFile.close();
+    QMessageBox::information(this, "成功", "速度梯度寻优 .bat 脚本及控制文件组已生成！");
+}
+
+// ==============================================================
+// 收敛性结果评估与报告
+// ==============================================================
+void MainWindow::handleAnalyzeConvergence() {
+    // 这是一个后处理结果评估模块框架，对接提取出的 glstat 或 matsum 能量数据
+    QMessageBox::information(this, "后处理分析模块",
+        "在此处将遍历读取工作目录下各个 MeshConv_xxx.k 对应的 glstat 文件。\n"
+        "提取设定的全局指标 (例如靶板吸收内能)，\n"
+        "当相邻两次细化的指标变化率 (Error = |V_new - V_old|/V_old) 小于设定容差 "
+        + QString::number(spinTolerance->value()) + "% 时，\n自动裁定网格收敛并输出最优尺寸报告！");
 }

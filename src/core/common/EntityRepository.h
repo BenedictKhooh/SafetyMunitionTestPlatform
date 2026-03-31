@@ -5,9 +5,11 @@
 #include <QString>
 #include <map>
 #include <vector>
-// 包含你项目里定义这些基础结构体的头文件
-#include "core/common/common_types.h" // 假设 MeshPoint, Hexahedron, Vector3 在这里
 
+#include "core/common/common_types.h"
+
+#include <QMap>
+#include <QString>
 
 struct Boundary {
     std::string name;               // 边界的名称 (例如 "Top_Surface", "Impact_Face")
@@ -21,7 +23,9 @@ struct MeshEntity {
     std::vector<Hexahedron> hexes;      // 六面体单元数据
     std::vector<Vector3> wireLines;     // 预生成的渲染线段 (缓存起来，重绘时极快)
 
-    std::vector<Boundary> boundaries; // [新增] 用于储存该实体内部包含的所有边界
+    std::vector<Boundary> boundaries; // 用于储存该实体内部包含的所有边界
+
+    QMap<QString, double> geoParams;// 保存实体生成时的纯几何尺寸（例如：长宽高、半径、坐标）
 };
 
 // --- 2. 实体仓库管理类 储存所有的实体---

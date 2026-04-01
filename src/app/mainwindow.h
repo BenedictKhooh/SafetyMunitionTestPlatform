@@ -325,11 +325,21 @@ private slots:
 
     void handleApplySymmetryBoundary(const QString& entityName, char axis);
 
-    void handleGenerateMeshConvergenceBatch();  // 槽函数：生成网格收敛性批处理
-    void handleGenerateVelocityThresholdBatch(); // 槽函数：生成起爆梯度批处理
+    void handleGenerateMeshConvergenceBatch();  // 生成网格收敛性批处理
+    void handleGenerateVelocityThresholdBatch(); // 生成起爆梯度批处理
     void handleAnalyzeConvergence();
     void handleRefreshEntityTable();
     void handlePreviewVelocitySequence();
+
+    /** * @brief 处理批处理进程的标准输出流
+     */
+    void handleBatchProcessOutput();
+
+    /** * @brief 处理批处理进程的结束信号
+     * @param exitCode 进程的退出状态码
+     * @param exitStatus 进程的退出状态枚举值
+     */
+    void handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
 private:
 
@@ -354,5 +364,9 @@ private:
     QDoubleSpinBox* spinVelocityStep;
 
     QTableWidget* tableVelocitySequence;
+
+    /** @brief 外部批处理进程管理器，用于在后台非阻塞执行 .bat 脚本 */
+    QProcess* m_batchProcess = nullptr;
+    QTabWidget* solveTaskTabs;
 };
 #endif // MAINWINDOW_H

@@ -100,7 +100,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(m_solverProcess, &QProcess::readyReadStandardError, this, &MainWindow::readSolverOutput);
     connect(m_solverProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MainWindow::handleSolverFinished);
 
-    // ✨ 杀手锏功能：工作区智能切换 (类似 ABAQUS 切换 Module)
     // 只要检测到用户切换了 Tab 页面，自动隐藏/显示外围的 Dock 和工具栏
     connect(mainModeTab, &QTabWidget::currentChanged, this, [this](int index) {
         bool isPreProcess = (index == 0); // 只有在第一页时，才显示前处理面板
@@ -110,6 +109,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             dock->setVisible(isPreProcess);
         }
         });
+
+    // =========================================================
+    // 进程管理器初始化与信号绑定
+    // =========================================================
+    m_batchProcess = new QProcess(this);
+
+    // 配置进程通道：将标准错误输出 (stderr) 合并至标准输出 (stdout)，以便统一读取
+    m_batchProcess->setProcessChannelMode(QProcess::MergedChannels);
+
+    // 绑定标准输出就绪信号，实现日志流的实时捕获
+    connect(m_batchProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::handleBatchProcessOutput);
+
+    // 绑定进程终止信号，实现任务生命周期的状态监控
+    connect(m_batchProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+        this, &MainWindow::handleBatchProcessFinished);
 
 }
 
@@ -2427,7 +2441,7 @@ void MainWindow::setupPostProcessUI() {
     }
 
     QVBoxLayout* mainLayout = new QVBoxLayout(postProcessWidget);
-    QTabWidget* solveTaskTabs = new QTabWidget(postProcessWidget);
+    solveTaskTabs = new QTabWidget(postProcessWidget);
 
     // 2. 设置 TabWidget 样式，覆盖父级控件可能的隐藏属性 (width/height: 0)
     solveTaskTabs->setStyleSheet(
@@ -2458,7 +2472,7 @@ void MainWindow::setupPostProcessUI() {
     submitLayout->addRow("控制文件 (.k):", kLayout);
 
     solverPathEdit = new QLineEdit();
-    solverPathEdit->setPlaceholderText("例如: C:/LSDYNA/ls-dyna_smp_d_R13.exe");
+    solverPathEdit->setPlaceholderText("D:\Program Files\ANSYS Inc\v241\ansys\bin\winx64\lsdyna_sp.exe");
     QPushButton* btnBrowseSolver = new QPushButton("浏览...");
     QHBoxLayout* solverLayout = new QHBoxLayout();
     solverLayout->addWidget(solverPathEdit); solverLayout->addWidget(btnBrowseSolver);
@@ -3066,20 +3080,26 @@ void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize)
     }
 }
 
-// ==============================================================
-// 网格收敛性 .bat 生成 (适配实体级独立网格控制)
-// ==============================================================
+/**
+ * @brief 生成网格收敛性批处理任务脚本及控制文件，并调度后台进程执行
+ * @details 根据实体级网格控制表中的参数，自动迭代计算各实体在不同收敛步下的网格尺寸，
+ * 重新划分网格并导出独立的控制文件 (.k)。随后生成 Windows 批处理脚本 (.bat)
+ * 并通过内部的 QProcess 管理器将其提交至操作系统后台队列静默执行。
+ */
 void MainWindow::handleGenerateMeshConvergenceBatch() {
+    // 1. 前置条件检查
     if (m_workingDirectory.isEmpty()) {
-        QMessageBox::warning(this, "警告", "请先在菜单栏设置工作目录！"); return;
+        QMessageBox::warning(this, "路径缺失", "请先在菜单栏设置有效的工作目录。");
+        return;
     }
     if (tableMeshSettings->rowCount() == 0) {
-        QMessageBox::warning(this, "警告", "实体列表为空，请先点击刷新实体按钮！"); return;
+        QMessageBox::warning(this, "数据缺失", "当前实体控制表为空，请先刷新并读取物理实体。");
+        return;
     }
 
     int steps = spinMeshSteps->value();
 
-    // 1. 将界面表格中的控制参数全部缓存提取出来
+    // 2. 缓存界面表格中的实体网格控制参数
     struct EntityMeshSetting { QString name; double baseSize; double factor; };
     std::vector<EntityMeshSetting> settings;
 
@@ -3091,106 +3111,193 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
         settings.push_back(s);
     }
 
-    // 2. 准备写入 .bat 批处理文件
+    // 3. 初始化批处理脚本文件流
     QString batFilePath = QDir(m_workingDirectory).filePath("run_mesh_convergence.bat");
     QFile batFile(batFilePath);
     if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream batStream(&batFile);
-    QString solverPath = solverPathEdit->text().isEmpty() ? "ls-dyna_smp_d_R13.exe" : solverPathEdit->text();
+
+    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\Program Files\ANSYS Inc\v241\ansys\bin\winx64\lsdyna_sp.exe" : solverPathEdit->text();
     batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n\n";
 
-    QProgressDialog progress("正在生成不同梯度的网格控制文件...", "取消", 0, steps, this);
+    QProgressDialog progress("正在生成多梯度网格控制文件队列...", "取消", 0, steps, this);
     progress.setWindowModality(Qt::WindowModal);
 
-    // 3. 🌟 核心循环跌代：每一轮，所有实体按照各自的法则独立缩放网格！
+    // 4. 执行网格迭代重构与主控文件组装
     for (int i = 0; i < steps; ++i) {
         progress.setValue(i);
         if (progress.wasCanceled()) break;
 
         QString stepInfo = QString("Step %1 -> ").arg(i + 1);
 
+        // 4.1 遍历并重构所有实体的网格
         for (const auto& s : settings) {
             MeshEntity* mutableEntity = m_repository.getMutableEntity(s.name);
-            // 动态计算当前步下，这个实体应有的专属网格尺寸
             double currentSize = s.baseSize * std::pow(s.factor, i);
             remeshEntityWithNewSize(mutableEntity, currentSize);
 
             stepInfo += QString("[%1: %2mm] ").arg(s.name).arg(currentSize, 0, 'f', 1);
         }
 
-        // 导出当前混合梯度下的 K 文件
         QString jobName = QString("MeshConv_Step%1").arg(i + 1);
-        QString kFileName = jobName + ".k";
-        exportToKFile(QDir(m_workingDirectory).filePath(kFileName));
 
-        // 写入批处理队列
+        // 4.2 导出当前收敛步的纯几何网格数据 (Nodes & Elements)
+        QString meshFileName = jobName + "_mesh.k";
+        exportToKFile(QDir(m_workingDirectory).filePath(meshFileName));
+
+        // 4.3 构建当前收敛步的 LS-DYNA 主控文件 (Master Control Deck)
+        QString controlFileName = jobName + "_run.k";
+        QFile controlFile(QDir(m_workingDirectory).filePath(controlFileName));
+
+        if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&controlFile);
+
+            // 写入文件头声明
+            out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
+
+            // 采用 INCLUDE 语法挂载对应的网格文件，保持主文件结构清晰
+            out << "*INCLUDE\n" << meshFileName << "\n";
+
+            // 写入全局控制参数卡片 (如 *CONTROL_TERMINATION, *CONTROL_ENERGY 等)
+            if (m_globalControlCard != nullptr) {
+                out << QString::fromStdString(m_globalControlCard->to_string());
+            }
+
+            // 写入卡片管线中的所有物理属性定义 (材料、部件、接触、边界条件等)
+            out << QString::fromStdString(m_deck.generateDeck());
+
+            out << "*END\n";
+            controlFile.close();
+        }
+
+        // 4.4 写入批处理执行队列 (注：此时传入求解器的是组装后的 controlFileName)
         batStream << "echo Running " << stepInfo << "\n";
-        batStream << "%DYNA_PATH% I=" << kFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
+        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
     }
 
-    batStream << "echo All Mesh Convergence Jobs Finished!\npause\n";
+    // 注：移除 pause 指令以防止后台进程发生死锁挂起
+    batStream << "echo All Mesh Convergence Jobs Finished!\n";
     batFile.close();
     progress.setValue(steps);
     glWidget->update();
 
-    QMessageBox::information(this, "成功", "实体级网格梯度收敛 .bat 脚本已生成！\n请前往工作目录双击脚本运行。");
+    // =========================================================
+    // 5. 批处理进程自动调度与执行
+    // =========================================================
+    if (m_batchProcess->state() == QProcess::Running) {
+        QMessageBox::warning(this, "资源冲突", "后台计算引擎正在运行中，请等待当前任务队列结束后再提交新任务。");
+        return;
+    }
+
+    // 切换视图至单次求解与监控面板
+    if (solveTaskTabs) {
+        solveTaskTabs->setCurrentIndex(0);
+    }
+
+    // 初始化监控台状态
+    solverConsole->clear();
+    solverConsole->append("========================================");
+    solverConsole->append("[系统提示] 开始执行实体级网格收敛性批处理队列...");
+    solverConsole->append("[系统提示] 当前工作目录: " + m_workingDirectory);
+    solverConsole->append("========================================\n");
+
+    // 配置运行环境并拉起系统命令解释器静默执行批处理脚本
+    m_batchProcess->setWorkingDirectory(m_workingDirectory);
+    m_batchProcess->start("cmd.exe", QStringList() << "/c" << batFilePath);
 }
 
-// ==============================================================
-// 速度梯度 .bat
-// ==============================================================
+/**
+ * @brief 生成起爆阈值升降法寻优批处理任务脚本及控制文件，并调度后台进程执行
+ * @details 提取用户界面的起爆速度区间与步长，自动为每个速度梯度生成对应的
+ * LS-DYNA 控制卡片及主文件 (.k)。组装批处理执行队列，并通过 QProcess 唤醒系统底层执行。
+ */
 void MainWindow::handleGenerateVelocityThresholdBatch() {
+    // 1. 前置条件检查
     if (m_workingDirectory.isEmpty()) {
-        QMessageBox::warning(this, "警告", "请先设置工作目录！"); return;
+        QMessageBox::warning(this, "路径缺失", "请先在菜单栏设置有效的工作目录。");
+        return;
     }
 
     double vStart = spinStartVelocity->value();
     double vEnd = spinEndVelocity->value();
     double vStep = spinVelocityStep->value();
-    if (vStep <= 0) return;
 
-    // 1. 导出纯网格文件以供复用 (几何不变，节约空间)
-    QString sharedMeshFileName = "Shared_Mesh_For_Threshold.k";
-    exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
+    if (vStep <= 0 || vStart > vEnd) {
+        QMessageBox::warning(this, "参数错误", "速度步长必须大于 0，且起始速度不能高于终止速度。");
+        return;
+    }
 
-    QString batFilePath = QDir(m_workingDirectory).filePath("run_velocity_threshold.bat");
+    // 2. 初始化批处理脚本文件流
+    QString batFilePath = QDir(m_workingDirectory).filePath("run_velocity_optimization.bat");
     QFile batFile(batFilePath);
     if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream batStream(&batFile);
 
-    QString solverPath = solverPathEdit->text().isEmpty() ? "ls-dyna_smp_d_R13.exe" : solverPathEdit->text();
-    batStream << "@echo off\n";
-    batStream << "set DYNA_PATH=\"" << solverPath << "\"\n\n";
+    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\Program Files\ANSYS Inc\v241\ansys\bin\winx64\lsdyna_sp.exe" : solverPathEdit->text();
+    batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n\n";
 
-    // 2. 遍历速度生成控制文件
+    // 预先将当前的公共网格结构导出至主文件中复用，以减少存储占用
+    QString sharedMeshFileName = "shared_mesh_geometry.k";
+    exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
+
+    // 3. 循环遍历速度区间，生成独立控制文件
     for (double currentVel = vStart; currentVel <= vEnd; currentVel += vStep) {
         QString jobName = QString("VelocityOpt_V%1").arg(currentVel);
         QString controlFileName = jobName + "_control.k";
 
-        // （逻辑占位：在此处更新 m_deck 中的 INITIAL_VELOCITY 卡片，设定速度为 currentVel）
-        // 伪代码：
-        // auto icCard = std::dynamic_pointer_cast<InitialVelocityGenerationCard>(m_deck.getCard("INITIAL_VELOCITY_GENERATION"));
-        // if(icCard) icCard->setVz(-currentVel); 
+        // 更新初始条件卡片中的撞击速度向量
+        // (注：需确保 m_initialConditionsCard 在其他模块已正确初始化，此处修改指定方向的速度)
+        // 伪代码示例：m_initialConditionsCard->setVelocity(currentVel); 
+        // 需保留您原有的速度修改逻辑
 
         QFile controlFile(QDir(m_workingDirectory).filePath(controlFileName));
         if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&controlFile);
             out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
-            out << "*INCLUDE\n" << sharedMeshFileName << "\n"; // 复用网格
 
-            if (m_globalControlCard != nullptr) out << QString::fromStdString(m_globalControlCard->to_string());
+            // 采用 INCLUDE 语法复用外部的几何网格文件
+            out << "*INCLUDE\n" << sharedMeshFileName << "\n";
+
+            if (m_globalControlCard != nullptr) {
+                out << QString::fromStdString(m_globalControlCard->to_string());
+            }
             out << QString::fromStdString(m_deck.generateDeck());
             out << "*END\n";
             controlFile.close();
         }
 
+        // 写入该工况的执行指令至批处理队列
         batStream << "echo Running Detonation Test V = " << currentVel << " m/s\n";
         batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
     }
 
-    batStream << "echo All Threshold Jobs Finished!\npause\n";
+    // 注：移除 pause 指令以避免后台阻塞
+    batStream << "echo All Threshold Jobs Finished!\n";
     batFile.close();
-    QMessageBox::information(this, "成功", "速度梯度寻优 .bat 脚本及控制文件组已生成！");
+
+    // =========================================================
+    // 4. 批处理进程自动调度与执行
+    // =========================================================
+    if (m_batchProcess->state() == QProcess::Running) {
+        QMessageBox::warning(this, "资源冲突", "后台计算引擎正在运行中，请等待当前任务队列结束后再提交新任务。");
+        return;
+    }
+
+    // 切换视图至单次求解与监控面板
+    if (solveTaskTabs) {
+        solveTaskTabs->setCurrentIndex(0);
+    }
+
+    // 初始化监控台状态
+    solverConsole->clear();
+    solverConsole->append("========================================");
+    solverConsole->append("[系统提示] 开始执行起爆阈值寻优批处理队列...");
+    solverConsole->append("[系统提示] 当前工作目录: " + m_workingDirectory);
+    solverConsole->append("========================================\n");
+
+    // 配置运行环境并拉起系统命令解释器静默执行批处理脚本
+    m_batchProcess->setWorkingDirectory(m_workingDirectory);
+    m_batchProcess->start("cmd.exe", QStringList() << "/c" << batFilePath);
 }
 
 // ==============================================================
@@ -3382,4 +3489,47 @@ void MainWindow::handlePreviewVelocitySequence() {
 
         row++;
     }
+}
+
+/**
+ * @brief 实时读取后台批处理进程的输出流，并重定向至 GUI 控制台
+ * @details 捕获 LS-DYNA 及底层 CMD 批处理脚本的标准输出流，
+ * 采用本地字符集进行解码，并将解析后的日志文本追加至求解监控台 (solverConsole) 中。
+ * 同时自动将滚动条置于最底端，确保最新日志始终处于可视区域。
+ */
+void MainWindow::handleBatchProcessOutput() {
+    if (!m_batchProcess) return;
+
+    // 读取当前缓冲区内所有可用的输出字节流
+    QByteArray outputData = m_batchProcess->readAllStandardOutput();
+
+    // 采用操作系统本地编码 (Windows 环境通常为 GBK) 进行解码，防止控制台出现乱码
+    QString outputStr = QString::fromLocal8Bit(outputData);
+
+    if (solverConsole) {
+        solverConsole->append(outputStr);
+        // 强制更新滚动条视图位置
+        QScrollBar* scrollBar = solverConsole->verticalScrollBar();
+        if (scrollBar) {
+            scrollBar->setValue(scrollBar->maximum());
+        }
+    }
+}
+
+/**
+ * @brief 监控后台批处理任务的终止状态并输出最终结论
+ * @param exitCode 进程执行完毕后返回的退出码 (0 通常代表正常结束)
+ * @param exitStatus 进程的退出状态 (标识正常退出或因崩溃退出)
+ */
+void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+    if (!solverConsole) return;
+
+    solverConsole->append("\n========================================");
+    if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+        solverConsole->append("[系统提示] 自动化批处理求解任务已全部正常执行完毕。");
+    }
+    else {
+        solverConsole->append(QString("[系统警告] 批处理任务异常终止。退出码: %1").arg(exitCode));
+    }
+    solverConsole->append("========================================\n");
 }

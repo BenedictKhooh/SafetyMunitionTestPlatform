@@ -26,6 +26,8 @@ struct MeshEntity {
     std::vector<Boundary> boundaries; // 用于储存该实体内部包含的所有边界
 
     QMap<QString, double> geoParams;// 保存实体生成时的纯几何尺寸（例如：长宽高、半径、坐标）
+
+    QString category;
 };
 
 // --- 2. 实体仓库管理类 储存所有的实体---

@@ -192,7 +192,6 @@ void MainWindow::createToolBars() {
         mainModeTab->setCurrentIndex(2);
         });
 
-    // 6. UI 美化：把工具栏变成极具现代工业软件感的设计
     modeToolBar->setStyleSheet(
         "QToolBar {"
         "   background-color: #F8F9FA;"
@@ -209,11 +208,11 @@ void MainWindow::createToolBars() {
         "   background-color: transparent;"
         "}"
         "QToolButton:checked {"
-        "   background-color: #0055A4;"   /* 选中时变为醒目的品牌蓝 */
-        "   color: white;"                /* 选中时字体变白 */
+        "   background-color: #0055A4;"   
+        "   color: white;"                
         "}"
         "QToolButton:hover:!checked {"
-        "   background-color: #E2E6EA;"   /* 鼠标悬浮时的交互浅灰色 */
+        "   background-color: #E2E6EA;"
         "}"
     );
 }
@@ -706,7 +705,7 @@ void MainWindow::parseMeshFile(QString fileName) {
                     for (int j = 0; j < 8; j++) {
                     
                         int gmshNodeId = data[3 + numTags + j].toInt();
-                        // 🌟 核心修复：通过映射表，将外部 Gmsh ID 转换成你内部的真实数组下标！
+                        // 核心修复：通过映射表，将外部 Gmsh ID 转换成你内部的真实数组下标
                         hex[j] = gmshToLocalIdx[gmshNodeId];
                        // hex[j] = data[3 +numTags+ j].toInt();
                     }
@@ -733,23 +732,30 @@ void MainWindow::parseMeshFile(QString fileName) {
 
     MeshEntity newEntity;
     newEntity.name = entityName;
-    newEntity.type = "Empty"; // 或者是从某个地方传过来的类型
+
+    // ==========================================
+    // 🌟 核心拦截：如果仓库中已有这个实体（说明是刚才按钮预注册的），完美继承其所有物理属性！
+    // ==========================================
+    MeshEntity* existingEntity = m_repository.getMutableEntity(entityName);
+    if (existingEntity) {
+        newEntity.type = existingEntity->type;
+        newEntity.category = existingEntity->category; // 继承我们刚填进去的“装药/破片”！
+        newEntity.geoParams = existingEntity->geoParams;
+    }
+    else {
+        newEntity.type = "Empty";
+        newEntity.category = "未分类";
+    }
+    // ==========================================
+
     newEntity.nodes = points;
     newEntity.hexes = hexes;
     newEntity.wireLines = wireLines;
 
     m_repository.addEntity(entityName, newEntity);
 
-    /*DrawCommand lineCmd;
-    lineCmd.type = DrawCommand::Lines;
-    lineCmd.linesCmd.points = wireLines;
-    lineCmd.linesCmd.width = 2.0f;*/
+    redrawAllEntities(); // 这句话内部会自动刷新 Substance Tree！
 
-    //glWidget->submitDrawCommand(lineCmd);
-    redrawAllEntities();
-
-    /*qDebug() << "done parsing and wireframe generated!";
-    qDebug() << "Wireframe submitted with" << wireLines.size() / 2 << "lines.";*/
     file.close();
 }
 
@@ -807,7 +813,8 @@ void MainWindow::updateSubstanceTree() {
         // 1. 创建实体项 (父节点)，挂载在 substanceTree 上
         QTreeWidgetItem* entityItem = new QTreeWidgetItem(substanceTree);
         entityItem->setText(0, entityName);
-        entityItem->setText(1, QString("Nodes: %1").arg(entity.nodes.size()));
+        QString catStr = entity.category.isEmpty() ? "未分类" : entity.category;
+        entityItem->setText(1, QString("[%1] Nodes: %2").arg(catStr).arg(entity.nodes.size()));
 
         // --- [新增边界子节点逻辑开始] ---
         // 2. 遍历该实体所拥有的边界，作为小项挂载到 entityItem 下面
@@ -819,12 +826,9 @@ void MainWindow::updateSubstanceTree() {
             boundaryItem->setText(0, QString("[Boundary] %1").arg(QString::fromStdString(boundary.name)));
             boundaryItem->setText(1, QString("Size: %1").arg(boundary.nodeIndices.size()));
 
-            // (可选) 给边界小项换个颜色，比如暗灰色或蓝色，以便和实体区分
             boundaryItem->setForeground(0, QBrush(QColor(80, 120, 200)));
         }
-        // --- [新增边界子节点逻辑结束] ---
 
-        // (可选) 默认展开包含边界的实体节点
         if (!entity.boundaries.empty()) {
             entityItem->setExpanded(true);
         }
@@ -1258,11 +1262,32 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     QString type = ui.shapeComboBox->currentText();
     QString name = ui.nameInput->text();
 
-    // 从触发生成的特定窗口中获取数值
+    // ==========================================
+    // 🌟 核心防丢机制：在异步调用生成器前，先预注册实体！
+    // ==========================================
+    MeshEntity preEntity;
+    preEntity.name = name;
+    preEntity.type = type;
+
+    // 智能推断物理类别
+    if (&ui == &m_fragmentUI) preEntity.category = "破片";
+    else if (&ui == &m_shellUI) preEntity.category = "壳体";
+    else if (&ui == &m_chargeUI) preEntity.category = "装药";
+    else preEntity.category = "未分类";
+
+    // 备份参数字典
     auto val = [&](QString key) {
         return ui.paramInputs.contains(key) ? ui.paramInputs[key]->value() : 0.0;
         };
+    for (auto it = ui.paramInputs.begin(); it != ui.paramInputs.end(); ++it) {
+        preEntity.geoParams[it.key()] = it.value()->value();
+    }
 
+    // 提前将带有物理语义的空壳实体塞入仓库，锁定属性！
+    m_repository.addEntity(name, preEntity);
+    // ==========================================
+
+    // 再调用异步底层生成逻辑
     if (type == "Cube") {
         CubeGenerator gen;
         gen.setParameters(val("lx"), val("ly"), val("lz"), val("ms"), val("cx"), val("cy"), val("cz"));
@@ -1329,22 +1354,7 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         m_meshManager->buildAndLoad(gen, name);
     }
 
-    // ==========================================
-    // 在实体诞生并挂载后写入几何参数字典
-    // ==========================================
-    MeshEntity* entity = m_repository.getMutableEntity(name);
-    if (entity) {
-        
-        entity->type = type;
-
-        for (auto it = ui.paramInputs.begin(); it != ui.paramInputs.end(); ++it) {
-            entity->geoParams[it.key()] = it.value()->value();
-        }
-    }
-    // ==========================================
-
     logCommand("GUI Generate (" + type + "): " + name);
-    glWidget->update();
 }
 
 // ==========================================

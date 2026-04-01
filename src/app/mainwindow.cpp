@@ -31,6 +31,7 @@
 #include <string>
 #include <cmath>
 #include <QEventLoop>
+#include <regex>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
@@ -3300,115 +3301,149 @@ void MainWindow::handleGenerateVelocityThresholdBatch() {
     m_batchProcess->start("cmd.exe", QStringList() << "/c" << batFilePath);
 }
 
-// ==============================================================
-// 收敛性结果评估与报告 (适配实体级多梯度网格架构)
-// ==============================================================
+/**
+ * @brief 自动化解析求解结果并生成网格收敛性分析报告
+ * @details 该模块负责读取 LS-DYNA 批处理计算所产生的 ASCII 结果文件 (如 glstat, nodout)。
+ * 依托预编译的正则表达式引擎提取各工况最终时刻的能量或运动学标量。
+ * 基于 L2 范数或直接差分计算相邻迭代步之间的相对误差，并与用户设定的容差阈值进行比对，
+ * 最终输出具有工程指导意义的最优网格尺寸配置。
+ */
 void MainWindow::handleAnalyzeConvergence() {
+    // 1. 前置条件与工作空间校验
     if (m_workingDirectory.isEmpty()) {
-        QMessageBox::warning(this, "警告", "请先设置工作目录！");
+        QMessageBox::warning(this, "路径缺失", "请先在菜单栏设置有效的工作目录。");
         return;
     }
     if (tableMeshSettings->rowCount() == 0) {
-        QMessageBox::warning(this, "警告", "实体列表为空，请先刷新实体列表！");
+        QMessageBox::warning(this, "数据缺失", "当前实体控制表为空，请先刷新并读取物理实体。");
         return;
     }
 
     int steps = spinMeshSteps->value();
-    double tolerance = spinTolerance->value() / 100.0; // 容差转换为小数
+    double tolerance = spinTolerance->value() / 100.0;
+    int metricIndex = comboTargetMetric->currentIndex(); // 0: 内能, 1: 动能, 2: 剩余速度
 
     std::vector<int> stepList;
     std::vector<double> targetValues;
 
-    QProgressDialog progress("正在解析各收敛步的后台计算结果...", "取消", 0, steps, this);
+    QProgressDialog progress("正在对后台计算结果文件进行正则解析...", "取消", 0, steps, this);
     progress.setWindowModality(Qt::WindowModal);
 
-    // 1. 循环读取各个工况的输出文件
+    // 2. 预编译正则表达式以提升大规模 ASCII 文件的解析性能
+    // 匹配格式例: "internal energy  0.1234E+04" (支持可选的科学计数法)
+    std::regex internalRegex(R"(internal energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
+    std::regex kineticRegex(R"(kinetic energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
+
+    // 匹配 nodout 中目标节点的速度记录行
+    // 匹配格式例: " 1  0.0  0.0  0.0  1.2E+2  0.0  0.0" (假定追踪质心节点 ID 为 1)
+    std::regex velocityRegex(R"(^\s*1\s+(?:[+-]?\S+\s+){3}([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
+
+    // 3. 循环遍历并解析每一个收敛步的物理计算结果
     for (int i = 0; i < steps; ++i) {
         progress.setValue(i);
         if (progress.wasCanceled()) break;
 
-        // 根据新版的命名规则，工况文件名不再带有固定的 Size，而是 Step1, Step2
+        // 根据所选判据推断目标结果文件后缀 (全局统计使用 glstat, 节点输出使用 nodout)
+        QString fileSuffix = (metricIndex == 2) ? "_nodout" : "_glstat";
         QString resultFileName = QDir(m_workingDirectory).filePath(
-            QString("MeshConv_Step%1_glstat").arg(i + 1));
+            QString("MeshConv_Step%1%2").arg(i + 1).arg(fileSuffix));
 
-        double maxMetricValue = 0.0;
-
-        // ---------------------------------------------------------
-        // 🌟 核心文件解析区：这里需要读取 LS-DYNA 算出的 glstat 或 matsum
-        // ---------------------------------------------------------
+        double finalMetricValue = 0.0;
         std::ifstream file(resultFileName.toLocal8Bit().constData());
+
+        // ---------------------------------------------------------
+        // 核心 IO 解析区：逐行读取并进行正则特征匹配
+        // ---------------------------------------------------------
         if (file.is_open()) {
             std::string line;
+            std::smatch match;
+
             while (std::getline(file, line)) {
-                // TODO: 具体的提取逻辑 (提取内能或动能)
-                // 提取这一行的数据，并更新 maxMetricValue
+                // 将字符串转换为小写以增强对 LS-DYNA 不同版本输出格式的鲁棒性
+                std::string lowerLine = line;
+                std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+
+                if (metricIndex == 0) { // [靶板总内能]
+                    if (std::regex_search(lowerLine, match, internalRegex)) {
+                        finalMetricValue = std::stod(match[1].str());
+                    }
+                }
+                else if (metricIndex == 1) { // [系统总动能]
+                    if (std::regex_search(lowerLine, match, kineticRegex)) {
+                        finalMetricValue = std::stod(match[1].str());
+                    }
+                }
+                else if (metricIndex == 2) { // [弹体质心剩余速度]
+                    if (std::regex_search(lowerLine, match, velocityRegex)) {
+                        double vx = std::stod(match[1].str());
+                        double vy = std::stod(match[2].str());
+                        double vz = std::stod(match[3].str());
+                        // 计算合成速度标量 (L2 范数)
+                        finalMetricValue = std::sqrt(vx * vx + vy * vy + vz * vz);
+                    }
+                }
             }
             file.close();
         }
         else {
-            // 如果文件不存在，可能是计算没跑完，弹出提示并中止
-            QMessageBox::warning(this, "文件缺失",
-                QString("找不到第 %1 步的计算结果文件：\n%2\n\n请确认 LS-DYNA 批处理是否已经全部计算完毕！")
+            // IO 异常处理：抛出缺失文件路径，提示用户检查底层求解器状态
+            QMessageBox::warning(this, "IO 解析异常",
+                QString("无法打开第 %1 步的计算结果文件：\n%2\n\n请确认 LS-DYNA 批处理是否已经全部计算完毕，"
+                    "且已在 K 文件中正确配置了 *DATABASE 卡片！")
                 .arg(i + 1).arg(resultFileName));
             return;
         }
 
-        // ==============================================
-        // (注：此处为了让您的程序能跑通展示，放置一个平滑收敛的模拟测试数据)
-        // 实际使用时，请将下面这行删掉，直接使用您解析出的 maxMetricValue！
-        maxMetricValue = 100.0 * (1.0 - std::exp(-(i + 1)));
-        // ==============================================
-
         stepList.push_back(i + 1);
-        targetValues.push_back(maxMetricValue);
+        targetValues.push_back(finalMetricValue);
     }
     progress.setValue(steps);
 
-    // 2. 研判网格收敛性
+    // 4. 收敛性研判与相对误差计算
     QString report = "【实体级网格收敛性综合分析报告】\n\n";
     bool isConverged = false;
     int optimalStep = 1;
 
     for (size_t i = 0; i < targetValues.size(); ++i) {
-        report += QString("迭代第 %1 步: 观测值 = %2\n").arg(stepList[i]).arg(targetValues[i]);
+        report += QString("迭代第 %1 步: 观测极值 = %2\n").arg(stepList[i]).arg(targetValues[i], 0, 'e', 4);
 
         if (i > 0) {
-            // 计算相对误差 E = |V_new - V_old| / V_old
-            double error = std::abs(targetValues[i] - targetValues[i - 1]) / (targetValues[i - 1] + 1e-9);
+            // 计算相对误差：E = |V_new - V_old| / V_old (采用 1e-9 防止除零异常)
+            double error = std::abs(targetValues[i] - targetValues[i - 1]) / (std::abs(targetValues[i - 1]) + 1e-9);
             report += QString("   -> 相对变化率: %1%\n").arg(error * 100.0, 0, 'f', 2);
 
-            // 如果误差小于设定的容差，且之前没有宣布过收敛
+            // 若当前误差落入设定的容差阈值区间，且为首次达标，则锁定最优收敛步
             if (error <= tolerance && !isConverged) {
                 isConverged = true;
                 optimalStep = stepList[i];
-                report += QString("   ✅ 【达到收敛标准！】\n");
+                report += QString("   ✅ [系统评估] 达到收敛标准！\n");
             }
         }
     }
 
-    // 3. 打印实体网格参数明细，方便用户核对当前步长到底对应多大尺寸
+    // 5. 组装最终结果与网格参数推荐方案
     if (isConverged) {
-        report += QString("\n结论：网格在第 %1 步时已经达到 %2% 的收敛标准。\n以下是该最优步的各实体网格尺寸配置：\n")
+        report += QString("\n[结论] 网格在第 %1 步时已达到 %2% 的收敛标准。\n以下为该最优步对应的实体网格尺寸配置推荐方案：\n")
             .arg(optimalStep).arg(spinTolerance->value());
     }
     else {
-        report += QString("\n结论：在经历 %1 次细化后，相对误差依然未能降至 %2% 以下。\n请考虑继续细化网格，最优步暂推荐最后一步，其配置如下：\n")
+        report += QString("\n[结论] 经历 %1 轮细化迭代后，观测指标的相对误差仍未降至 %2% 以下。\n请考虑提升细化总次数或排查模型应力奇异性。暂推荐最后一步配置：\n")
             .arg(steps).arg(spinTolerance->value());
         optimalStep = steps;
     }
 
-    // 从表格反推最优步时，各个实体对应的准确网格尺寸
+    // 从实体控制表中反推最优步时各实体所分配的精确网格尺寸
     for (int r = 0; r < tableMeshSettings->rowCount(); ++r) {
         QString name = tableMeshSettings->item(r, 0)->text();
         double baseSize = qobject_cast<QDoubleSpinBox*>(tableMeshSettings->cellWidget(r, 2))->value();
         double factor = qobject_cast<QDoubleSpinBox*>(tableMeshSettings->cellWidget(r, 3))->value();
 
-        // 计算公式：BaseSize * (Factor ^ (最优步 - 1))
+        // 推演公式: OptimalSize = BaseSize * (Factor ^ (OptimalStep - 1))
         double optimalSize = baseSize * std::pow(factor, optimalStep - 1);
-        report += QString(" - %1: %2 mm\n").arg(name).arg(optimalSize, 0, 'f', 2);
+        report += QString(" - 实体 [%1] 建议网格尺寸: %2 mm\n").arg(name).arg(optimalSize, 0, 'f', 2);
     }
 
-    QMessageBox::information(this, "分析完成", report);
+    QMessageBox::information(this, "收敛性分析完成", report);
 }
 
 // ==============================================================
@@ -3436,7 +3471,8 @@ void MainWindow::handleRefreshEntityTable() {
 
         // 第 2 列: 智能读取实体原本的基础网格尺寸，作为默认初始值
         QDoubleSpinBox* spinBase = new QDoubleSpinBox();
-        spinBase->setRange(0.1, 1000.0); spinBase->setDecimals(2);
+        spinBase->setRange(0.0001, 1000.0); 
+        spinBase->setDecimals(3);
         // 如果当时画图时存了网格参数 ms，就用当时的，否则默认 5.0
         double defaultMs = it->second.geoParams.contains("ms") ? it->second.geoParams["ms"] : 5.0;
         spinBase->setValue(defaultMs);
@@ -3444,7 +3480,9 @@ void MainWindow::handleRefreshEntityTable() {
 
         // 第 3 列: 每个实体独立的缩放因子 (默认 0.8)
         QDoubleSpinBox* spinFactor = new QDoubleSpinBox();
-        spinFactor->setRange(0.1, 1.0); spinFactor->setSingleStep(0.1);
+        spinFactor->setRange(0.001, 1.0);
+        spinFactor->setSingleStep(0.1);
+        spinFactor->setDecimals(3);
         spinFactor->setValue(0.8);
         tableMeshSettings->setCellWidget(row, 3, spinFactor);
     }

@@ -41,6 +41,9 @@
 #include <QProcess>      // 用于调用和监控 LS-DYNA 求解器
 #include "src/app/PostProcessing/PostProcessWidget.h"
 
+#include <QTableWidget>
+#include <QHeaderView>
+
 // Forward declaration
 class GLWidget;
 class QPushButton;
@@ -325,6 +328,7 @@ private slots:
     void handleGenerateMeshConvergenceBatch();  // 槽函数：生成网格收敛性批处理
     void handleGenerateVelocityThresholdBatch(); // 槽函数：生成起爆梯度批处理
     void handleAnalyzeConvergence();
+    void handleRefreshEntityTable();
 
 private:
 
@@ -338,8 +342,7 @@ private:
     void remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize);
 
     //网格收敛性分析 UI 控件
-    QDoubleSpinBox* spinBaseMeshSize;
-    QDoubleSpinBox* spinMeshFactor;
+    QTableWidget* tableMeshSettings;
     QSpinBox* spinMeshSteps;
     QComboBox* comboTargetMetric;
     QDoubleSpinBox* spinTolerance;
@@ -348,5 +351,6 @@ private:
     QDoubleSpinBox* spinStartVelocity;
     QDoubleSpinBox* spinEndVelocity;
     QDoubleSpinBox* spinVelocityStep;
+
 };
 #endif // MAINWINDOW_H

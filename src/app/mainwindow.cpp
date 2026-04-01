@@ -30,6 +30,7 @@
 #include <fstream>
 #include <string>
 #include <cmath>
+#include <QEventLoop>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
@@ -2413,13 +2414,14 @@ void MainWindow::handleAddSensor() {
 
 /**
  * @brief 初始化“求解与仿真试验方案设计”工作区界面 (自动化综合控制台)
- * * 该函数负责构建后处理模块的UI布局，主要包含三个核心部分：
- * 1. 单次求解与控制台监控
- * 2. 基于实体级别的网格收敛性智能批处理与研判
- * 3. 基于升降法的起爆阈值寻优批处理
+ * * @details 该函数负责构建后处理模块的 UI 布局，主要包含三个核心部分：
+ * 1. 单次求解与控制台监控面板。
+ * 2. 基于实体级别的网格收敛性智能批处理与研判面板（左侧占比 60%）。
+ * 3. 基于升降法的起爆阈值寻优批处理及序列预览面板（右侧占比 40%）。
+ * 注：自动化批处理界面的表格控件被设置为垂直方向自动扩展，以充分利用屏幕高度。
  */
 void MainWindow::setupPostProcessUI() {
-    // 1. 清理遗留布局，防止多次调用时发生控件重叠冲突
+    // 1. 清理遗留布局，防止多次调用时发生控件重叠与内存泄漏
     if (postProcessWidget->layout() != nullptr) {
         QWidget().setLayout(postProcessWidget->layout());
     }
@@ -2427,7 +2429,7 @@ void MainWindow::setupPostProcessUI() {
     QVBoxLayout* mainLayout = new QVBoxLayout(postProcessWidget);
     QTabWidget* solveTaskTabs = new QTabWidget(postProcessWidget);
 
-    // 2. 设置 TabWidget 样式
+    // 2. 设置 TabWidget 样式，覆盖父级控件可能的隐藏属性 (width/height: 0)
     solveTaskTabs->setStyleSheet(
         "QTabBar::tab {"
         "  min-width: 180px; min-height: 35px; "
@@ -2445,7 +2447,7 @@ void MainWindow::setupPostProcessUI() {
     QWidget* singleRunWidget = new QWidget();
     QVBoxLayout* singleLayout = new QVBoxLayout(singleRunWidget);
 
-    // 1.1 求解器提交设置区
+    // 1.1 求解器提交参数设置区
     QGroupBox* submitGroup = new QGroupBox("单次工况提交 (Single Job)");
     QFormLayout* submitLayout = new QFormLayout(submitGroup);
 
@@ -2489,7 +2491,7 @@ void MainWindow::setupPostProcessUI() {
     solveTaskTabs->addTab(singleRunWidget, "单次求解与监控");
 
     // =========================================================
-    // Tab 2: 自动化批处理与分析面板 (左右排列布局版)
+    // Tab 2: 自动化批处理与分析面板 (左右自适应铺满布局)
     // =========================================================
     QScrollArea* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
@@ -2498,7 +2500,7 @@ void MainWindow::setupPostProcessUI() {
     QWidget* batchWidget = new QWidget();
     QVBoxLayout* batchMainLayout = new QVBoxLayout(batchWidget);
 
-    // 🌟 核心修改：创建一个水平布局容器，用于将任务A和B分列左右
+    // 创建水平分割布局，实现 6:4 黄金比例排布
     QHBoxLayout* hSplitLayout = new QHBoxLayout();
 
     // ---------------------------------------------------------
@@ -2519,6 +2521,7 @@ void MainWindow::setupPostProcessUI() {
     tableMeshSettings = new QTableWidget(0, 4);
     tableMeshSettings->setHorizontalHeaderLabels({ "物理实体名称", "分类语义", "基础网格尺寸(mm)", "迭代缩放因子" });
     tableMeshSettings->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableMeshSettings->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许垂直方向充分扩展
     tableMeshSettings->setMinimumHeight(150);
     meshConvLayout->addWidget(tableMeshSettings);
 
@@ -2538,49 +2541,59 @@ void MainWindow::setupPostProcessUI() {
 
     // A.3 收敛性批处理执行按钮区
     QHBoxLayout* meshBtnLayout = new QHBoxLayout();
-    QPushButton* btnGenerateMeshBatch = new QPushButton("① 一键生成网格收敛 .bat 求解脚本");
+    QPushButton* btnGenerateMeshBatch = new QPushButton("① 一键生成网格收敛 .bat 脚本");
     btnGenerateMeshBatch->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
-    QPushButton* btnAnalyzeConvergence = new QPushButton("② 读取后台计算结果生成收敛报告");
+    QPushButton* btnAnalyzeConvergence = new QPushButton("② 读取结果生成收敛报告");
     btnAnalyzeConvergence->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
-
     meshBtnLayout->addWidget(btnGenerateMeshBatch);
     meshBtnLayout->addWidget(btnAnalyzeConvergence);
     meshConvLayout->addLayout(meshBtnLayout);
 
-    // 将任务 A 加入左侧，并赋予 6 份的宽度权重
+    // 赋予左侧布局 6 的宽度伸缩因子
     hSplitLayout->addWidget(meshConvergenceGroup, 6);
 
     // ---------------------------------------------------------
     // 右半区 (模块 B): 起爆阈值升降法寻优参数设置
     // ---------------------------------------------------------
     QGroupBox* velSetupGroup = new QGroupBox("【任务 B】起爆阈值升降法寻优");
-    QVBoxLayout* velContainerLayout = new QVBoxLayout(velSetupGroup); // 内部使用 VBox 方便压紧排布
+    QVBoxLayout* velContainerLayout = new QVBoxLayout(velSetupGroup);
 
+    // B.1 速度序列预览表
+    QHBoxLayout* velHeaderLayout = new QHBoxLayout();
+    velHeaderLayout->addWidget(new QLabel("速度梯度测试工况序列预览："));
+    QPushButton* btnPreviewVel = new QPushButton("🔄 预览序列");
+    btnPreviewVel->setStyleSheet("background-color: #f0f0f0; font-weight: bold; padding: 4px; min-height: 25px;");
+    velHeaderLayout->addStretch();
+    velHeaderLayout->addWidget(btnPreviewVel);
+    velContainerLayout->addLayout(velHeaderLayout);
+
+    tableVelocitySequence = new QTableWidget(0, 3);
+    tableVelocitySequence->setHorizontalHeaderLabels({ "工况序号", "撞击速度 (m/s)", "控制文件名" });
+    tableVelocitySequence->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableVelocitySequence->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许垂直方向充分扩展
+    tableVelocitySequence->setMinimumHeight(150);
+    velContainerLayout->addWidget(tableVelocitySequence);
+
+    // B.2 速度寻优参数设置区
     QFormLayout* velLayout = new QFormLayout();
     spinStartVelocity = new QDoubleSpinBox(); spinStartVelocity->setRange(0, 5000); spinStartVelocity->setValue(1000.0);
     spinEndVelocity = new QDoubleSpinBox(); spinEndVelocity->setRange(0, 5000); spinEndVelocity->setValue(2000.0);
     spinVelocityStep = new QDoubleSpinBox(); spinVelocityStep->setRange(10, 500); spinVelocityStep->setValue(100.0);
-
     velLayout->addRow("起始撞击速度 (m/s):", spinStartVelocity);
     velLayout->addRow("终止撞击速度 (m/s):", spinEndVelocity);
     velLayout->addRow("速度梯度步长 (m/s):", spinVelocityStep);
     velContainerLayout->addLayout(velLayout);
 
+    // B.3 速度批处理执行按钮
     QPushButton* btnGenerateVelBatch = new QPushButton("一键生成速度梯度 .bat 脚本");
     btnGenerateVelBatch->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
     velContainerLayout->addWidget(btnGenerateVelBatch);
 
-    // 🌟 视觉优化：在右侧底部加一个弹簧，保证控件紧凑靠上，不会被左边拉长！
-    velContainerLayout->addStretch(1);
-
-    // 将任务 B 加入右侧，并赋予 4 份的宽度权重
+    // 赋予右侧布局 4 的宽度伸缩因子
     hSplitLayout->addWidget(velSetupGroup, 4);
 
-    // ---------------------------------------------------------
-    // 将左右布局装入主版面
-    // ---------------------------------------------------------
+    // 将水平分割布局加入批处理主容器
     batchMainLayout->addLayout(hSplitLayout);
-    batchMainLayout->addStretch(1); // 保证整个页面底部的空白不被强行挤占
 
     scrollArea->setWidget(batchWidget);
     solveTaskTabs->addTab(scrollArea, "自动化批处理与分析");
@@ -2604,7 +2617,7 @@ void MainWindow::setupPostProcessUI() {
     // 统一信号与槽绑定
     // =========================================================
 
-    // 1. 单次求解与常规后处理信号
+    // 常规求解与后处理信号
     connect(btnBrowseK, &QPushButton::clicked, this, &MainWindow::browseKFile);
     connect(btnBrowseSolver, &QPushButton::clicked, this, &MainWindow::browseSolver);
     connect(btnRunSolver, &QPushButton::clicked, this, &MainWindow::startCalculation);
@@ -2612,12 +2625,15 @@ void MainWindow::setupPostProcessUI() {
     connect(btnOpenFolder, &QPushButton::clicked, this, &MainWindow::openResultFolder);
     connect(btnLaunchD3plot, &QPushButton::clicked, this, &MainWindow::launchPostProcessor);
 
-    // 2. 批处理与自动化专属信号
+    // 自动化批处理专属信号
     connect(btnRefreshTable, &QPushButton::clicked, this, &MainWindow::handleRefreshEntityTable);
+    connect(btnPreviewVel, &QPushButton::clicked, this, &MainWindow::handlePreviewVelocitySequence);
     connect(btnGenerateMeshBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateMeshConvergenceBatch);
     connect(btnGenerateVelBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateVelocityThresholdBatch);
     connect(btnAnalyzeConvergence, &QPushButton::clicked, this, &MainWindow::handleAnalyzeConvergence);
 }
+
+
 // ==========================================
 // 逻辑实现：求解器控制与日志读取
 // ==========================================
@@ -2937,44 +2953,116 @@ void MainWindow::handleApplySymmetryBoundary(const QString& entityName, char axi
         .arg(entityName).arg(axis).arg(localNodes.size()));
 }
 
-// ==============================================================
-// 网格重构方法
-// ==============================================================
+/**
+ * @brief 基于新尺寸重构指定实体的网格 (支持异步阻塞等待)
+ * * @details 该函数读取实体原有的几何参数与物理语义，利用对应的几何生成器重新划分网格。
+ * 通过引入局部事件循环 (QEventLoop) 机制，实现对底层异步网格生成过程的同步等待。
+ * 此举确保了批处理任务在当前网格生成完毕并成功入库后，再继续向下执行，
+ * 从而避免了批量生成时因底层 QProcess 异步调用过快而导致的竞态条件 (Race Condition)。
+ * * @param entity 指向需要重构网格的实体指针 (MeshEntity*)
+ * @param newMeshSize 目标细化/粗化后的新网格尺寸 (mm)
+ */
 void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize) {
     if (!entity || entity->geoParams.isEmpty()) return;
 
-    // 1. 🌟 核心操作：先把它原本的名字、类型和参数“记忆”备份下来
-    // 因为接下来的 buildAndLoad 会覆盖旧实体，导致记忆丢失！
+    // 1. 备份该实体的分类语义与初始几何参数字典
     QString name = entity->name;
     QString type = entity->type;
-    QMap<QString, double> savedParams = entity->geoParams;
+    QString category = entity->category;
+    QMap<QString, double> p = entity->geoParams;
 
-    // 2. 根据实体的原始几何参数，替换网格尺寸并重新生成
+    // 2. 创建局部事件循环，用于挂起当前作用域，等待底层异步网格生成完毕
+    QEventLoop loop;
+    QMetaObject::Connection conn1 = connect(m_meshManager, &MeshManager::meshReady, &loop, &QEventLoop::quit);
+    QMetaObject::Connection conn2 = connect(m_meshManager, &MeshManager::errorOccurred, &loop, &QEventLoop::quit);
+
+    bool isValid = true;
+
+    // 3. 根据实体几何类型装配相应的生成器，并注入更新后的网格尺寸参数
     if (type == "Cube") {
         CubeGenerator gen;
-        gen.setParameters(
-            savedParams["lx"], savedParams["ly"], savedParams["lz"],
-            newMeshSize, // 🌟 唯独替换这个新的网格尺寸！
-            savedParams["cx"], savedParams["cy"], savedParams["cz"]);
-
-        // 调用你现有的真实函数！这会重新生成 Gmsh 网格并装载进仓库
+        gen.setParameters(p["lx"], p["ly"], p["lz"], newMeshSize, p["cx"], p["cy"], p["cz"]);
         m_meshManager->buildAndLoad(gen, name);
     }
     else if (type == "Cylinder") {
         CylinderGenerator gen;
-        gen.setParameters(
-            savedParams["r"], newMeshSize, savedParams["h"],
-            savedParams["cx"], savedParams["cy"], savedParams["cz"]);
-
+        gen.setParameters(p["r"], newMeshSize, p["h"], p["cx"], p["cy"], p["cz"]);
         m_meshManager->buildAndLoad(gen, name);
     }
-    // (如果你还有 Sphere、FSP 等其他实体，请直接照抄这里的 else if)
+    else if (type == "CylindricalShell") {
+        CylindricalShellGenerator gen;
+        gen.setParameters(p["r"], p["h"], p["lid"], p["wall"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "OpenCylindricalShell") {
+        OpenCylindricalShellGenerator gen;
+        gen.setParameters(p["r"], p["wall"], p["h_base"], p["h_wall"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Sphere") {
+        SphereGenerator gen;
+        gen.setParameters(p["r"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Hemisphere") {
+        HemisphereGenerator gen;
+        gen.setParameters(p["r"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Frustum") {
+        FrustumGenerator gen;
+        gen.setParameters(p["rb"], p["rt"], p["h"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "HalfCylinder") {
+        HalfCylinderGenerator gen;
+        gen.setParameters(p["r"], p["h"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "TriangularPrism") {
+        TriangularPrismGenerator gen;
+        gen.setParameters(p["r"], p["h"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "PentagonalPrism") {
+        PentagonalPrismGenerator gen;
+        gen.setParameters(p["r"], p["h"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "HexagonalPrism") {
+        HexagonalPrismGenerator gen;
+        gen.setParameters(p["r"], p["h"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "HalfCylindricalShell") {
+        HalfCylindricalShellGenerator gen;
+        gen.setParameters(p["r"], p["h"], p["lid"], p["wall"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Fragment Simulating Projectile") {
+        FSPGenerator gen;
+        gen.setParameters(p["r"], p["hb"], p["hn"], p["rt"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else {
+        isValid = false;
+    }
 
-    // 3. 🌟 核心操作：从仓库里重新抓取这个“崭新出厂”的实体，把记忆给它塞回去！
+    // 4. 阻塞当前线程的线性执行，直到接收到网格生成完成或错误信号
+    if (isValid) {
+        loop.exec();
+    }
+
+    // 5. 断开信号连接，防止内存泄漏或重复触发
+    disconnect(conn1);
+    disconnect(conn2);
+
+    // 6. 从仓库中获取重构后的新实体，并恢复其原有的物理分类与几何参数记录
     MeshEntity* newEntity = m_repository.getMutableEntity(name);
     if (newEntity) {
         newEntity->type = type;
-        newEntity->geoParams = savedParams;
+        newEntity->category = category;
+        newEntity->geoParams = p;
     }
 }
 
@@ -3252,5 +3340,46 @@ void MainWindow::handleRefreshEntityTable() {
         spinFactor->setRange(0.1, 1.0); spinFactor->setSingleStep(0.1);
         spinFactor->setValue(0.8);
         tableMeshSettings->setCellWidget(row, 3, spinFactor);
+    }
+}
+
+// ==============================================================
+// 🌟 槽函数：刷新并预览起爆速度工况序列
+// ==============================================================
+void MainWindow::handlePreviewVelocitySequence() {
+    tableVelocitySequence->setRowCount(0); // 清空旧数据
+
+    double vStart = spinStartVelocity->value();
+    double vEnd = spinEndVelocity->value();
+    double vStep = spinVelocityStep->value();
+
+    if (vStep <= 0 || vStart > vEnd) {
+        QMessageBox::warning(this, "参数错误", "速度步长必须大于0，且起始速度不能大于终止速度！");
+        return;
+    }
+
+    int row = 0;
+    for (double v = vStart; v <= vEnd; v += vStep) {
+        tableVelocitySequence->insertRow(row);
+
+        // 第 0 列: 序号
+        QTableWidgetItem* idItem = new QTableWidgetItem(QString("Step %1").arg(row + 1));
+        idItem->setTextAlignment(Qt::AlignCenter);
+        idItem->setFlags(idItem->flags() & ~Qt::ItemIsEditable); // 设置为只读
+        tableVelocitySequence->setItem(row, 0, idItem);
+
+        // 第 1 列: 速度值
+        QTableWidgetItem* vItem = new QTableWidgetItem(QString::number(v, 'f', 1));
+        vItem->setTextAlignment(Qt::AlignCenter);
+        vItem->setFlags(vItem->flags() & ~Qt::ItemIsEditable);
+        tableVelocitySequence->setItem(row, 1, vItem);
+
+        // 第 2 列: 对应的生成控制文件名
+        QTableWidgetItem* nameItem = new QTableWidgetItem(QString("VelocityOpt_V%1_control.k").arg(v));
+        nameItem->setTextAlignment(Qt::AlignCenter);
+        nameItem->setFlags(nameItem->flags() & ~Qt::ItemIsEditable);
+        tableVelocitySequence->setItem(row, 2, nameItem);
+
+        row++;
     }
 }

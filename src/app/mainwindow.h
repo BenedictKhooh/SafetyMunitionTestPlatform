@@ -329,6 +329,7 @@ private slots:
     void handleGenerateVelocityThresholdBatch(); // 槽函数：生成起爆梯度批处理
     void handleAnalyzeConvergence();
     void handleRefreshEntityTable();
+    void handlePreviewVelocitySequence();
 
 private:
 
@@ -352,5 +353,6 @@ private:
     QDoubleSpinBox* spinEndVelocity;
     QDoubleSpinBox* spinVelocityStep;
 
+    QTableWidget* tableVelocitySequence;
 };
 #endif // MAINWINDOW_H

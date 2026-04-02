@@ -3118,7 +3118,7 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
     if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream batStream(&batFile);
 
-    QString solverPath = solverPathEdit->text().isEmpty() ? "ls-dyna_smp_d_R13.exe" : solverPathEdit->text();
+    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe" : solverPathEdit->text();
     batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n\n";
 
     QProgressDialog progress("正在生成多梯度网格隔离工作区...", "取消", 0, steps, this);
@@ -3205,97 +3205,46 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
 }
 
 /**
- * @brief 生成起爆阈值升降法寻优批处理任务脚本及控制文件，并调度后台进程执行
- * @details 提取用户界面的起爆速度区间与步长，自动为每个速度梯度生成对应的
- * LS-DYNA 控制卡片及主文件 (.k)。组装批处理执行队列，并通过 QProcess 唤醒系统底层执行。
+ * @brief 启动基于升降法 (Up-and-Down Method) 的起爆阈值自动寻优流程
+ * @details 读取界面设定的初始速度、步长及总测试次数，并预先导出共享的公共网格文件。
+ * 随后初始化升降法状态机上下文，并驱动首个测试工况的生成与系统计算。
  */
 void MainWindow::handleGenerateVelocityThresholdBatch() {
-    // 1. 前置条件检查
     if (m_workingDirectory.isEmpty()) {
         QMessageBox::warning(this, "路径缺失", "请先在菜单栏设置有效的工作目录。");
         return;
     }
-
-    double vStart = spinStartVelocity->value();
-    double vEnd = spinEndVelocity->value();
-    double vStep = spinVelocityStep->value();
-
-    if (vStep <= 0 || vStart > vEnd) {
-        QMessageBox::warning(this, "参数错误", "速度步长必须大于 0，且起始速度不能高于终止速度。");
+    if (m_batchProcess->state() == QProcess::Running) {
+        QMessageBox::warning(this, "资源冲突", "后台已有计算引擎处于运行状态，请等待当前任务结束。");
         return;
     }
 
-    // 2. 初始化批处理脚本文件流
-    QString batFilePath = QDir(m_workingDirectory).filePath("run_velocity_optimization.bat");
-    QFile batFile(batFilePath);
-    if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
-    QTextStream batStream(&batFile);
+    // 1. 初始化升降法状态机参数
+    m_isUpAndDownMode = true;
+    m_upDownCurrentStep = 0;
+    // 注：复用 UI 控件 spinEndVelocity 的输入值作为全局最大测试次数 (N)
+    m_upDownMaxSteps = static_cast<int>(spinEndVelocity->value());
+    m_upDownCurrentVelocity = spinStartVelocity->value();
+    m_upDownStepSize = spinVelocityStep->value();
+    m_upDownHistory.clear();
 
-    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe" : solverPathEdit->text();
-    batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n\n";
-
-    // 预先将当前的公共网格结构导出至主文件中复用，以减少存储占用
+    // 2. 导出公共几何网格文件，优化存储空间利用率与 IO 开销
     QString sharedMeshFileName = "shared_mesh_geometry.k";
     exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
 
-    // 3. 循环遍历速度区间，生成独立控制文件
-    for (double currentVel = vStart; currentVel <= vEnd; currentVel += vStep) {
-        QString jobName = QString("VelocityOpt_V%1").arg(currentVel);
-        QString controlFileName = jobName + "_control.k";
-
-        // 更新初始条件卡片中的撞击速度向量
-        // (注：需确保 m_initialConditionsCard 在其他模块已正确初始化，此处修改指定方向的速度)
-        // 伪代码示例：m_initialConditionsCard->setVelocity(currentVel); 
-        // 需保留您原有的速度修改逻辑
-
-        QFile controlFile(QDir(m_workingDirectory).filePath(controlFileName));
-        if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&controlFile);
-            out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
-
-            // 采用 INCLUDE 语法复用外部的几何网格文件
-            out << "*INCLUDE\n" << sharedMeshFileName << "\n";
-
-            if (m_globalControlCard != nullptr) {
-                out << QString::fromStdString(m_globalControlCard->to_string());
-            }
-            out << QString::fromStdString(m_deck.generateDeck());
-            out << "*END\n";
-            controlFile.close();
-        }
-
-        // 写入该工况的执行指令至批处理队列
-        batStream << "echo Running Detonation Test V = " << currentVel << " m/s\n";
-        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
-    }
-
-    // 注：移除 pause 指令以避免后台阻塞
-    batStream << "echo All Threshold Jobs Finished!\n";
-    batFile.close();
-
-    // =========================================================
-    // 4. 批处理进程自动调度与执行
-    // =========================================================
-    if (m_batchProcess->state() == QProcess::Running) {
-        QMessageBox::warning(this, "资源冲突", "后台计算引擎正在运行中，请等待当前任务队列结束后再提交新任务。");
-        return;
-    }
-
-    // 切换视图至单次求解与监控面板
+    // 3. 配置 GUI 监控台状态
     if (solveTaskTabs) {
         solveTaskTabs->setCurrentIndex(0);
     }
-
-    // 初始化监控台状态
     solverConsole->clear();
     solverConsole->append("========================================");
-    solverConsole->append("[系统提示] 开始执行起爆阈值寻优批处理队列...");
-    solverConsole->append("[系统提示] 当前工作目录: " + m_workingDirectory);
+    solverConsole->append("[系统提示] 激活闭环升降法 (Up-and-Down) 寻优系统...");
+    solverConsole->append(QString("[系统提示] 设定总测试次数: %1 次，速度调整步长: %2 m/s")
+        .arg(m_upDownMaxSteps).arg(m_upDownStepSize));
     solverConsole->append("========================================\n");
 
-    // 配置运行环境并拉起系统命令解释器静默执行批处理脚本
-    m_batchProcess->setWorkingDirectory(m_workingDirectory);
-    m_batchProcess->start("cmd.exe", QStringList() << "/c" << batFilePath);
+    // 4. 调度序列首个工况
+    executeNextUpAndDownStep();
 }
 
 /**
@@ -3534,19 +3483,192 @@ void MainWindow::handleBatchProcessOutput() {
 }
 
 /**
- * @brief 监控后台批处理任务的终止状态并输出最终结论
- * @param exitCode 进程执行完毕后返回的退出码 (0 通常代表正常结束)
- * @param exitStatus 进程的退出状态 (标识正常退出或因崩溃退出)
+ * @brief 监控后台批处理任务的终止状态并驱动核心状态机流转
+ * @details 当单个求解任务结束时触发该槽函数。根据当前工作模式，
+ * 解析计算结果并依据升降法原则动态推算下一步速度，或终结流程并输出分析报告。
+ * @param exitCode 进程的退出状态码
+ * @param exitStatus 进程的退出状态枚举
  */
 void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
     if (!solverConsole) return;
 
-    solverConsole->append("\n========================================");
-    if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-        solverConsole->append("[系统提示] 自动化批处理求解任务已全部正常执行完毕。");
+    if (m_isUpAndDownMode) {
+        // 1. 拦截并处理求解器非正常退出事件
+        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+            solverConsole->append("[系统异常] 底层求解器发生崩溃或非正常中断，升降法寻优流程序列被迫终止。");
+            m_isUpAndDownMode = false;
+            return;
+        }
+
+        // ========================================================
+        // 工程配置预留：请将此处的 1 替换为您模型中真实的炸药 Part ID！
+        // ========================================================
+        int explosivePartId = 1;
+
+        // 2. 挂载起爆研判模块并记录阶段状态 (基于炸药专属内能提取)
+        bool isDetonated = checkDetonationResult(m_upDownCurrentDir, explosivePartId);
+        m_upDownHistory.push_back({ m_upDownCurrentVelocity, isDetonated });
+
+        // 3. 严格遵循升降法 (Bruceton Test) 闭环控制律调整输入边界
+        if (isDetonated) {
+            solverConsole->append("[系统评估] 判定为起爆状态 (炸药部件发生内能突跃)。");
+            solverConsole->append(QString("[策略响应] 下一步测试撞击速度调减 %1 m/s。").arg(m_upDownStepSize));
+            m_upDownCurrentVelocity -= m_upDownStepSize;
+        }
+        else {
+            solverConsole->append("[系统评估] 判定为未起爆状态 (结构成弹或未达到能量阈值)。");
+            solverConsole->append(QString("[策略响应] 下一步测试撞击速度调增 %1 m/s。").arg(m_upDownStepSize));
+            m_upDownCurrentVelocity += m_upDownStepSize;
+        }
+
+        // 4. 判定迭代次数并递归触发调度栈
+        if (m_upDownCurrentStep < m_upDownMaxSteps) {
+            executeNextUpAndDownStep();
+        }
+        else {
+            // 5. 满足停机准则，卸载状态机并输出总体评估记录
+            m_isUpAndDownMode = false;
+
+            solverConsole->append("\n========================================");
+            solverConsole->append("[系统提示] 升降法 (Up-and-Down Method) 起爆阈值测试序列全量测定完毕。");
+            solverConsole->append("历史动作序列日志 (Bruceton Test Log)：");
+
+            for (size_t i = 0; i < m_upDownHistory.size(); ++i) {
+                QString statusText = m_upDownHistory[i].second ? "起爆 (X)" : "未起爆 (O)";
+                solverConsole->append(QString(" - 测试点 %1 | 设定速度: %2 m/s | 结果: %3")
+                    .arg(i + 1, 2, 10, QChar('0'))
+                    .arg(m_upDownHistory[i].first, 6, 'f', 1)
+                    .arg(statusText));
+            }
+            solverConsole->append("========================================\n");
+
+            QMessageBox::information(this, "寻优序列完成",
+                "升降法闭环测试序列执行完毕。\n请基于控制台输出的历史事件序列，利用 Dixon-Mood 方法评估 V50 概率阈值。");
+        }
     }
     else {
-        solverConsole->append(QString("[系统警告] 批处理任务异常终止。退出码: %1").arg(exitCode));
+        // 常规单次或网格收敛批处理任务状态收尾逻辑
+        solverConsole->append("\n========================================");
+        if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+            solverConsole->append("[系统提示] 自动化批处理求解任务已全部正常执行完毕。");
+        }
+        else {
+            solverConsole->append(QString("[系统警告] 批处理任务异常终止。退出码: %1").arg(exitCode));
+        }
+        solverConsole->append("========================================\n");
     }
-    solverConsole->append("========================================\n");
+}
+
+/**
+ * @brief 组装并调度升降法序列中的单步求解工况
+ * @details 为当前测试步创建独立的隔离子目录，生成包含当前设定速度的主控文件 (_run.k)，
+ * 利用 INCLUDE 语法链接上一级共享网格，随后通过 QProcess 启动操作系统进程静默执行。
+ */
+void MainWindow::executeNextUpAndDownStep() {
+    m_upDownCurrentStep++;
+    QString jobName = QString("VelocityOpt_Step%1_V%2").arg(m_upDownCurrentStep).arg(m_upDownCurrentVelocity);
+
+    // 1. 构建当前工况的工作子目录
+    QString stepFolderName = QString("Step_%1").arg(m_upDownCurrentStep);
+    QDir rootDir(m_workingDirectory);
+    if (!rootDir.exists(stepFolderName)) {
+        rootDir.mkpath(stepFolderName);
+    }
+    m_upDownCurrentDir = rootDir.filePath(stepFolderName);
+
+    // 2. 根据当前测试速度更新控制卡片参数 
+    // (注：需确保与实际的材料本构/初始条件卡片数据流挂钩)
+    // 示例: m_initialConditionsCard->setVelocity(m_upDownCurrentVelocity); 
+
+    // 3. 构建当前回合的主控文件 (Master Control Deck)
+    QString controlFileName = jobName + "_run.k";
+    QFile controlFile(QDir(m_upDownCurrentDir).filePath(controlFileName));
+    if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&controlFile);
+        out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
+        // 挂载位于上级根目录的公共网格几何体
+        out << "*INCLUDE\n../shared_mesh_geometry.k\n";
+
+        if (m_globalControlCard != nullptr) {
+            out << QString::fromStdString(m_globalControlCard->to_string());
+        }
+        out << QString::fromStdString(m_deck.generateDeck());
+        out << "*END\n";
+        controlFile.close();
+    }
+
+    // 4. 动态生成当前工况专用的批处理脚本
+    QString batFilePath = QDir(m_upDownCurrentDir).filePath("run_step.bat");
+    QFile batFile(batFilePath);
+    if (batFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream batStream(&batFile);
+        QString solverPath = solverPathEdit->text().isEmpty() ? "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe" : solverPathEdit->text();
+        batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n";
+        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n";
+        batFile.close();
+    }
+
+    solverConsole->append(QString("\n[执行任务] 提交第 %1/%2 步测试 | 设定撞击速度 = %3 m/s")
+        .arg(m_upDownCurrentStep).arg(m_upDownMaxSteps).arg(m_upDownCurrentVelocity));
+
+    // 5. 转移底层工作目录权限并唤醒异步求解进程
+    m_batchProcess->setWorkingDirectory(m_upDownCurrentDir);
+    m_batchProcess->start("cmd.exe", QStringList() << "/c" << "run_step.bat");
+}
+
+/**
+ * @brief 解析计算结果文件以研判是否达到起爆阈值 (高精度部件级内能判定法)
+ * @details 读取指定工况子目录下的 matsum ASCII 日志文件，基于正则表达式
+ * 动态追踪并提取特定炸药部件 (Part) 仿真最终时刻的系统总内能。
+ * 此算法有效屏蔽了非含能部件 (如弹壳、靶板) 撞击变形造成的塑性功干扰。
+ * @param stepDir 需评估的工况子目录物理路径
+ * @param explosivePartId 目标炸药药柱的物理部件编号 (Part ID)
+ * @return bool 若判定为发生起爆突跃则返回 true，否则返回 false
+ */
+bool MainWindow::checkDetonationResult(const QString& stepDir, int explosivePartId) {
+    // 强制转为读取部件级能量统计文件 (matsum)
+    QString matsumPath = QDir(stepDir).filePath("matsum");
+    std::ifstream file(matsumPath.toLocal8Bit().constData());
+
+    // 异常处理：若目标文件缺失，保守判定为未起爆
+    if (!file.is_open()) {
+        if (solverConsole) {
+            solverConsole->append("[解析警告] 未找到 matsum 文件，无法提取药柱内能！请检查控制文件中是否已配置 *DATABASE_MATSUM。");
+        }
+        return false;
+    }
+
+    std::string line;
+    // 匹配 "part 1" 或 "part       1" (捕获编号)
+    std::regex partRegex(R"(^\s*part\s+(\d+))");
+    // 匹配 "internal energy  0.123E+06" (捕获数值)
+    std::regex internalRegex(R"(^\s*internal energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
+    std::smatch match;
+
+    int currentReadingPartId = -1;
+    double finalExplosiveEnergy = 0.0;
+
+    // 状态机式逐行解析：追踪当前所在的 Part 块，并精准提取内能
+    while (std::getline(file, line)) {
+        std::string lowerLine = line;
+        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+
+        // 1. 探针捕获：判断当前行是否为部件数据块的起始标识
+        if (std::regex_search(lowerLine, match, partRegex)) {
+            currentReadingPartId = std::stoi(match[1].str());
+        }
+        // 2. 数据提取：如果当前数据块属于指定的炸药部件，则尝试提取内能
+        else if (currentReadingPartId == explosivePartId) {
+            if (std::regex_search(lowerLine, match, internalRegex)) {
+                // 不断用新值覆盖旧值，文件读取结束时保留的即为最终时刻的内能
+                finalExplosiveEnergy = std::stod(match[1].str());
+            }
+        }
+    }
+    file.close();
+
+    // 阈值标定：根据特定炸药的体积与爆炸热进行严格设定。
+    // 示例：典型的炸药起爆后，内能将呈现指数级突增 (例如达到 10^6 ~ 10^9 量级)
+    const double detonationEnergyThreshold = 1.0e6;
+    return (finalExplosiveEnergy > detonationEnergyThreshold);
 }

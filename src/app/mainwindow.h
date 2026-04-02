@@ -368,5 +368,44 @@ private:
     /** @brief 外部批处理进程管理器，用于在后台非阻塞执行 .bat 脚本 */
     QProcess* m_batchProcess = nullptr;
     QTabWidget* solveTaskTabs;
+
+    // =========================================================
+    // 升降法 (Up-and-Down Method) 状态机变量与控制方法
+    // =========================================================
+
+    /** @brief 标识当前系统是否处于升降法闭环寻优模式 */
+    bool m_isUpAndDownMode = false;
+
+    /** @brief 当前已执行的测试步数 */
+    int m_upDownCurrentStep = 0;
+
+    /** @brief 设定的最大测试总次数 */
+    int m_upDownMaxSteps = 0;
+
+    /** @brief 当前工况设定的撞击速度 (m/s) */
+    double m_upDownCurrentVelocity = 0.0;
+
+    /** @brief 速度递增或递减的步长 (m/s) */
+    double m_upDownStepSize = 0.0;
+
+    /** @brief 当前执行工况所在的子目录路径 */
+    QString m_upDownCurrentDir = "";
+
+    /** @brief 历史测试记录集合：存储结构为 <设定速度, 是否发生起爆> */
+    std::vector<std::pair<double, bool>> m_upDownHistory;
+
+    /**
+     * @brief 组装并调度升降法序列中的下一个求解工况
+     */
+    void executeNextUpAndDownStep();
+
+    /**
+     * @brief 解析求解器输出文件以研判指定药柱是否发生起爆
+     * @param stepDir 当前求解工况所在的子目录路径
+     * @param explosivePartId 炸药药柱在 LS-DYNA 模型中的 Part ID (默认设为 1)
+     * @return 若判定为发生起爆则返回 true，未起爆返回 false
+     */
+    bool checkDetonationResult(const QString& stepDir, int explosivePartId = 1);
+
 };
 #endif // MAINWINDOW_H

@@ -2473,7 +2473,7 @@ void MainWindow::setupPostProcessUI() {
     submitLayout->addRow("控制文件 (.k):", kLayout);
 
     solverPathEdit = new QLineEdit();
-    solverPathEdit->setPlaceholderText("D:\Program Files\ANSYS Inc\v241\ansys\bin\winx64\lsdyna_sp.exe");
+    solverPathEdit->setPlaceholderText("D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe");
     QPushButton* btnBrowseSolver = new QPushButton("浏览...");
     QHBoxLayout* solverLayout = new QHBoxLayout();
     solverLayout->addWidget(solverPathEdit); solverLayout->addWidget(btnBrowseSolver);
@@ -3082,10 +3082,10 @@ void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize)
 }
 
 /**
- * @brief 生成网格收敛性批处理任务脚本及控制文件，并调度后台进程执行
- * @details 根据实体级网格控制表中的参数，自动迭代计算各实体在不同收敛步下的网格尺寸，
- * 重新划分网格并导出独立的控制文件 (.k)。随后生成 Windows 批处理脚本 (.bat)
- * 并通过内部的 QProcess 管理器将其提交至操作系统后台队列静默执行。
+ * @brief 生成网格收敛性批处理任务脚本及控制文件，并调度后台进程执行 (多目录隔离架构版)
+ * @details 提取实体控制表参数，迭代计算目标网格尺寸并重构。
+ * 针对每个收敛步，在主工作目录下创建独立的子工作空间 (Sub-directory) 以避免 LS-DYNA 默认输出文件 (d3plot等) 的覆盖碰撞。
+ * 生成基于相对路径跳转的 Windows 批处理脚本，并隐式唤醒 QProcess 调度执行。
  */
 void MainWindow::handleGenerateMeshConvergenceBatch() {
     // 1. 前置条件检查
@@ -3118,10 +3118,10 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
     if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream batStream(&batFile);
 
-    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\Program Files\ANSYS Inc\v241\ansys\bin\winx64\lsdyna_sp.exe" : solverPathEdit->text();
+    QString solverPath = solverPathEdit->text().isEmpty() ? "ls-dyna_smp_d_R13.exe" : solverPathEdit->text();
     batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n\n";
 
-    QProgressDialog progress("正在生成多梯度网格控制文件队列...", "取消", 0, steps, this);
+    QProgressDialog progress("正在生成多梯度网格隔离工作区...", "取消", 0, steps, this);
     progress.setWindowModality(Qt::WindowModal);
 
     // 4. 执行网格迭代重构与主控文件组装
@@ -3129,54 +3129,54 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
         progress.setValue(i);
         if (progress.wasCanceled()) break;
 
+        // 4.1 核心：为当前收敛步创建独立的子目录空间
+        QString stepFolderName = QString("Step_%1").arg(i + 1);
+        QDir rootDir(m_workingDirectory);
+        if (!rootDir.exists(stepFolderName)) {
+            rootDir.mkpath(stepFolderName);
+        }
+        QString stepDirPath = rootDir.filePath(stepFolderName);
+
         QString stepInfo = QString("Step %1 -> ").arg(i + 1);
 
-        // 4.1 遍历并重构所有实体的网格
+        // 4.2 遍历并重构所有实体的网格
         for (const auto& s : settings) {
             MeshEntity* mutableEntity = m_repository.getMutableEntity(s.name);
             double currentSize = s.baseSize * std::pow(s.factor, i);
             remeshEntityWithNewSize(mutableEntity, currentSize);
-
             stepInfo += QString("[%1: %2mm] ").arg(s.name).arg(currentSize, 0, 'f', 1);
         }
 
         QString jobName = QString("MeshConv_Step%1").arg(i + 1);
 
-        // 4.2 导出当前收敛步的纯几何网格数据 (Nodes & Elements)
+        // 4.3 将纯几何网格数据导出至对应的子目录中
         QString meshFileName = jobName + "_mesh.k";
-        exportToKFile(QDir(m_workingDirectory).filePath(meshFileName));
+        exportToKFile(QDir(stepDirPath).filePath(meshFileName));
 
-        // 4.3 构建当前收敛步的 LS-DYNA 主控文件 (Master Control Deck)
+        // 4.4 构建主控文件 (Master Control Deck) 并写入子目录
         QString controlFileName = jobName + "_run.k";
-        QFile controlFile(QDir(m_workingDirectory).filePath(controlFileName));
+        QFile controlFile(QDir(stepDirPath).filePath(controlFileName));
 
         if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&controlFile);
-
-            // 写入文件头声明
             out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
-
-            // 采用 INCLUDE 语法挂载对应的网格文件，保持主文件结构清晰
             out << "*INCLUDE\n" << meshFileName << "\n";
-
-            // 写入全局控制参数卡片 (如 *CONTROL_TERMINATION, *CONTROL_ENERGY 等)
             if (m_globalControlCard != nullptr) {
                 out << QString::fromStdString(m_globalControlCard->to_string());
             }
-
-            // 写入卡片管线中的所有物理属性定义 (材料、部件、接触、边界条件等)
             out << QString::fromStdString(m_deck.generateDeck());
-
             out << "*END\n";
             controlFile.close();
         }
 
-        // 4.4 写入批处理执行队列 (注：此时传入求解器的是组装后的 controlFileName)
+        // 4.5 写入批处理队列：切换至子目录 (cd) -> 执行计算 -> 返回上级目录 (cd ..)
+        batStream << "echo ========================================\n";
         batStream << "echo Running " << stepInfo << "\n";
-        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n\n";
+        batStream << "cd " << stepFolderName << "\n";
+        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n";
+        batStream << "cd ..\n\n";
     }
 
-    // 注：移除 pause 指令以防止后台进程发生死锁挂起
     batStream << "echo All Mesh Convergence Jobs Finished!\n";
     batFile.close();
     progress.setValue(steps);
@@ -3190,19 +3190,16 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
         return;
     }
 
-    // 切换视图至单次求解与监控面板
     if (solveTaskTabs) {
         solveTaskTabs->setCurrentIndex(0);
     }
 
-    // 初始化监控台状态
     solverConsole->clear();
     solverConsole->append("========================================");
-    solverConsole->append("[系统提示] 开始执行实体级网格收敛性批处理队列...");
-    solverConsole->append("[系统提示] 当前工作目录: " + m_workingDirectory);
+    solverConsole->append("[系统提示] 开始执行实体级网格收敛性批处理队列 (独立目录隔离模式)...");
+    solverConsole->append("[系统提示] 主工作目录: " + m_workingDirectory);
     solverConsole->append("========================================\n");
 
-    // 配置运行环境并拉起系统命令解释器静默执行批处理脚本
     m_batchProcess->setWorkingDirectory(m_workingDirectory);
     m_batchProcess->start("cmd.exe", QStringList() << "/c" << batFilePath);
 }
@@ -3234,7 +3231,7 @@ void MainWindow::handleGenerateVelocityThresholdBatch() {
     if (!batFile.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream batStream(&batFile);
 
-    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\Program Files\ANSYS Inc\v241\ansys\bin\winx64\lsdyna_sp.exe" : solverPathEdit->text();
+    QString solverPath = solverPathEdit->text().isEmpty() ? "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe" : solverPathEdit->text();
     batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n\n";
 
     // 预先将当前的公共网格结构导出至主文件中复用，以减少存储占用
@@ -3302,11 +3299,9 @@ void MainWindow::handleGenerateVelocityThresholdBatch() {
 }
 
 /**
- * @brief 自动化解析求解结果并生成网格收敛性分析报告
- * @details 该模块负责读取 LS-DYNA 批处理计算所产生的 ASCII 结果文件 (如 glstat, nodout)。
- * 依托预编译的正则表达式引擎提取各工况最终时刻的能量或运动学标量。
- * 基于 L2 范数或直接差分计算相邻迭代步之间的相对误差，并与用户设定的容差阈值进行比对，
- * 最终输出具有工程指导意义的最优网格尺寸配置。
+ * @brief 自动化解析求解结果并生成网格收敛性分析报告 (适配多目录隔离架构)
+ * @details 遍历所有子级独立工作区目录 (Step_X)，定位并读取底层的 ASCII 结果文件 (glstat, nodout 等)。
+ * 通过正则表达式提取最后的稳态特征指标，并基于收敛容差输出指导性的网格控制方案。
  */
 void MainWindow::handleAnalyzeConvergence() {
     // 1. 前置条件与工作空间校验
@@ -3326,59 +3321,49 @@ void MainWindow::handleAnalyzeConvergence() {
     std::vector<int> stepList;
     std::vector<double> targetValues;
 
-    QProgressDialog progress("正在对后台计算结果文件进行正则解析...", "取消", 0, steps, this);
+    QProgressDialog progress("正在跨工作区检索并解析结果文件...", "取消", 0, steps, this);
     progress.setWindowModality(Qt::WindowModal);
 
-    // 2. 预编译正则表达式以提升大规模 ASCII 文件的解析性能
-    // 匹配格式例: "internal energy  0.1234E+04" (支持可选的科学计数法)
     std::regex internalRegex(R"(internal energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
     std::regex kineticRegex(R"(kinetic energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-
-    // 匹配 nodout 中目标节点的速度记录行
-    // 匹配格式例: " 1  0.0  0.0  0.0  1.2E+2  0.0  0.0" (假定追踪质心节点 ID 为 1)
     std::regex velocityRegex(R"(^\s*1\s+(?:[+-]?\S+\s+){3}([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
 
-    // 3. 循环遍历并解析每一个收敛步的物理计算结果
+    // 2. 循环进入各独立子目录并执行结果抓取
     for (int i = 0; i < steps; ++i) {
         progress.setValue(i);
         if (progress.wasCanceled()) break;
 
-        // 根据所选判据推断目标结果文件后缀 (全局统计使用 glstat, 节点输出使用 nodout)
-        QString fileSuffix = (metricIndex == 2) ? "_nodout" : "_glstat";
-        QString resultFileName = QDir(m_workingDirectory).filePath(
-            QString("MeshConv_Step%1%2").arg(i + 1).arg(fileSuffix));
+        // 构建子目录路径: m_workingDirectory/Step_X/
+        QString stepFolderName = QString("Step_%1").arg(i + 1);
+        QDir stepDir(QDir(m_workingDirectory).filePath(stepFolderName));
+
+        // LS-DYNA 在独立目录下输出时，文件不再附带前缀，仅为标准的文件名
+        QString targetFileName = (metricIndex == 2) ? "nodout" : "glstat";
+        QString resultFilePath = stepDir.filePath(targetFileName);
 
         double finalMetricValue = 0.0;
-        std::ifstream file(resultFileName.toLocal8Bit().constData());
+        std::ifstream file(resultFilePath.toLocal8Bit().constData());
 
-        // ---------------------------------------------------------
-        // 核心 IO 解析区：逐行读取并进行正则特征匹配
-        // ---------------------------------------------------------
+        // 3. 核心 IO 解析区：逐行读取并进行正则特征匹配
         if (file.is_open()) {
             std::string line;
             std::smatch match;
 
             while (std::getline(file, line)) {
-                // 将字符串转换为小写以增强对 LS-DYNA 不同版本输出格式的鲁棒性
                 std::string lowerLine = line;
                 std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
 
-                if (metricIndex == 0) { // [靶板总内能]
-                    if (std::regex_search(lowerLine, match, internalRegex)) {
-                        finalMetricValue = std::stod(match[1].str());
-                    }
+                if (metricIndex == 0) {
+                    if (std::regex_search(lowerLine, match, internalRegex)) finalMetricValue = std::stod(match[1].str());
                 }
-                else if (metricIndex == 1) { // [系统总动能]
-                    if (std::regex_search(lowerLine, match, kineticRegex)) {
-                        finalMetricValue = std::stod(match[1].str());
-                    }
+                else if (metricIndex == 1) {
+                    if (std::regex_search(lowerLine, match, kineticRegex)) finalMetricValue = std::stod(match[1].str());
                 }
-                else if (metricIndex == 2) { // [弹体质心剩余速度]
+                else if (metricIndex == 2) {
                     if (std::regex_search(lowerLine, match, velocityRegex)) {
                         double vx = std::stod(match[1].str());
                         double vy = std::stod(match[2].str());
                         double vz = std::stod(match[3].str());
-                        // 计算合成速度标量 (L2 范数)
                         finalMetricValue = std::sqrt(vx * vx + vy * vy + vz * vz);
                     }
                 }
@@ -3386,11 +3371,9 @@ void MainWindow::handleAnalyzeConvergence() {
             file.close();
         }
         else {
-            // IO 异常处理：抛出缺失文件路径，提示用户检查底层求解器状态
             QMessageBox::warning(this, "IO 解析异常",
-                QString("无法打开第 %1 步的计算结果文件：\n%2\n\n请确认 LS-DYNA 批处理是否已经全部计算完毕，"
-                    "且已在 K 文件中正确配置了 *DATABASE 卡片！")
-                .arg(i + 1).arg(resultFileName));
+                QString("在工作区 %1 中未寻找到计算结果文件：%2\n\n请确认 LS-DYNA 是否成功完成该工况计算，且已配置对应的 *DATABASE 卡片。")
+                .arg(stepFolderName).arg(targetFileName));
             return;
         }
 
@@ -3408,11 +3391,9 @@ void MainWindow::handleAnalyzeConvergence() {
         report += QString("迭代第 %1 步: 观测极值 = %2\n").arg(stepList[i]).arg(targetValues[i], 0, 'e', 4);
 
         if (i > 0) {
-            // 计算相对误差：E = |V_new - V_old| / V_old (采用 1e-9 防止除零异常)
             double error = std::abs(targetValues[i] - targetValues[i - 1]) / (std::abs(targetValues[i - 1]) + 1e-9);
             report += QString("   -> 相对变化率: %1%\n").arg(error * 100.0, 0, 'f', 2);
 
-            // 若当前误差落入设定的容差阈值区间，且为首次达标，则锁定最优收敛步
             if (error <= tolerance && !isConverged) {
                 isConverged = true;
                 optimalStep = stepList[i];
@@ -3432,13 +3413,11 @@ void MainWindow::handleAnalyzeConvergence() {
         optimalStep = steps;
     }
 
-    // 从实体控制表中反推最优步时各实体所分配的精确网格尺寸
     for (int r = 0; r < tableMeshSettings->rowCount(); ++r) {
         QString name = tableMeshSettings->item(r, 0)->text();
         double baseSize = qobject_cast<QDoubleSpinBox*>(tableMeshSettings->cellWidget(r, 2))->value();
         double factor = qobject_cast<QDoubleSpinBox*>(tableMeshSettings->cellWidget(r, 3))->value();
 
-        // 推演公式: OptimalSize = BaseSize * (Factor ^ (OptimalStep - 1))
         double optimalSize = baseSize * std::pow(factor, optimalStep - 1);
         report += QString(" - 实体 [%1] 建议网格尺寸: %2 mm\n").arg(name).arg(optimalSize, 0, 'f', 2);
     }

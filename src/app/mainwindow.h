@@ -326,14 +326,31 @@ private slots:
     void handleApplySymmetryBoundary(const QString& entityName, char axis);
 
     void handleGenerateMeshConvergenceBatch();  // 生成网格收敛性批处理
-    void handleGenerateVelocityThresholdBatch(); // 生成起爆梯度批处理
+    /**
+     * @brief 响应用户动作：仅导出基础仿真环境文件
+     */
+    void handleGenerateThresholdFiles();
+
+    /**
+     * @brief 响应用户动作：初始化升降法状态机并调度计算序列
+     */
+    void handleSubmitThresholdTask();
+
+    /**
+     * @brief 响应用户动作：安全回收系统资源与销毁底层进程树
+     */
+    void handleTerminateProcess();
     void handleAnalyzeConvergence();
     void handleRefreshEntityTable();
-    void handlePreviewVelocitySequence();
-
+ 
     /** * @brief 处理批处理进程的标准输出流
      */
     void handleBatchProcessOutput();
+
+    /**
+     * @brief 响应用户动作：刷新并读取物理模型中已设置的初始冲击速度
+     */
+    void handleRefreshInitialVelocity();
 
     /** * @brief 处理批处理进程的结束信号
      * @param exitCode 进程的退出状态码
@@ -358,16 +375,32 @@ private:
     QComboBox* comboTargetMetric;
     QDoubleSpinBox* spinTolerance;
 
-    //起爆阈值梯度寻优 UI 控件
+    // =========================================================
+    // 起爆阈值闭环寻优 (Up-and-Down Method) UI 控件组
+    // =========================================================
+    /** @brief 初始撞击速度输入控件 (默认从物理模型中继承) */
     QDoubleSpinBox* spinStartVelocity;
-    QDoubleSpinBox* spinEndVelocity;
+
+    /** @brief 升降法速度寻优步长输入控件 */
     QDoubleSpinBox* spinVelocityStep;
 
-    QTableWidget* tableVelocitySequence;
+    /** @brief 最大有效测试总次数输入控件 */
+    QSpinBox* spinMaxSteps;
+
+    /** @brief 动作按钮：仅生成基础共享文件，不唤醒求解器 */
+    QPushButton* btnGenerateThreshold;
+
+    /** @brief 动作按钮：生成文件并将其提交至闭环状态机 */
+    QPushButton* btnSubmitThreshold;
+
+    /** @brief 动作按钮：强行中断当前状态机并销毁底层进程树 */
+    QPushButton* btnTerminateProcess;
 
     /** @brief 外部批处理进程管理器，用于在后台非阻塞执行 .bat 脚本 */
     QProcess* m_batchProcess = nullptr;
     QTabWidget* solveTaskTabs;
+    /** @brief 动作按钮：从已生成的初始条件卡片中读取冲击速度 */
+    QPushButton* btnRefreshVelocity;
 
     // =========================================================
     // 升降法 (Up-and-Down Method) 状态机变量与控制方法
@@ -406,6 +439,8 @@ private:
      * @return 若判定为发生起爆则返回 true，未起爆返回 false
      */
     bool checkDetonationResult(const QString& stepDir, int explosivePartId = 1);
+    QTextEdit* thresholdConsole;
+
 
 };
 #endif // MAINWINDOW_H

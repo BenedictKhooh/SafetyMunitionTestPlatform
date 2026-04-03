@@ -2521,13 +2521,13 @@ void MainWindow::setupPostProcessUI() {
     // ---------------------------------------------------------
     // 左半区 (模块 A): 实体级网格收敛性智能分析
     // ---------------------------------------------------------
-    QGroupBox* meshConvergenceGroup = new QGroupBox("【任务 A】实体级网格收敛性智能分析");
+    QGroupBox* meshConvergenceGroup = new QGroupBox("实体级网格收敛性分析");
     QVBoxLayout* meshConvLayout = new QVBoxLayout(meshConvergenceGroup);
 
     // A.1 实体级网格独立控制表
     QHBoxLayout* tableHeaderLayout = new QHBoxLayout();
     tableHeaderLayout->addWidget(new QLabel("当前物理实体网格控制参数："));
-    QPushButton* btnRefreshTable = new QPushButton("🔄 刷新读取实体");
+    QPushButton* btnRefreshTable = new QPushButton("刷新读取实体");
     btnRefreshTable->setStyleSheet("background-color: #f0f0f0; font-weight: bold; padding: 4px; min-height: 25px;");
     tableHeaderLayout->addStretch();
     tableHeaderLayout->addWidget(btnRefreshTable);
@@ -2568,41 +2568,70 @@ void MainWindow::setupPostProcessUI() {
     hSplitLayout->addWidget(meshConvergenceGroup, 6);
 
     // ---------------------------------------------------------
-    // 右半区 (模块 B): 起爆阈值升降法寻优参数设置
+    // 右半区 (模块 B): 起爆阈值闭环寻优操作面板
     // ---------------------------------------------------------
-    QGroupBox* velSetupGroup = new QGroupBox("【任务 B】起爆阈值升降法寻优");
+    QGroupBox* velSetupGroup = new QGroupBox("起爆阈值升降法批处理分析");
     QVBoxLayout* velContainerLayout = new QVBoxLayout(velSetupGroup);
 
-    // B.1 速度序列预览表
+    // B.1 实体级初速读取控制区 (新增)
     QHBoxLayout* velHeaderLayout = new QHBoxLayout();
-    velHeaderLayout->addWidget(new QLabel("速度梯度测试工况序列预览："));
-    QPushButton* btnPreviewVel = new QPushButton("🔄 预览序列");
-    btnPreviewVel->setStyleSheet("background-color: #f0f0f0; font-weight: bold; padding: 4px; min-height: 25px;");
+    velHeaderLayout->addWidget(new QLabel("当前物理模型预设初速："));
+    btnRefreshVelocity = new QPushButton("刷新读取初速");
+    btnRefreshVelocity->setStyleSheet("background-color: #f0f0f0; font-weight: bold; padding: 4px; min-height: 25px;");
     velHeaderLayout->addStretch();
-    velHeaderLayout->addWidget(btnPreviewVel);
+    velHeaderLayout->addWidget(btnRefreshVelocity);
     velContainerLayout->addLayout(velHeaderLayout);
 
-    tableVelocitySequence = new QTableWidget(0, 3);
-    tableVelocitySequence->setHorizontalHeaderLabels({ "工况序号", "撞击速度 (m/s)", "控制文件名" });
-    tableVelocitySequence->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    tableVelocitySequence->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // 允许垂直方向充分扩展
-    tableVelocitySequence->setMinimumHeight(150);
-    velContainerLayout->addWidget(tableVelocitySequence);
+    // B.2 参数配置表单布局 (单位统一为 cm/μs)
+    QFormLayout* formLayout = new QFormLayout();
 
-    // B.2 速度寻优参数设置区
-    QFormLayout* velLayout = new QFormLayout();
-    spinStartVelocity = new QDoubleSpinBox(); spinStartVelocity->setRange(0, 5000); spinStartVelocity->setValue(1000.0);
-    spinEndVelocity = new QDoubleSpinBox(); spinEndVelocity->setRange(0, 5000); spinEndVelocity->setValue(2000.0);
-    spinVelocityStep = new QDoubleSpinBox(); spinVelocityStep->setRange(10, 500); spinVelocityStep->setValue(100.0);
-    velLayout->addRow("起始撞击速度 (m/s):", spinStartVelocity);
-    velLayout->addRow("终止撞击速度 (m/s):", spinEndVelocity);
-    velLayout->addRow("速度梯度步长 (m/s):", spinVelocityStep);
-    velContainerLayout->addLayout(velLayout);
+    spinStartVelocity = new QDoubleSpinBox();
+    spinStartVelocity->setRange(0.0, 10.0);
+    spinStartVelocity->setDecimals(4);
+    spinStartVelocity->setValue(0.08); // 默认经验初始速度 (0.08 cm/μs = 800 m/s)
+    spinStartVelocity->setSuffix(" cm/μs");
 
-    // B.3 速度批处理执行按钮
-    QPushButton* btnGenerateVelBatch = new QPushButton("一键生成速度梯度 .bat 脚本");
-    btnGenerateVelBatch->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
-    velContainerLayout->addWidget(btnGenerateVelBatch);
+    spinVelocityStep = new QDoubleSpinBox();
+    spinVelocityStep->setRange(0.0001, 1.0);
+    spinVelocityStep->setDecimals(4);
+    spinVelocityStep->setValue(0.005); // 默认步长 (0.005 cm/μs = 50 m/s)
+    spinVelocityStep->setSuffix(" cm/μs");
+
+    spinMaxSteps = new QSpinBox();
+    spinMaxSteps->setRange(1, 100);
+    spinMaxSteps->setValue(20);
+
+    formLayout->addRow("初始测试撞击速度 (V0):", spinStartVelocity);
+    formLayout->addRow("升降法速度变分步长 (ΔV):", spinVelocityStep);
+    formLayout->addRow("最大有效测试总次数 (N):", spinMaxSteps);
+
+    velContainerLayout->addLayout(formLayout);
+
+    // B.3 动作控制总线布局 (三个核心按键)
+    QHBoxLayout* thresholdBtnLayout = new QHBoxLayout();
+
+    btnGenerateThreshold = new QPushButton("生成基础模型");
+    btnSubmitThreshold = new QPushButton("提交并启动寻优");
+    btnTerminateProcess = new QPushButton("终止后台进程");
+
+    btnGenerateThreshold->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
+    btnSubmitThreshold->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
+    btnTerminateProcess->setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; min-height: 35px;");
+
+    thresholdBtnLayout->addWidget(btnGenerateThreshold);
+    thresholdBtnLayout->addWidget(btnSubmitThreshold);
+    thresholdBtnLayout->addWidget(btnTerminateProcess);
+    velContainerLayout->addLayout(thresholdBtnLayout);
+
+    // B.4 专属集成式控制台 (Console)
+    QLabel* consoleLabel = new QLabel("当前寻优工况实时监控 (cm/μs 模式):");
+    consoleLabel->setStyleSheet("font-weight: bold; color: #555; margin-top: 10px;");
+    velContainerLayout->addWidget(consoleLabel);
+
+    thresholdConsole = new QTextEdit();
+    thresholdConsole->setReadOnly(true);
+    thresholdConsole->setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', 'Monaco', monospace; font-size: 10pt;");
+    velContainerLayout->addWidget(thresholdConsole, 1); // 赋予 1 的拉伸因子，使其填满底部
 
     // 赋予右侧布局 4 的宽度伸缩因子
     hSplitLayout->addWidget(velSetupGroup, 4);
@@ -2642,10 +2671,15 @@ void MainWindow::setupPostProcessUI() {
 
     // 自动化批处理专属信号
     connect(btnRefreshTable, &QPushButton::clicked, this, &MainWindow::handleRefreshEntityTable);
-    connect(btnPreviewVel, &QPushButton::clicked, this, &MainWindow::handlePreviewVelocitySequence);
+
     connect(btnGenerateMeshBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateMeshConvergenceBatch);
-    connect(btnGenerateVelBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateVelocityThresholdBatch);
+
     connect(btnAnalyzeConvergence, &QPushButton::clicked, this, &MainWindow::handleAnalyzeConvergence);
+
+    connect(btnGenerateThreshold, &QPushButton::clicked, this, &MainWindow::handleGenerateThresholdFiles);
+    connect(btnSubmitThreshold, &QPushButton::clicked, this, &MainWindow::handleSubmitThresholdTask);
+    connect(btnTerminateProcess, &QPushButton::clicked, this, &MainWindow::handleTerminateProcess);
+    connect(btnRefreshVelocity, &QPushButton::clicked, this, &MainWindow::handleRefreshInitialVelocity);
 }
 
 
@@ -3205,49 +3239,6 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
 }
 
 /**
- * @brief 启动基于升降法 (Up-and-Down Method) 的起爆阈值自动寻优流程
- * @details 读取界面设定的初始速度、步长及总测试次数，并预先导出共享的公共网格文件。
- * 随后初始化升降法状态机上下文，并驱动首个测试工况的生成与系统计算。
- */
-void MainWindow::handleGenerateVelocityThresholdBatch() {
-    if (m_workingDirectory.isEmpty()) {
-        QMessageBox::warning(this, "路径缺失", "请先在菜单栏设置有效的工作目录。");
-        return;
-    }
-    if (m_batchProcess->state() == QProcess::Running) {
-        QMessageBox::warning(this, "资源冲突", "后台已有计算引擎处于运行状态，请等待当前任务结束。");
-        return;
-    }
-
-    // 1. 初始化升降法状态机参数
-    m_isUpAndDownMode = true;
-    m_upDownCurrentStep = 0;
-    // 注：复用 UI 控件 spinEndVelocity 的输入值作为全局最大测试次数 (N)
-    m_upDownMaxSteps = static_cast<int>(spinEndVelocity->value());
-    m_upDownCurrentVelocity = spinStartVelocity->value();
-    m_upDownStepSize = spinVelocityStep->value();
-    m_upDownHistory.clear();
-
-    // 2. 导出公共几何网格文件，优化存储空间利用率与 IO 开销
-    QString sharedMeshFileName = "shared_mesh_geometry.k";
-    exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
-
-    // 3. 配置 GUI 监控台状态
-    if (solveTaskTabs) {
-        solveTaskTabs->setCurrentIndex(0);
-    }
-    solverConsole->clear();
-    solverConsole->append("========================================");
-    solverConsole->append("[系统提示] 激活闭环升降法 (Up-and-Down) 寻优系统...");
-    solverConsole->append(QString("[系统提示] 设定总测试次数: %1 次，速度调整步长: %2 m/s")
-        .arg(m_upDownMaxSteps).arg(m_upDownStepSize));
-    solverConsole->append("========================================\n");
-
-    // 4. 调度序列首个工况
-    executeNextUpAndDownStep();
-}
-
-/**
  * @brief 自动化解析求解结果并生成网格收敛性分析报告 (适配多目录隔离架构)
  * @details 遍历所有子级独立工作区目录 (Step_X)，定位并读取底层的 ASCII 结果文件 (glstat, nodout 等)。
  * 通过正则表达式提取最后的稳态特征指标，并基于收敛容差输出指导性的网格控制方案。
@@ -3416,69 +3407,25 @@ void MainWindow::handleRefreshEntityTable() {
     }
 }
 
-// ==============================================================
-// 🌟 槽函数：刷新并预览起爆速度工况序列
-// ==============================================================
-void MainWindow::handlePreviewVelocitySequence() {
-    tableVelocitySequence->setRowCount(0); // 清空旧数据
-
-    double vStart = spinStartVelocity->value();
-    double vEnd = spinEndVelocity->value();
-    double vStep = spinVelocityStep->value();
-
-    if (vStep <= 0 || vStart > vEnd) {
-        QMessageBox::warning(this, "参数错误", "速度步长必须大于0，且起始速度不能大于终止速度！");
-        return;
-    }
-
-    int row = 0;
-    for (double v = vStart; v <= vEnd; v += vStep) {
-        tableVelocitySequence->insertRow(row);
-
-        // 第 0 列: 序号
-        QTableWidgetItem* idItem = new QTableWidgetItem(QString("Step %1").arg(row + 1));
-        idItem->setTextAlignment(Qt::AlignCenter);
-        idItem->setFlags(idItem->flags() & ~Qt::ItemIsEditable); // 设置为只读
-        tableVelocitySequence->setItem(row, 0, idItem);
-
-        // 第 1 列: 速度值
-        QTableWidgetItem* vItem = new QTableWidgetItem(QString::number(v, 'f', 1));
-        vItem->setTextAlignment(Qt::AlignCenter);
-        vItem->setFlags(vItem->flags() & ~Qt::ItemIsEditable);
-        tableVelocitySequence->setItem(row, 1, vItem);
-
-        // 第 2 列: 对应的生成控制文件名
-        QTableWidgetItem* nameItem = new QTableWidgetItem(QString("VelocityOpt_V%1_control.k").arg(v));
-        nameItem->setTextAlignment(Qt::AlignCenter);
-        nameItem->setFlags(nameItem->flags() & ~Qt::ItemIsEditable);
-        tableVelocitySequence->setItem(row, 2, nameItem);
-
-        row++;
-    }
-}
-
 /**
  * @brief 实时读取后台批处理进程的输出流，并重定向至 GUI 控制台
- * @details 捕获 LS-DYNA 及底层 CMD 批处理脚本的标准输出流，
- * 采用本地字符集进行解码，并将解析后的日志文本追加至求解监控台 (solverConsole) 中。
- * 同时自动将滚动条置于最底端，确保最新日志始终处于可视区域。
  */
 void MainWindow::handleBatchProcessOutput() {
     if (!m_batchProcess) return;
 
-    // 读取当前缓冲区内所有可用的输出字节流
     QByteArray outputData = m_batchProcess->readAllStandardOutput();
-
-    // 采用操作系统本地编码 (Windows 环境通常为 GBK) 进行解码，防止控制台出现乱码
     QString outputStr = QString::fromLocal8Bit(outputData);
 
-    if (solverConsole) {
+    // 🌟 根据模式路由日志
+    if (m_isUpAndDownMode && thresholdConsole) {
+        thresholdConsole->append(outputStr);
+        QScrollBar* scrollBar = thresholdConsole->verticalScrollBar();
+        if (scrollBar) scrollBar->setValue(scrollBar->maximum());
+    }
+    else if (solverConsole) {
         solverConsole->append(outputStr);
-        // 强制更新滚动条视图位置
         QScrollBar* scrollBar = solverConsole->verticalScrollBar();
-        if (scrollBar) {
-            scrollBar->setValue(scrollBar->maximum());
-        }
+        if (scrollBar) scrollBar->setValue(scrollBar->maximum());
     }
 }
 
@@ -3490,12 +3437,12 @@ void MainWindow::handleBatchProcessOutput() {
  * @param exitStatus 进程的退出状态枚举
  */
 void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    if (!solverConsole) return;
+    if (!thresholdConsole) return;
 
     if (m_isUpAndDownMode) {
         // 1. 拦截并处理求解器非正常退出事件
         if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-            solverConsole->append("[系统异常] 底层求解器发生崩溃或非正常中断，升降法寻优流程序列被迫终止。");
+            thresholdConsole->append("[系统异常] 底层求解器发生崩溃或非正常中断，升降法寻优流程序列被迫终止。");
             m_isUpAndDownMode = false;
             return;
         }
@@ -3511,13 +3458,13 @@ void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus e
 
         // 3. 严格遵循升降法 (Bruceton Test) 闭环控制律调整输入边界
         if (isDetonated) {
-            solverConsole->append("[系统评估] 判定为起爆状态 (炸药部件发生内能突跃)。");
-            solverConsole->append(QString("[策略响应] 下一步测试撞击速度调减 %1 m/s。").arg(m_upDownStepSize));
+            thresholdConsole->append("[系统评估] 判定为起爆状态 (炸药部件发生内能突跃)。");
+            thresholdConsole->append(QString("[策略响应] 下一步测试撞击速度调减 %1 m/s。").arg(m_upDownStepSize));
             m_upDownCurrentVelocity -= m_upDownStepSize;
         }
         else {
-            solverConsole->append("[系统评估] 判定为未起爆状态 (结构成弹或未达到能量阈值)。");
-            solverConsole->append(QString("[策略响应] 下一步测试撞击速度调增 %1 m/s。").arg(m_upDownStepSize));
+            thresholdConsole->append("[系统评估] 判定为未起爆状态 (结构成弹或未达到能量阈值)。");
+            thresholdConsole->append(QString("[策略响应] 下一步测试撞击速度调增 %1 m/s。").arg(m_upDownStepSize));
             m_upDownCurrentVelocity += m_upDownStepSize;
         }
 
@@ -3529,18 +3476,18 @@ void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus e
             // 5. 满足停机准则，卸载状态机并输出总体评估记录
             m_isUpAndDownMode = false;
 
-            solverConsole->append("\n========================================");
-            solverConsole->append("[系统提示] 升降法 (Up-and-Down Method) 起爆阈值测试序列全量测定完毕。");
-            solverConsole->append("历史动作序列日志 (Bruceton Test Log)：");
+            thresholdConsole->append("\n========================================");
+            thresholdConsole->append("[系统提示] 升降法 (Up-and-Down Method) 起爆阈值测试序列全量测定完毕。");
+            thresholdConsole->append("历史动作序列日志 (Bruceton Test Log)：");
 
             for (size_t i = 0; i < m_upDownHistory.size(); ++i) {
                 QString statusText = m_upDownHistory[i].second ? "起爆 (X)" : "未起爆 (O)";
-                solverConsole->append(QString(" - 测试点 %1 | 设定速度: %2 m/s | 结果: %3")
+                thresholdConsole->append(QString(" - 测试点 %1 | 设定速度: %2 m/s | 结果: %3")
                     .arg(i + 1, 2, 10, QChar('0'))
                     .arg(m_upDownHistory[i].first, 6, 'f', 1)
                     .arg(statusText));
             }
-            solverConsole->append("========================================\n");
+            thresholdConsole->append("========================================\n");
 
             QMessageBox::information(this, "寻优序列完成",
                 "升降法闭环测试序列执行完毕。\n请基于控制台输出的历史事件序列，利用 Dixon-Mood 方法评估 V50 概率阈值。");
@@ -3548,14 +3495,14 @@ void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus e
     }
     else {
         // 常规单次或网格收敛批处理任务状态收尾逻辑
-        solverConsole->append("\n========================================");
+        thresholdConsole->append("\n========================================");
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-            solverConsole->append("[系统提示] 自动化批处理求解任务已全部正常执行完毕。");
+            thresholdConsole->append("[系统提示] 自动化批处理求解任务已全部正常执行完毕。");
         }
         else {
-            solverConsole->append(QString("[系统警告] 批处理任务异常终止。退出码: %1").arg(exitCode));
+            thresholdConsole->append(QString("[系统警告] 批处理任务异常终止。退出码: %1").arg(exitCode));
         }
-        solverConsole->append("========================================\n");
+        thresholdConsole->append("========================================\n");
     }
 }
 
@@ -3632,8 +3579,8 @@ bool MainWindow::checkDetonationResult(const QString& stepDir, int explosivePart
 
     // 异常处理：若目标文件缺失，保守判定为未起爆
     if (!file.is_open()) {
-        if (solverConsole) {
-            solverConsole->append("[解析警告] 未找到 matsum 文件，无法提取药柱内能！请检查控制文件中是否已配置 *DATABASE_MATSUM。");
+        if (thresholdConsole) {
+            thresholdConsole->append("[解析警告] 未找到 matsum 文件，无法提取药柱内能！请检查控制文件中是否已配置 *DATABASE_MATSUM。");
         }
         return false;
     }
@@ -3671,4 +3618,151 @@ bool MainWindow::checkDetonationResult(const QString& stepDir, int explosivePart
     // 示例：典型的炸药起爆后，内能将呈现指数级突增 (例如达到 10^6 ~ 10^9 量级)
     const double detonationEnergyThreshold = 1.0e6;
     return (finalExplosiveEnergy > detonationEnergyThreshold);
+}
+
+/**
+ * @brief 导出基础仿真环境文件 (不触发计算引擎)
+ * @details 将内存中的实体网格数据序列化并写入至指定工作目录下的公共 INCLUDE 文件中。
+ * 为用户在正式提交闭环计算序列前，提供审查网格拓扑质量与控制卡片的前置检查点。
+ */
+void MainWindow::handleGenerateThresholdFiles() {
+    if (m_workingDirectory.isEmpty()) {
+        QMessageBox::warning(this, "上下文缺失", "请优先在顶部菜单配置系统的有效工作目录路径。");
+        return;
+    }
+
+    // 将网格几何数据固化为底层求解器标准的关键字文件格式
+    QString sharedMeshFileName = "shared_mesh_geometry.k";
+    exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
+
+    QMessageBox::information(this, "文件导出完毕",
+        "公共几何网格文件已成功写入目标目录。\n系统当前处于待命状态，您可以审查网格后，随时点击【提交并启动寻优】进入闭环队列。");
+}
+
+/**
+ * @brief 触发闭环寻优状态机并挂载首个测试计算任务
+ * @details 负责校验前置条件，重置状态机的上下文参数 (初速、步长、最大迭代深度)，
+ * 并调度 executeNextUpAndDownStep() 开启升降法生命周期的第一帧迭代。
+ */
+void MainWindow::handleSubmitThresholdTask() {
+    if (m_workingDirectory.isEmpty()) {
+        QMessageBox::warning(this, "上下文缺失", "请优先配置系统工作目录路径。");
+        return;
+    }
+
+    // 拦截并发冲突：检测计算引擎的执行状态标识
+    if (m_batchProcess && m_batchProcess->state() == QProcess::Running) {
+        QMessageBox::warning(this, "系统资源锁定", "检测到后台已有计算求解器正在运行。\n如需挂载新寻优任务，请先点击【终止后台进程】。");
+        return;
+    }
+
+    // 1. 冗余校验：强制同步生成最新的几何文件，规避脏数据读入
+    QString sharedMeshFileName = "shared_mesh_geometry.k";
+    exportToKFile(QDir(m_workingDirectory).filePath(sharedMeshFileName));
+
+    // 2. 初始化闭环控制律 (Control Law) 状态参量
+    m_isUpAndDownMode = true;
+    m_upDownCurrentStep = 0;
+    m_upDownMaxSteps = spinMaxSteps->value();
+    m_upDownCurrentVelocity = spinStartVelocity->value();
+    m_upDownStepSize = spinVelocityStep->value();
+    m_upDownHistory.clear();
+
+    // 3. 视图重定向与系统日志初始化
+    if (solveTaskTabs) {
+        solveTaskTabs->setCurrentIndex(1); // 自动切至自动化批处理 Tab
+    }
+    if (thresholdConsole) {
+        thresholdConsole->clear();
+        thresholdConsole->append("========================================");
+        thresholdConsole->append("[状态机初始化] 启动 Bruceton 升降法动态寻优闭环...");
+        thresholdConsole->append(QString("   [边界约束配置] 样本容量: %1 发 | 初始速度: %2 cm/μs | 变分步长: %3 cm/μs")
+            .arg(m_upDownMaxSteps).arg(m_upDownCurrentVelocity).arg(m_upDownStepSize));
+        thresholdConsole->append("========================================\n");
+    }
+
+    // 4. 驱动事件泵，挂载初始求解堆栈
+    executeNextUpAndDownStep();
+}
+
+/**
+ * @brief 强行挂起寻优状态机并释放底层求解器进程树句柄
+ * @details 获取当前挂载的批处理子进程 PID，通过调用 Windows 原生 taskkill 指令，
+ * 向该 PID 及其衍生出的所有求解器派生进程发送强制结束信号 (/F /T)，彻底回收计算资源。
+ */
+void MainWindow::handleTerminateProcess() {
+    if (!m_batchProcess || m_batchProcess->state() == QProcess::NotRunning) {
+        QMessageBox::information(this, "状态校验", "当前计算管线处于空闲状态，未检测到正在运行的求解进程。");
+        return;
+    }
+
+    // 1. 关闭状态机的研判逻辑门，截断进程异常结束回调信号对下一次迭代的级联触发
+    m_isUpAndDownMode = false;
+
+    // 2. 提取宿主进程标识符 (PID)
+    qint64 rootPid = m_batchProcess->processId();
+
+    // 3. 组装系统级进程终结指令流
+    QString killCmd = "taskkill";
+    QStringList killArgs;
+    // 参数释义: /F (Force) 强制终结, /T (Tree) 递归终结子孙进程树 (彻底杀死 LS-DYNA 内核)
+    killArgs << "/F" << "/T" << "/PID" << QString::number(rootPid);
+
+    // 阻塞式调用操作系统底层 API 实施绞杀
+    QProcess::execute(killCmd, killArgs);
+
+    // 4. 输出资源释放审计日志
+    if (solverConsole) {
+        solverConsole->append("\n🛑 [中断响应] 捕获系统最高优先级中断请求。");
+        solverConsole->append(QString("🛑 [清理执行] 寻优状态机已强行脱机，底层求解进程树 (根 PID: %1) 已被销毁！").arg(rootPid));
+        solverConsole->append("========================================\n");
+    }
+}
+
+/**
+ * @brief 响应用户动作：刷新并读取物理模型中已设置的初始冲击速度
+ * @details 遍历前处理面板已添加的仿真参数摘要列表，自动嗅探 [初始速度] 卡片标识。
+ * 提取该卡片设定的 Vx, Vy, Vz 空间向量分量，计算合速度大小标量，
+ * 并自动填充至起爆阈值面板的初始速度输入框中，确保批处理参数与物理模型强一致性。
+ */
+void MainWindow::handleRefreshInitialVelocity() {
+    if (!m_simSetupUI.setupSummaryList) return;
+
+    double v_mag = 0.0;
+    bool isFound = false;
+
+    // 采用逆序遍历：优先读取用户最后一次添加或修改的初始速度卡片
+    for (int i = m_simSetupUI.setupSummaryList->count() - 1; i >= 0; --i) {
+        QString itemText = m_simSetupUI.setupSummaryList->item(i)->text();
+
+        // 目标文本格式示例: "[初始速度] 实体: Fragment_1 | V=(0.08, 0, 0)"
+        if (itemText.contains("[初始速度]")) {
+            // 利用正则表达式精确捕获括号内的三个浮点数
+            std::regex vRegex(R"(V=\(([^,]+),\s*([^,]+),\s*([^)]+)\))");
+            std::smatch match;
+            std::string stdText = itemText.toStdString();
+
+            if (std::regex_search(stdText, match, vRegex)) {
+                double vx = std::stod(match[1].str());
+                double vy = std::stod(match[2].str());
+                double vz = std::stod(match[3].str());
+
+                // 计算空间向量欧几里得范数 (合速度大小)
+                v_mag = std::sqrt(vx * vx + vy * vy + vz * vz);
+                isFound = true;
+                break;
+            }
+        }
+    }
+
+    if (isFound) {
+        spinStartVelocity->setValue(v_mag);
+        QMessageBox::information(this, "参数读取成功",
+            QString("已成功从当前物理模型中提取破片冲击初速：\n\nV0 = %1 cm/μs")
+            .arg(v_mag, 0, 'f', 4));
+    }
+    else {
+        QMessageBox::warning(this, "数据缺失",
+            "在当前物理模型参数列表中未嗅探到 [初始速度] 配置！\n\n请先在左侧物理设置区的【初始条件(IC)】面板中添加实体初速度。");
+    }
 }

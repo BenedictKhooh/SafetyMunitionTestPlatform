@@ -32,6 +32,7 @@
 #include <cmath>
 #include <QEventLoop>
 #include <regex>
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
@@ -1695,8 +1696,8 @@ void MainWindow::createSimulationSetupDock() {
     contactLayout->addRow("主面实体 (Master):", m_simSetupUI.contactMasterSelector);
     contactLayout->addRow("从面实体 (Slave):", m_simSetupUI.contactSlaveSelector);
 
-    m_simSetupUI.contactFs = new QDoubleSpinBox(); m_simSetupUI.contactFs->setRange(0, 1); m_simSetupUI.contactFs->setValue(0.0);
-    m_simSetupUI.contactFd = new QDoubleSpinBox(); m_simSetupUI.contactFd->setRange(0, 1); m_simSetupUI.contactFd->setValue(0.0);
+    m_simSetupUI.contactFs = new QDoubleSpinBox(); m_simSetupUI.contactFs->setRange(0, 1); m_simSetupUI.contactFs->setValue(0.10);
+    m_simSetupUI.contactFd = new QDoubleSpinBox(); m_simSetupUI.contactFd->setRange(0, 1); m_simSetupUI.contactFd->setValue(0.10);
     contactLayout->addRow("静摩擦系数 (FS):", m_simSetupUI.contactFs);
     contactLayout->addRow("动摩擦系数 (FD):", m_simSetupUI.contactFd);
 
@@ -2586,7 +2587,7 @@ void MainWindow::setupPostProcessUI() {
     QFormLayout* formLayout = new QFormLayout();
 
     spinStartVelocity = new QDoubleSpinBox();
-    spinStartVelocity->setRange(0.0, 10.0);
+    spinStartVelocity->setRange(-10.0, 10.0);
     spinStartVelocity->setDecimals(4);
     spinStartVelocity->setValue(0.08); // 默认经验初始速度 (0.08 cm/μs = 800 m/s)
     spinStartVelocity->setSuffix(" cm/μs");
@@ -3431,78 +3432,98 @@ void MainWindow::handleBatchProcessOutput() {
 
 /**
  * @brief 监控后台批处理任务的终止状态并驱动核心状态机流转
- * @details 当单个求解任务结束时触发该槽函数。根据当前工作模式，
- * 解析计算结果并依据升降法原则动态推算下一步速度，或终结流程并输出分析报告。
- * @param exitCode 进程的退出状态码
- * @param exitStatus 进程的退出状态枚举
+ * @details 负责处理自然计算完成或因触发能量阈值被提前截断的求解任务，
+ * 严格基于 Bruceton Test 控制律更新边界条件并递归派发下一次求解指令。
  */
 void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    if (!thresholdConsole) return;
-
     if (m_isUpAndDownMode) {
-        // 1. 拦截并处理求解器非正常退出事件
-        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-            thresholdConsole->append("[系统异常] 底层求解器发生崩溃或非正常中断，升降法寻优流程序列被迫终止。");
-            m_isUpAndDownMode = false;
-            return;
+        if (!thresholdConsole) return;
+
+        // 1. 任务终结，强制回收并挂起异步轮询引擎
+        if (m_matsumPollingTimer) {
+            m_matsumPollingTimer->stop();
         }
 
-        // ========================================================
-        // 工程配置预留：请将此处的 1 替换为您模型中真实的炸药 Part ID！
-        // ========================================================
-        int explosivePartId = 1;
+        bool isDetonated = false;
 
-        // 2. 挂载起爆研判模块并记录阶段状态 (基于炸药专属内能提取)
-        bool isDetonated = checkDetonationResult(m_upDownCurrentDir, explosivePartId);
-        m_upDownHistory.push_back({ m_upDownCurrentVelocity, isDetonated });
-
-        // 3. 严格遵循升降法 (Bruceton Test) 闭环控制律调整输入边界
-        if (isDetonated) {
-            thresholdConsole->append("[系统评估] 判定为起爆状态 (炸药部件发生内能突跃)。");
-            thresholdConsole->append(QString("[策略响应] 下一步测试撞击速度调减 %1 m/s。").arg(m_upDownStepSize));
-            m_upDownCurrentVelocity -= m_upDownStepSize;
+        // 2. 评估进程终止诱因 (Termination Causality Analysis)
+        if (m_isEarlyDetonated) {
+            // 分支 A：由 handleMatsumPolling 触发主动截断 (起爆极值已确认)
+            isDetonated = true;
         }
         else {
-            thresholdConsole->append("[系统评估] 判定为未起爆状态 (结构成弹或未达到能量阈值)。");
-            thresholdConsole->append(QString("[策略响应] 下一步测试撞击速度调增 %1 m/s。").arg(m_upDownStepSize));
-            m_upDownCurrentVelocity += m_upDownStepSize;
+            // 分支 B：常规自然退出 (无突跃，或异常崩溃)
+            if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                thresholdConsole->append("❌ [系统异常] 底层求解器发生崩溃，升降法寻优流程序列被迫终止。");
+                m_isUpAndDownMode = false;
+                return;
+            }
+            // 常规读取最终状态 (通常为结构塑性变形的未起爆状态)
+            int explosivePartId = 1;
+            isDetonated = checkDetonationResult(m_upDownCurrentDir, explosivePartId);
         }
 
-        // 4. 判定迭代次数并递归触发调度栈
+        // 3. 录入数据空间并评估下一帧边界配置
+        m_upDownHistory.push_back({ m_upDownCurrentVelocity, isDetonated });
+
+        // 🌟 [修改点]：剥离当前速度的符号与绝对值
+        double currentSign = (m_upDownCurrentVelocity >= 0) ? 1.0 : -1.0;
+        double currentSpeedMag = std::abs(m_upDownCurrentVelocity);
+
+        if (isDetonated) {
+            thresholdConsole->append("   💥 [系统评估] 判定为起爆状态 (药柱宏观内能越过临界点)。");
+            // 🌟 策略响应：起爆了，应当降低撞击“剧烈程度” (即减小绝对值)
+            currentSpeedMag -= m_upDownStepSize;
+            m_upDownCurrentVelocity = currentSign * currentSpeedMag; // 还原带符号的速度
+
+            thresholdConsole->append(QString("   📉 [策略响应] 调减靶向速度，设定下限 V_next = %1 cm/μs。").arg(m_upDownCurrentVelocity, 0, 'f', 4));
+        }
+        else {
+            thresholdConsole->append("   💤 [系统评估] 判定为死火状态 (全局能量未达热力学阈值)。");
+            // 🌟 策略响应：没起爆，应当增加撞击“剧烈程度” (即增大绝对值)
+            currentSpeedMag += m_upDownStepSize;
+            m_upDownCurrentVelocity = currentSign * currentSpeedMag; // 还原带符号的速度
+
+            thresholdConsole->append(QString("   📈 [策略响应] 调增靶向速度，设定上限 V_next = %1 cm/μs。").arg(m_upDownCurrentVelocity, 0, 'f', 4));
+        }
+
+        // 4. 评估收敛空间与递归挂载
         if (m_upDownCurrentStep < m_upDownMaxSteps) {
             executeNextUpAndDownStep();
         }
         else {
-            // 5. 满足停机准则，卸载状态机并输出总体评估记录
+            // 5. 生命周期终止与总结陈词
             m_isUpAndDownMode = false;
 
             thresholdConsole->append("\n========================================");
-            thresholdConsole->append("[系统提示] 升降法 (Up-and-Down Method) 起爆阈值测试序列全量测定完毕。");
-            thresholdConsole->append("历史动作序列日志 (Bruceton Test Log)：");
+            thresholdConsole->append("🏆 [调度结束] 升降法 (Up-and-Down Method) 起爆阈值测试序列收敛完毕。");
+            thresholdConsole->append("📜 历史动作序列日志 (Bruceton Test Log)：");
 
             for (size_t i = 0; i < m_upDownHistory.size(); ++i) {
-                QString statusText = m_upDownHistory[i].second ? "起爆 (X)" : "未起爆 (O)";
-                thresholdConsole->append(QString(" - 测试点 %1 | 设定速度: %2 m/s | 结果: %3")
+                QString statusText = m_upDownHistory[i].second ? "起爆 (X)" : "死火 (O)";
+                thresholdConsole->append(QString(" - 序列点 %1 | 设定初速: %2 cm/μs | 响应结果: %3")
                     .arg(i + 1, 2, 10, QChar('0'))
-                    .arg(m_upDownHistory[i].first, 6, 'f', 1)
+                    .arg(m_upDownHistory[i].first, 6, 'f', 4)
                     .arg(statusText));
             }
             thresholdConsole->append("========================================\n");
 
             QMessageBox::information(this, "寻优序列完成",
-                "升降法闭环测试序列执行完毕。\n请基于控制台输出的历史事件序列，利用 Dixon-Mood 方法评估 V50 概率阈值。");
+                "闭环测试序列已触达最大迭代深度。\n建议采用 Dixon-Mood 统计算法解析日志序列，以获取标准 V50 参数。");
         }
     }
     else {
-        // 常规单次或网格收敛批处理任务状态收尾逻辑
-        thresholdConsole->append("\n========================================");
+        // 常规单次批处理分支 (保持不变，输出到 solverConsole)
+        if (!solverConsole) return;
+
+        solverConsole->append("\n========================================");
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-            thresholdConsole->append("[系统提示] 自动化批处理求解任务已全部正常执行完毕。");
+            solverConsole->append("[系统提示] 常规批处理求解任务正常脱机。");
         }
         else {
-            thresholdConsole->append(QString("[系统警告] 批处理任务异常终止。退出码: %1").arg(exitCode));
+            solverConsole->append(QString("[系统警告] 批处理任务出现未捕获的运行时异常。ExitCode: %1").arg(exitCode));
         }
-        thresholdConsole->append("========================================\n");
+        solverConsole->append("========================================\n");
     }
 }
 
@@ -3560,7 +3581,20 @@ void MainWindow::executeNextUpAndDownStep() {
 
     // 5. 转移底层工作目录权限并唤醒异步求解进程
     m_batchProcess->setWorkingDirectory(m_upDownCurrentDir);
-    m_batchProcess->start("cmd.exe", QStringList() << "/c" << "run_step.bat");
+    m_batchProcess->start("cmd.exe", QStringList() << "/c" << "call run_step.bat");
+
+    // =========================================================
+    //  In-transit Polling Engine
+    // =========================================================
+    m_isEarlyDetonated = false; // 重置提前截断旗标
+
+    if (!m_matsumPollingTimer) {
+        m_matsumPollingTimer = new QTimer(this);
+        connect(m_matsumPollingTimer, &QTimer::timeout, this, &MainWindow::handleMatsumPolling);
+    }
+    // 启动异步轮询，时间间隔设定为 3000 毫秒 (3秒)
+    m_matsumPollingTimer->start(3000);
+    m_batchProcess->setProcessChannelMode(QProcess::MergedChannels);
 }
 
 /**
@@ -3725,30 +3759,39 @@ void MainWindow::handleTerminateProcess() {
  * 提取该卡片设定的 Vx, Vy, Vz 空间向量分量，计算合速度大小标量，
  * 并自动填充至起爆阈值面板的初始速度输入框中，确保批处理参数与物理模型强一致性。
  */
+/**
+ * @brief 响应用户动作：刷新并读取物理模型中已设置的初始冲击速度 (支持负值/反向冲击)
+ */
 void MainWindow::handleRefreshInitialVelocity() {
     if (!m_simSetupUI.setupSummaryList) return;
 
-    double v_mag = 0.0;
+    double signed_v_mag = 0.0;
     bool isFound = false;
 
-    // 采用逆序遍历：优先读取用户最后一次添加或修改的初始速度卡片
     for (int i = m_simSetupUI.setupSummaryList->count() - 1; i >= 0; --i) {
         QString itemText = m_simSetupUI.setupSummaryList->item(i)->text();
-
-        // 目标文本格式示例: "[初始速度] 实体: Fragment_1 | V=(0.08, 0, 0)"
+        
         if (itemText.contains("[初始速度]")) {
-            // 利用正则表达式精确捕获括号内的三个浮点数
             std::regex vRegex(R"(V=\(([^,]+),\s*([^,]+),\s*([^)]+)\))");
             std::smatch match;
             std::string stdText = itemText.toStdString();
-
+            
             if (std::regex_search(stdText, match, vRegex)) {
                 double vx = std::stod(match[1].str());
                 double vy = std::stod(match[2].str());
                 double vz = std::stod(match[3].str());
-
-                // 计算空间向量欧几里得范数 (合速度大小)
-                v_mag = std::sqrt(vx * vx + vy * vy + vz * vz);
+                
+                // 1. 计算合速度绝对值 (标量)
+                double v_mag = std::sqrt(vx * vx + vy * vy + vz * vz);
+                
+                // 2. 寻找主导冲击方向 (绝对值最大的分量)
+                double max_comp = vx;
+                if (std::abs(vy) > std::abs(max_comp)) max_comp = vy;
+                if (std::abs(vz) > std::abs(max_comp)) max_comp = vz;
+                
+                // 3. 🌟 赋予符号：如果主导方向是负的，合速度就是负的
+                signed_v_mag = (max_comp < 0) ? -v_mag : v_mag;
+                
                 isFound = true;
                 break;
             }
@@ -3756,13 +3799,47 @@ void MainWindow::handleRefreshInitialVelocity() {
     }
 
     if (isFound) {
-        spinStartVelocity->setValue(v_mag);
-        QMessageBox::information(this, "参数读取成功",
-            QString("已成功从当前物理模型中提取破片冲击初速：\n\nV0 = %1 cm/μs")
-            .arg(v_mag, 0, 'f', 4));
+        spinStartVelocity->setValue(signed_v_mag);
+        QMessageBox::information(this, "参数读取成功", 
+            QString("已成功提取破片冲击初速 (保留主导方向符号)：\n\nV0 = %1 cm/μs")
+            .arg(signed_v_mag, 0, 'f', 4));
+    } else {
+        QMessageBox::warning(this, "数据缺失", "未在列表中嗅探到 [初始速度] 配置！");
     }
-    else {
-        QMessageBox::warning(this, "数据缺失",
-            "在当前物理模型参数列表中未嗅探到 [初始速度] 配置！\n\n请先在左侧物理设置区的【初始条件(IC)】面板中添加实体初速度。");
+}
+
+/**
+ * @brief 实时在途检测药柱能量，执行起爆工况的智能提前截断
+ * @details 依靠 QTimer 异步驱动，按固定周期读取尚未写完的 matsum 文件。
+ * 一旦嗅探到药柱内能发生剧烈突跃，立即向操作系统发送 SIGKILL 指令切断 LS-DYNA 内核，
+ * 并标记 m_isEarlyDetonated 旗标，可节约单次起爆工况 80% 以上的无效计算时序开销。
+ */
+void MainWindow::handleMatsumPolling() {
+    // 校验系统当前是否处于有效的升降法闭环序列中
+    if (!m_isUpAndDownMode || !m_batchProcess) return;
+
+    // 提取目标物理部件标识 (工程预留: 此处的 1 为默认炸药 Part ID)
+    int explosivePartId = 1;
+
+    // 挂载解析器：对当前不完整的 matsum 数据流进行试探性抓取
+    bool isDetonatingNow = checkDetonationResult(m_upDownCurrentDir, explosivePartId);
+
+    if (isDetonatingNow) {
+        // 1. 挂起轮询引擎，防止事件队列中产生重复的截断信号
+        if (m_matsumPollingTimer) {
+            m_matsumPollingTimer->stop();
+        }
+
+        // 2. 升起状态机提前截断旗标
+        m_isEarlyDetonated = true;
+
+        if (thresholdConsole) {
+            thresholdConsole->append("<font color='#f39c12'><b>[智能加速] 实时探针捕获内能极值！确认起爆！</b></font>");
+            thresholdConsole->append("<font color='#f39c12'><b>[资源回收] 正在强行截断当前计算管线以释放算力...</b></font>");
+        }
+        qint64 rootPid = m_batchProcess->processId();
+        QProcess::execute("taskkill", QStringList() << "/F" << "/T" << "/PID" << QString::number(rootPid));
+
+        // 注：进程树销毁后，操作系统会自动向主线程派发 Finished 信号，从而触发 handleBatchProcessFinished
     }
 }

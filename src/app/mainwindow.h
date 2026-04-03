@@ -320,6 +320,7 @@ private:
     std::shared_ptr<GlobalControlCard> m_globalControlCard = nullptr;
 
 private slots:
+
     void handlePresetChanged(const QString& presetName);
     void handleViewEntityKeyword(const QString& entityName);
 
@@ -357,6 +358,11 @@ private slots:
      * @param exitStatus 进程的退出状态枚举值
      */
     void handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+
+    /**
+     * @brief 响应定时器轮询事件：执行物理求解文件的在途能量突跃检测
+     */
+    void handleMatsumPolling();
 
 private:
 
@@ -441,6 +447,10 @@ private:
     bool checkDetonationResult(const QString& stepDir, int explosivePartId = 1);
     QTextEdit* thresholdConsole;
 
+    /** @brief 实时轮询定时器，用于在求解计算中途异步调取状态文件 */
+    QTimer* m_matsumPollingTimer = nullptr;
 
+    /** @brief 状态机转移旗标：标识当前求解工况是否因侦测到起爆突跃而被强行截断 */
+    bool m_isEarlyDetonated = false;
 };
 #endif // MAINWINDOW_H

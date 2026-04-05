@@ -1597,12 +1597,12 @@ void MainWindow::createSimulationSetupDock() {
     QFormLayout* ctrlLayout = new QFormLayout(ctrlTab);
 
     m_simSetupUI.endtimeInput = new QDoubleSpinBox();
-    m_simSetupUI.endtimeInput->setRange(0, 99999); m_simSetupUI.endtimeInput->setValue(1.0);
+    m_simSetupUI.endtimeInput->setRange(0, 99999); m_simSetupUI.endtimeInput->setValue(20.0);
     ctrlLayout->addRow("结束时间 (ENDTIM):", m_simSetupUI.endtimeInput);
     m_simSetupUI.endtimeInput->setSuffix(" μs");
 
     m_simSetupUI.d3plotFreqInput = new QDoubleSpinBox();
-    m_simSetupUI.d3plotFreqInput->setRange(0, 9999); m_simSetupUI.d3plotFreqInput->setValue(0.01);
+    m_simSetupUI.d3plotFreqInput->setRange(0, 9999); m_simSetupUI.d3plotFreqInput->setValue(0.50);
 
     
     ctrlLayout->addRow("D3PLOT 步长 (DT):", m_simSetupUI.d3plotFreqInput);
@@ -2475,13 +2475,14 @@ void MainWindow::setupPostProcessUI() {
 
     solverPathEdit = new QLineEdit();
     solverPathEdit->setPlaceholderText("D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe");
+    solverPathEdit->setText("D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe");
     QPushButton* btnBrowseSolver = new QPushButton("浏览...");
     QHBoxLayout* solverLayout = new QHBoxLayout();
     solverLayout->addWidget(solverPathEdit); solverLayout->addWidget(btnBrowseSolver);
     submitLayout->addRow("求解器路径 (EXE):", solverLayout);
 
     cpuCoresSpin = new QSpinBox();
-    cpuCoresSpin->setRange(1, 128); cpuCoresSpin->setValue(4);
+    cpuCoresSpin->setRange(1, 128); cpuCoresSpin->setValue(8);
     submitLayout->addRow("计算核心数 (NCPU):", cpuCoresSpin);
 
     btnRunSolver = new QPushButton("▶ 开始单次求解");
@@ -3338,7 +3339,7 @@ void MainWindow::handleAnalyzeConvergence() {
             if (error <= tolerance && !isConverged) {
                 isConverged = true;
                 optimalStep = stepList[i];
-                report += QString("   ✅ [系统评估] 达到收敛标准！\n");
+                report += QString("    [系统评估] 达到收敛标准！\n");
             }
         }
     }
@@ -3431,130 +3432,141 @@ void MainWindow::handleBatchProcessOutput() {
 }
 
 /**
- * @brief 监控后台批处理任务的终止状态并驱动核心状态机流转
- * @details 负责处理自然计算完成或因触发能量阈值被提前截断的求解任务，
- * 严格基于 Bruceton Test 控制律更新边界条件并递归派发下一次求解指令。
+ * @brief 处理求解器进程结束事件并流转升降法状态机。
+ * @details 提取进程缓冲区日志并校验正常退出状态。基于上一步求解的内能状态，
+ * 执行升降法控制律（兼容全象限速度），计算下一帧测试速度并递归调用。
+ * @param exitCode 进程退出的状态码
+ * @param exitStatus 进程退出的状态枚举
  */
 void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+
+    // 1. 提取缓冲区输出日志
+    if (m_batchProcess) {
+        QByteArray finalOutput = m_batchProcess->readAllStandardOutput();
+        if (!finalOutput.isEmpty()) {
+            QString finalLogStr = QString::fromLocal8Bit(finalOutput);
+            if (m_isUpAndDownMode && thresholdConsole) {
+                thresholdConsole->append(finalLogStr);
+                QScrollBar* scrollBar = thresholdConsole->verticalScrollBar();
+                if (scrollBar) scrollBar->setValue(scrollBar->maximum());
+            }
+            else if (!m_isUpAndDownMode && solverConsole) {
+                solverConsole->append(finalLogStr);
+                QScrollBar* scrollBar = solverConsole->verticalScrollBar();
+                if (scrollBar) scrollBar->setValue(scrollBar->maximum());
+            }
+        }
+    }
+
+    // 2. 升降法核心控制流
     if (m_isUpAndDownMode) {
         if (!thresholdConsole) return;
 
-        // 1. 任务终结，强制回收并挂起异步轮询引擎
         if (m_matsumPollingTimer) {
             m_matsumPollingTimer->stop();
         }
 
         bool isDetonated = false;
 
-        // 2. 评估进程终止诱因 (Termination Causality Analysis)
+        // 判定计算结果合法性
         if (m_isEarlyDetonated) {
-            // 分支 A：由 handleMatsumPolling 触发主动截断 (起爆极值已确认)
             isDetonated = true;
         }
         else {
-            // 分支 B：常规自然退出 (无突跃，或异常崩溃)
             if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-                thresholdConsole->append("❌ [系统异常] 底层求解器发生崩溃，升降法寻优流程序列被迫终止。");
+                thresholdConsole->append(QString("进程非正常退出。ExitCode: %1 | ExitStatus: %2").arg(exitCode).arg(exitStatus));
                 m_isUpAndDownMode = false;
                 return;
             }
-            // 常规读取最终状态 (通常为结构塑性变形的未起爆状态)
             int explosivePartId = 1;
             isDetonated = checkDetonationResult(m_upDownCurrentDir, explosivePartId);
         }
 
-        // 3. 录入数据空间并评估下一帧边界配置
         m_upDownHistory.push_back({ m_upDownCurrentVelocity, isDetonated });
 
-        // 🌟 [修改点]：剥离当前速度的符号与绝对值
+        // 计算下一次工况参数 (绝对速度控制律)
         double currentSign = (m_upDownCurrentVelocity >= 0) ? 1.0 : -1.0;
         double currentSpeedMag = std::abs(m_upDownCurrentVelocity);
 
         if (isDetonated) {
-            thresholdConsole->append("   💥 [系统评估] 判定为起爆状态 (药柱宏观内能越过临界点)。");
-            // 🌟 策略响应：起爆了，应当降低撞击“剧烈程度” (即减小绝对值)
+            thresholdConsole->append("状态判定: 起爆");
             currentSpeedMag -= m_upDownStepSize;
-            m_upDownCurrentVelocity = currentSign * currentSpeedMag; // 还原带符号的速度
-
-            thresholdConsole->append(QString("   📉 [策略响应] 调减靶向速度，设定下限 V_next = %1 cm/μs。").arg(m_upDownCurrentVelocity, 0, 'f', 4));
+            m_upDownCurrentVelocity = currentSign * currentSpeedMag;
+            thresholdConsole->append(QString("参数更新: 速度调整为 %1 cm/μs\n").arg(m_upDownCurrentVelocity, 0, 'f', 4));
         }
         else {
-            thresholdConsole->append("   💤 [系统评估] 判定为死火状态 (全局能量未达热力学阈值)。");
-            // 🌟 策略响应：没起爆，应当增加撞击“剧烈程度” (即增大绝对值)
+            thresholdConsole->append("状态判定: 未起爆");
             currentSpeedMag += m_upDownStepSize;
-            m_upDownCurrentVelocity = currentSign * currentSpeedMag; // 还原带符号的速度
-
-            thresholdConsole->append(QString("   📈 [策略响应] 调增靶向速度，设定上限 V_next = %1 cm/μs。").arg(m_upDownCurrentVelocity, 0, 'f', 4));
+            m_upDownCurrentVelocity = currentSign * currentSpeedMag;
+            thresholdConsole->append(QString("参数更新: 速度调整为 %1 cm/μs\n").arg(m_upDownCurrentVelocity, 0, 'f', 4));
         }
 
-        // 4. 评估收敛空间与递归挂载
+        // 评估停止准则
         if (m_upDownCurrentStep < m_upDownMaxSteps) {
             executeNextUpAndDownStep();
         }
         else {
-            // 5. 生命周期终止与总结陈词
             m_isUpAndDownMode = false;
 
-            thresholdConsole->append("\n========================================");
-            thresholdConsole->append("🏆 [调度结束] 升降法 (Up-and-Down Method) 起爆阈值测试序列收敛完毕。");
-            thresholdConsole->append("📜 历史动作序列日志 (Bruceton Test Log)：");
+            thresholdConsole->append("========================================");
+            thresholdConsole->append("测试序列完成，历史数据记录如下：");
 
             for (size_t i = 0; i < m_upDownHistory.size(); ++i) {
-                QString statusText = m_upDownHistory[i].second ? "起爆 (X)" : "死火 (O)";
-                thresholdConsole->append(QString(" - 序列点 %1 | 设定初速: %2 cm/μs | 响应结果: %3")
+                QString statusText = m_upDownHistory[i].second ? "起爆" : "未起爆";
+                thresholdConsole->append(QString(" - 样本 %1 | 速度: %2 cm/μs | 结果: %3")
                     .arg(i + 1, 2, 10, QChar('0'))
-                    .arg(m_upDownHistory[i].first, 6, 'f', 4)
+                    .arg(m_upDownHistory[i].first, 8, 'f', 4)
                     .arg(statusText));
             }
             thresholdConsole->append("========================================\n");
 
-            QMessageBox::information(this, "寻优序列完成",
-                "闭环测试序列已触达最大迭代深度。\n建议采用 Dixon-Mood 统计算法解析日志序列，以获取标准 V50 参数。");
+            QMessageBox::information(this, "测试结束", "升降法闭环测试序列已完成。");
         }
     }
+    // 3. 常规单次批处理控制流
     else {
-        // 常规单次批处理分支 (保持不变，输出到 solverConsole)
         if (!solverConsole) return;
 
         solverConsole->append("\n========================================");
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-            solverConsole->append("[系统提示] 常规批处理求解任务正常脱机。");
+            solverConsole->append("常规批处理求解任务完成。");
         }
         else {
-            solverConsole->append(QString("[系统警告] 批处理任务出现未捕获的运行时异常。ExitCode: %1").arg(exitCode));
+            solverConsole->append(QString("批处理任务异常退出。ExitCode: %1").arg(exitCode));
         }
         solverConsole->append("========================================\n");
     }
 }
 
 /**
- * @brief 组装并调度升降法序列中的单步求解工况
- * @details 为当前测试步创建独立的隔离子目录，生成包含当前设定速度的主控文件 (_run.k)，
- * 利用 INCLUDE 语法链接上一级共享网格，随后通过 QProcess 启动操作系统进程静默执行。
+ * @brief 组装并调度升降法序列中的单步求解工况。
+ * @details 创建独立的工作子目录，生成 LS-DYNA 关键字文件 (*.k) 与批处理执行脚本 (*.bat)。
+ * 在生成 bat 脚本时，注入系统注册表查询指令以获取原生 PATH 环境变量，规避因环境继承导致的 0xC0000135 动态链接库缺失错误。
  */
 void MainWindow::executeNextUpAndDownStep() {
-    m_upDownCurrentStep++;
-    QString jobName = QString("VelocityOpt_Step%1_V%2").arg(m_upDownCurrentStep).arg(m_upDownCurrentVelocity);
+    if (!thresholdConsole) return;
 
-    // 1. 构建当前工况的工作子目录
+    m_upDownCurrentStep++;
+
+    thresholdConsole->append(QString("\n[调度执行] 正在组装并启动第 %1/%2 帧迭代测试...")
+        .arg(m_upDownCurrentStep).arg(m_upDownMaxSteps));
+    thresholdConsole->append(QString("   [目标初速] %1 cm/μs").arg(m_upDownCurrentVelocity, 0, 'f', 4));
+
+    QString jobName = QString("VelocityOpt_Step%1").arg(m_upDownCurrentStep);
     QString stepFolderName = QString("Step_%1").arg(m_upDownCurrentStep);
     QDir rootDir(m_workingDirectory);
+
     if (!rootDir.exists(stepFolderName)) {
         rootDir.mkpath(stepFolderName);
     }
     m_upDownCurrentDir = rootDir.filePath(stepFolderName);
 
-    // 2. 根据当前测试速度更新控制卡片参数 
-    // (注：需确保与实际的材料本构/初始条件卡片数据流挂钩)
-    // 示例: m_initialConditionsCard->setVelocity(m_upDownCurrentVelocity); 
-
-    // 3. 构建当前回合的主控文件 (Master Control Deck)
+    // 1. 生成关键字文件 (*.k)
     QString controlFileName = jobName + "_run.k";
     QFile controlFile(QDir(m_upDownCurrentDir).filePath(controlFileName));
     if (controlFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&controlFile);
         out << "*KEYWORD\n*TITLE\n" << jobName << "\n";
-        // 挂载位于上级根目录的公共网格几何体
         out << "*INCLUDE\n../shared_mesh_geometry.k\n";
 
         if (m_globalControlCard != nullptr) {
@@ -3565,36 +3577,61 @@ void MainWindow::executeNextUpAndDownStep() {
         controlFile.close();
     }
 
-    // 4. 动态生成当前工况专用的批处理脚本
+    // 2. 生成批处理执行脚本 (*.bat)
     QString batFilePath = QDir(m_upDownCurrentDir).filePath("run_step.bat");
     QFile batFile(batFilePath);
+
+    QString solverPath = solverPathEdit->text().trimmed();
+    if (solverPath.isEmpty()) solverPath = "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe";
+
+    QFileInfo solverInfo(solverPath);
+    QString solverDir = solverInfo.absolutePath();
+    QString intelRuntimePath = "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsprepost410";
+
     if (batFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream batStream(&batFile);
-        QString solverPath = solverPathEdit->text().isEmpty() ? "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe" : solverPathEdit->text();
-        batStream << "@echo off\nset DYNA_PATH=\"" << solverPath << "\"\n";
-        batStream << "%DYNA_PATH% I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n";
+        batStream << "@echo off\n";
+
+        // 查询 Windows 注册表 (HKLM 与 HKCU) 以获取底层原生 PATH 环境变量。
+        // 强行覆盖当前会话环境，确保 LS-DYNA 内核及其依赖项 (DLL) 正常加载。
+        batStream << "FOR /F \"tokens=2*\" %%A IN ('reg query \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\" /v Path') DO set \"SYS_PATH=%%B\"\n";
+        batStream << "FOR /F \"tokens=2*\" %%A IN ('reg query \"HKCU\\Environment\" /v Path 2^>nul') DO set \"USR_PATH=%%B\"\n";
+
+        // 重构 PATH 变量并置顶求解器所在目录
+        batStream << "set \"PATH=%SYS_PATH%;%USR_PATH%;"
+            << QDir::toNativeSeparators(solverDir) << ";"
+            << QDir::toNativeSeparators(intelRuntimePath) << "\"\n";
+
+        batStream << "set \"DYNA_PATH=" << QDir::toNativeSeparators(solverPath) << "\"\n";
+        batStream << "\"%DYNA_PATH%\" I=" << controlFileName << " NCPU=" << cpuCoresSpin->value() << " MEMORY=2000m\n";
         batFile.close();
     }
 
-    solverConsole->append(QString("\n[执行任务] 提交第 %1/%2 步测试 | 设定撞击速度 = %3 m/s")
-        .arg(m_upDownCurrentStep).arg(m_upDownMaxSteps).arg(m_upDownCurrentVelocity));
-
-    // 5. 转移底层工作目录权限并唤醒异步求解进程
+    // 3. 配置 QProcess 执行参数
     m_batchProcess->setWorkingDirectory(m_upDownCurrentDir);
-    m_batchProcess->start("cmd.exe", QStringList() << "/c" << "call run_step.bat");
+    m_batchProcess->setProcessChannelMode(QProcess::MergedChannels);
+    m_batchProcess->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
 
-    // =========================================================
-    //  In-transit Polling Engine
-    // =========================================================
-    m_isEarlyDetonated = false; // 重置提前截断旗标
+    // 4. 启动求解器进程
+    QStringList args;
+    args << "/c" << "run_step.bat";
 
+    thresholdConsole->append("   [系统指令] 正在唤醒 LS-DYNA 内核...");
+    m_batchProcess->start("cmd.exe", args);
+
+    if (!m_batchProcess->waitForStarted(3000)) {
+        thresholdConsole->append(QString("   [致命错误] 进程启动异常: %1").arg(m_batchProcess->errorString()));
+        m_isUpAndDownMode = false;
+        return;
+    }
+
+    // 5. 挂载内能检测定时器
+    m_isEarlyDetonated = false;
     if (!m_matsumPollingTimer) {
         m_matsumPollingTimer = new QTimer(this);
         connect(m_matsumPollingTimer, &QTimer::timeout, this, &MainWindow::handleMatsumPolling);
     }
-    // 启动异步轮询，时间间隔设定为 3000 毫秒 (3秒)
     m_matsumPollingTimer->start(3000);
-    m_batchProcess->setProcessChannelMode(QProcess::MergedChannels);
 }
 
 /**

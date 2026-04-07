@@ -345,7 +345,16 @@
     <ClCompile Include="src\app\glwidget.cpp" />
     <ClCompile Include="src\app\main.cpp" />
     <ClCompile Include="src\app\mainwindow.cpp" />
-    <ClCompile Include="src\app\PostProcessing\PostProcessWidget.cpp" />
+    <ClCompile Include="src\app\PostProcessing\PostProcessWidget.cpp">
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename).moc</QtMocFileName>
+    </ClCompile>
     <ClCompile Include="src\app\PostProcessing\qcustomplot.cpp" />
     <ClCompile Include="src\core\common\EntityRepository.cpp" />
     <ClCompile Include="src\core\common\EOS\EOS.h" />

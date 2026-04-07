@@ -2652,9 +2652,9 @@ void MainWindow::setupPostProcessUI() {
     QGroupBox* postGroup = new QGroupBox("结果目录与后处理入口");
     QHBoxLayout* postLayout = new QHBoxLayout(postGroup);
 
-    btnOpenFolder = new QPushButton("📂 打开当前结果目录");
+    btnOpenFolder = new QPushButton("打开当前结果目录");
     btnOpenFolder->setStyleSheet("min-height: 35px;");
-    btnLaunchD3plot = new QPushButton("📊 切换至三维曲线分析工作区");
+    btnLaunchD3plot = new QPushButton("切换至三维曲线分析工作区");
     btnLaunchD3plot->setStyleSheet("min-height: 35px;");
     postLayout->addWidget(btnOpenFolder);
     postLayout->addWidget(btnLaunchD3plot);

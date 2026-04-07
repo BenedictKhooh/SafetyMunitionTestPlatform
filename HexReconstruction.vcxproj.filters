@@ -103,10 +103,10 @@
     <ClCompile Include="src\core\generation\FSPGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\PostProcessing\PostProcessWidget.cpp">
+    <ClCompile Include="src\app\PostProcessing\qcustomplot.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\PostProcessing\qcustomplot.cpp">
+    <ClCompile Include="src\app\PostProcessing\PostProcessWidget.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
   </ItemGroup>

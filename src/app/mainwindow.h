@@ -363,6 +363,7 @@ private slots:
      * @brief 响应定时器轮询事件：执行物理求解文件的在途能量突跃检测
      */
     void handleMatsumPolling();
+    void handleSkipCurrentStep();
 
 private:
 
@@ -452,5 +453,16 @@ private:
 
     /** @brief 状态机转移旗标：标识当前求解工况是否因侦测到起爆突跃而被强行截断 */
     bool m_isEarlyDetonated = false;
+
+private:
+    double m_previousInternalEnergy = -1.0; // 上一采样时刻的内能 (初始值设为负数)
+    int m_energyDropCounter = 0;            // 内能连续下降的采样次数计数器
+    bool m_isEarlyMisfire = false;          // 标记是否因“内能倒流”被探针主动判定为死火
+    //用于“能量停滞”检测的时域基线
+    double m_baselineTime = -1.0;
+    double m_initialFragKE = -1.0;          // 记录 t=0 时刻破片的初始宏观动能
+    double m_lowerBoundMag = -1.0; ///< 已知死火的最大绝对速度 (-1表示未找到)
+    double m_upperBoundMag = -1.0; ///< 已知起爆的最小绝对速度 (-1表示未找到)
+    QPushButton* btnSkipStep = nullptr;
 };
 #endif // MAINWINDOW_H

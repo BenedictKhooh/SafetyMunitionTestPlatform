@@ -198,6 +198,14 @@ private:
 	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // 变换应用函数
 
     QString m_workingDirectory; // [新增] 用于保存当前的工作目录路径
+    // ==========================================
+    // 全局系统环境与路径设置
+    // ==========================================
+    /** @brief LS-DYNA 求解器可执行文件全局路径 */
+    QString m_dynaSolverPath = "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe";
+
+    /** @brief LS-DYNA 运行依赖库/环境变量全局目录路径 */
+    QString m_dynaEnvPath = "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsprepost410";
 
     // 仿真设置 UI 管理器
     struct SimulationSetupUI {
@@ -293,6 +301,10 @@ private:
 
     //响应点击“设置工作目录”菜单的槽函数
     void onSetWorkingDirectory();
+    /**
+     * @brief 响应用户动作：打开全局系统设置面板 (配置 LS-DYNA 路径等)
+     */
+    void onGlobalSettings();
 
     // ==========================================
     // 数据集与实体指针映射

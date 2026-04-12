@@ -136,23 +136,40 @@ void MainWindow::createMenuBar() {
     setMenuBar(menuBar);
 
     // 文件菜单
-    QMenu *fileMenu = menuBar->addMenu("File");
-    QAction *newAction = fileMenu->addAction("New");
-    QAction *openAction = fileMenu->addAction("Open");
-    QAction *saveAction = fileMenu->addAction("Save");
-    QAction *exitAction = fileMenu->addAction("Exit");
+    QMenu* fileMenu = menuBar->addMenu("File");
+    QAction* newAction = fileMenu->addAction("New");
+    QAction* openAction = fileMenu->addAction("Open");
+    QAction* saveAction = fileMenu->addAction("Save");
+
+    fileMenu->addSeparator();
+
+    // 置工作目录
+    QAction* setWorkDirAct = new QAction(tr("设置工作目录 (Set Working Directory)..."), this);
+    setWorkDirAct->setStatusTip(tr("设置所有导出文件和仿真数据的保存目录"));
+    connect(setWorkDirAct, &QAction::triggered, this, &MainWindow::onSetWorkingDirectory);
+    fileMenu->addAction(setWorkDirAct);
+
+    // 全局系统设置
+    QAction* globalSettingsAct = new QAction(tr("全局设置 (Global Settings)..."), this);
+    globalSettingsAct->setStatusTip(tr("配置 LS-DYNA 求解器路径与运行环境变量"));
+    connect(globalSettingsAct, &QAction::triggered, this, &MainWindow::onGlobalSettings);
+    fileMenu->addAction(globalSettingsAct);
+
+    fileMenu->addSeparator();
+
+    QAction* exitAction = fileMenu->addAction("Exit");
 
     // 编辑菜单
-    QMenu *editMenu = menuBar->addMenu("Edit");
-    QAction *cutAction = editMenu->addAction("Cut");
-    QAction *copyAction = editMenu->addAction("Copy");
-    QAction *pasteAction = editMenu->addAction("Paste");
+    QMenu* editMenu = menuBar->addMenu("Edit");
+    QAction* cutAction = editMenu->addAction("Cut");
+    QAction* copyAction = editMenu->addAction("Copy");
+    QAction* pasteAction = editMenu->addAction("Paste");
 
     // 视图菜单
-    QMenu *viewMenu = menuBar->addMenu("View");
-    QAction *zoomInAction = viewMenu->addAction("Zoom In");
-    QAction *zoomOutAction = viewMenu->addAction("Zoom Out");
-    QAction *resetViewAction = viewMenu->addAction("Reset View");
+    QMenu* viewMenu = menuBar->addMenu("View");
+    QAction* zoomInAction = viewMenu->addAction("Zoom In");
+    QAction* zoomOutAction = viewMenu->addAction("Zoom Out");
+    QAction* resetViewAction = viewMenu->addAction("Reset View");
 
     // 连接信号和槽
     connect(exitAction, &QAction::triggered, this, &QApplication::quit);
@@ -163,14 +180,7 @@ void MainWindow::createMenuBar() {
         glWidget->scaleFactor = 1.0;
         glWidget->translation = QVector3D(0, 0, 0);
         glWidget->update();
-    });
-
-    QAction* setWorkDirAct = new QAction(tr("设置工作目录 (Set Working Directory)..."), this);
-    setWorkDirAct->setStatusTip(tr("设置所有导出文件和仿真数据的保存目录"));
-    connect(setWorkDirAct, &QAction::triggered, this, &MainWindow::onSetWorkingDirectory);
-
-    fileMenu->addAction(setWorkDirAct);
-    fileMenu->addSeparator();
+        });
 }
 
 void MainWindow::createToolBars() {
@@ -3735,19 +3745,19 @@ void MainWindow::executeNextUpAndDownStep() {
     QString batFilePath = QDir(m_upDownCurrentDir).filePath("run_step.bat");
     QFile batFile(batFilePath);
 
-    QString solverPath = solverPathEdit->text().trimmed();
+    QString solverPath = m_dynaSolverPath;
     if (solverPath.isEmpty()) {
-        solverPath = "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsdyna_sp.exe";
+        solverPath = solverPathEdit->text().trimmed();
     }
 
     QFileInfo solverInfo(solverPath);
     QString solverDir = solverInfo.absolutePath();
-    QString intelRuntimePath = "D:\\Program Files\\ANSYS Inc\\v241\\ansys\\bin\\winx64\\lsprepost410";
+    QString intelRuntimePath = m_dynaEnvPath;
 
     if (batFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream batStream(&batFile);
         batStream << "@echo off\n";
-        // 配置运行环境变量，确保系统能够正常寻址至求解器与依赖 DLL
+ 
         batStream << "set \"PATH=" << QDir::toNativeSeparators(solverDir) << ";"
             << QDir::toNativeSeparators(intelRuntimePath) << ";%PATH%\"\n";
         batStream << "set \"DYNA_PATH=" << QDir::toNativeSeparators(solverPath) << "\"\n";
@@ -4142,11 +4152,69 @@ void MainWindow::handleSkipCurrentStep() {
         m_isEarlyMisfire = true;
         if (thresholdConsole) thresholdConsole->append("   [人工干预] 用户强行截断当前工况，并指定结果为：死火 (O)！");
     }
-
-    // 3. 暴力强杀当前批处理进程树
-    // 注意：强杀后，m_batchProcess 会自动触发 finished 信号。
-    // 这将完美唤醒 handleBatchProcessFinished 函数，它会读取我们刚刚设置的
-    // m_isEarlyDetonated/Misfire 标记，绕过报错，顺滑地进入下一步迭代！
     qint64 rootPid = m_batchProcess->processId();
     QProcess::execute("taskkill", QStringList() << "/F" << "/T" << "/PID" << QString::number(rootPid));
+}
+
+/**
+ * @brief 唤起全局系统设置对话框
+ * @details 允许用户在 UI 界面动态配置底层 LS-DYNA 求解器的绝对路径与环境变量运行时目录。
+ * 配置修改后将同步覆盖前端输入框，并作用于后续的所有单次求解与自动化批处理寻优流。
+ */
+void MainWindow::onGlobalSettings() {
+    QDialog dialog(this);
+    dialog.setWindowTitle("全局系统设置 (Global Settings)");
+    dialog.setMinimumWidth(600);
+
+    QVBoxLayout* mainLayout = new QVBoxLayout(&dialog);
+    QFormLayout* formLayout = new QFormLayout();
+
+    // 1. LS-DYNA 求解器路径配置区
+    QHBoxLayout* solverLayout = new QHBoxLayout();
+    QLineEdit* solverEdit = new QLineEdit(m_dynaSolverPath);
+    QPushButton* solverBtn = new QPushButton("浏览...");
+    solverLayout->addWidget(solverEdit);
+    solverLayout->addWidget(solverBtn);
+    formLayout->addRow("LS-DYNA 求解器路径 (.exe):", solverLayout);
+
+    // 2. LS-DYNA 环境变量依赖库配置区
+    QHBoxLayout* envLayout = new QHBoxLayout();
+    QLineEdit* envEdit = new QLineEdit(m_dynaEnvPath);
+    QPushButton* envBtn = new QPushButton("浏览...");
+    envLayout->addWidget(envEdit);
+    envLayout->addWidget(envBtn);
+    formLayout->addRow("运行时环境/依赖库目录 (Dir):", envLayout);
+
+    mainLayout->addLayout(formLayout);
+
+    // 3. 对话框标准按钮与布局
+    QDialogButtonBox* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    mainLayout->addWidget(btnBox);
+
+    // 绑定浏览按钮事件
+    connect(solverBtn, &QPushButton::clicked, [&]() {
+        QString path = QFileDialog::getOpenFileName(&dialog, "选择 LS-DYNA 求解器程序", "C:/", "可执行文件 (*.exe);;所有文件 (*.*)");
+        if (!path.isEmpty()) solverEdit->setText(QDir::toNativeSeparators(path));
+        });
+
+    connect(envBtn, &QPushButton::clicked, [&]() {
+        QString path = QFileDialog::getExistingDirectory(&dialog, "选择 LS-DYNA 运行时依赖目录", "C:/");
+        if (!path.isEmpty()) envEdit->setText(QDir::toNativeSeparators(path));
+        });
+
+    connect(btnBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    // 4. 数据回写与状态同步
+    if (dialog.exec() == QDialog::Accepted) {
+        m_dynaSolverPath = solverEdit->text().trimmed();
+        m_dynaEnvPath = envEdit->text().trimmed();
+
+        // 智能同步：顺便刷新 UI 界面上单次求解面板里的输入框
+        if (solverPathEdit) {
+            solverPathEdit->setText(m_dynaSolverPath);
+        }
+
+        logCommand("System", "全局设置已更新：求解器引擎路径变更。");
+    }
 }

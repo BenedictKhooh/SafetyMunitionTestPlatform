@@ -1195,11 +1195,11 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
 
     // 根据选中的形状生成参数
     if (text == "Cube") {
-        addNumParamToUI(ui, "Length (LX):", "lx", 0.76, " cm");
-        addNumParamToUI(ui, "Width (LY):", "ly", 0.76, " cm");
-        addNumParamToUI(ui, "Height (LZ):", "lz", 0.76, " cm");
+        addNumParamToUI(ui, "Length (LX):", "lx", 0.54, " cm");
+        addNumParamToUI(ui, "Width (LY):", "ly", 0.54, " cm");
+        addNumParamToUI(ui, "Height (LZ):", "lz", 0.54, " cm");
         addNumParamToUI(ui, "Mesh Size:", "ms", 0.02, " cm");
-        addNumParamToUI(ui, "Center X:", "cx", 6.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 5.0, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 4.0, " cm");
     }
@@ -1243,7 +1243,7 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Top R:", "rt", 3.0, " cm");
         addNumParamToUI(ui, "Height:", "h", 10.0, " cm");
         addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
-        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.6, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
@@ -4007,107 +4007,187 @@ void MainWindow::handleRefreshInitialVelocity() {
 }
 
 /**
- * @brief 响应定时器轮询事件：基于“相对宏观动能溢出”原理的智能状态机截断
- * @details 读取实时刷新的 matsum 文件，提取破片初始动能作为系统总能量输入标尺。
- * 实时监控炸药部件的动能响应。依据非完全弹性碰撞力学规律：
- * 1. 若炸药动能突破入射破片总动能的 80%，证实系统发生化学做功，触发极速起爆截断。
- * 2. 若超出特征时间窗口，且系统捕获动能不足破片初动能的 10%，证实为纯惰性机械耗散，触发死火截断。
+ * @brief 异步解析 matsum 时程文件，基于目标系统动能演化进行起爆与死火状态机研判
+ * @details
+ * 核心判定准则：
+ * 1. 基准标定：捕获 time = 0.0 帧，累加分类为"破片"的 Part 的初始动能 (m_initialFragKE)。
+ * 2. 起爆判定 (Detonation)：目标系统当前总动能 > 破片初始总动能的 80%。
+ * 3. 死火判定 (Misfire)  ：目标系统总动能从其历史峰值衰减超过 20% (即当前动能 < peakTargetKE * 80%)，
+ * 表明反应仅为纯机械碰撞与塑性阻尼耗散，未发生化学做功。
  */
 void MainWindow::handleMatsumPolling() {
+    // 状态校验：仅在寻优模式及求解器运行期间执行
     if (!m_isUpAndDownMode || !m_batchProcess) return;
 
-    // 模型 Part ID 定义，请确保与 K 文件拓扑一致
-    const int explosivePartId = 1;
-    const int fragmentPartId = 3;
+    // ====================================================
+    // 1. 实体映射：提取破片集合的标准化命名
+    // ====================================================
+    std::set<std::string> targetFragmentNames;
+    for (const auto& pair : m_repository.getAllEntities()) {
+        const MeshEntity& entity = pair.second;
 
+        // 严格匹配中文类别标识
+        if (entity.category == "破片") {
+            QString qName = entity.name.trimmed();
+            std::string fragName = qName.toStdString();
+            std::transform(fragName.begin(), fragName.end(), fragName.begin(), ::tolower);
+            if (!fragName.empty()) {
+                targetFragmentNames.insert(fragName);
+            }
+        }
+    }
+
+    if (targetFragmentNames.empty()) return;
+
+    // ====================================================
+    // 2. 初始化文件流与正则解析器
+    // ====================================================
     QString matsumPath = QDir(m_upDownCurrentDir).filePath("matsum");
     std::ifstream file(matsumPath.toLocal8Bit().constData());
     if (!file.is_open()) return;
 
     std::string line;
+    std::regex legendStart(R"(\{BEGIN LEGEND\})");
+    std::regex legendEnd(R"(\{END LEGEND\})");
+    std::regex legendEntry(R"(^\s*(\d+)\s+(\S+))");
     std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
     std::regex matRegex(R"(mat\.#=\s*(\d+)\s+inten=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+kinen=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
 
+    std::set<int> fragmentIds;
+    bool inLegend = false;
     double currentTime = -1.0;
-    double currentExpKinetic = -1.0;
-    double currentFragKinetic = -1.0;
+    std::map<int, double> currentFrameKE;
     std::smatch match;
 
-    // 滑动解析至文件末尾，提取当前最新时间帧数据
+    // 目标系统动能历史峰值
+    double peakTargetKE = 0.0;
+
+    // ====================================================
+    // 3. 解析文本流
+    // ====================================================
     while (std::getline(file, line)) {
+        // 3.1 解析 LEGEND 区块，构建破片 Part ID 映射表
+        if (std::regex_search(line, legendStart)) { inLegend = true; continue; }
+        if (std::regex_search(line, legendEnd)) { inLegend = false; continue; }
+        if (inLegend) {
+            if (std::regex_search(line, match, legendEntry)) {
+                int id = std::stoi(match[1].str());
+                std::string partName = match[2].str();
+                std::transform(partName.begin(), partName.end(), partName.begin(), ::tolower);
+                for (const auto& targetName : targetFragmentNames) {
+                    if (partName.find(targetName) != std::string::npos) {
+                        fragmentIds.insert(id);
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        // 3.2 解析时程数据区块
         std::string lowerLine = line;
         std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
 
         if (std::regex_search(lowerLine, match, timeRegex)) {
+            // 结算上一帧目标系统动能，并更新历史峰值
+            if (!currentFrameKE.empty()) {
+                double previousFrameTargetKE = 0.0;
+                for (const auto& pair : currentFrameKE) {
+                    if (fragmentIds.find(pair.first) == fragmentIds.end()) {
+                        previousFrameTargetKE += pair.second;
+                    }
+                }
+                if (previousFrameTargetKE > peakTargetKE) {
+                    peakTargetKE = previousFrameTargetKE;
+                }
+            }
+
+            // 实时锁定 t=0 帧，标定基准初始动能
+            if (m_baselineTime < 0.0 && currentTime == 0.0 && !currentFrameKE.empty()) {
+                m_baselineTime = 0.0;
+                m_initialFragKE = 0.0;
+                for (int id : fragmentIds) {
+                    m_initialFragKE += currentFrameKE[id];
+                }
+            }
+
             currentTime = std::stod(match[1].str());
+            currentFrameKE.clear();
         }
         else if (std::regex_search(lowerLine, match, matRegex)) {
-            int partId = std::stoi(match[1].str());
-            if (partId == explosivePartId) {
-                currentExpKinetic = std::stod(match[3].str());
-            }
-            else if (partId == fragmentPartId) {
-                currentFragKinetic = std::stod(match[3].str());
-            }
+            int id = std::stoi(match[1].str());
+            currentFrameKE[id] = std::stod(match[3].str());
         }
     }
     file.close();
 
-    if (currentTime < 0.0) return;
+    // 边界处理：文件恰好结束于 t=0.0 帧末尾
+    if (m_baselineTime < 0.0 && currentTime == 0.0 && !currentFrameKE.empty()) {
+        m_baselineTime = 0.0;
+        m_initialFragKE = 0.0;
+        for (int id : fragmentIds) m_initialFragKE += currentFrameKE[id];
+    }
+
+    // 数据有效性校验
+    if (currentTime < 0.0 || fragmentIds.empty() || currentFrameKE.empty() || m_initialFragKE <= 0.0) {
+        return;
+    }
 
     // ====================================================
-    // 初始化能量基准：提取破片入射初动能作为标尺
+    // 4. 计算当前帧目标系统总动能，并进行最终峰值同步
     // ====================================================
-    if (m_baselineTime < 0.0) {
-        m_baselineTime = currentTime;
-        if (currentFragKinetic > 0.0) {
-            m_initialFragKE = currentFragKinetic;
+    double currentTargetKinetic = 0.0;
+    for (const auto& pair : currentFrameKE) {
+        if (fragmentIds.find(pair.first) == fragmentIds.end()) {
+            currentTargetKinetic += pair.second;
         }
     }
 
-    // 容错防爆：若未成功建立初始基准标尺，则暂时跳过逻辑判定
-    if (m_initialFragKE <= 0.0) return;
+    if (currentTargetKinetic > peakTargetKE) {
+        peakTargetKE = currentTargetKinetic;
+    }
 
     // ====================================================
-    // 逻辑 A: 相对动能溢出检测 (判定为 起爆)
+    // 5. 核心状态机判决
     // ====================================================
-    // 阈值设定：炸药动能达到破片初动能的 80% 即确认发生额外化学做功
-    double detonationThreshold = m_initialFragKE * 0.8;
+    const double detonationThreshold = m_initialFragKE * 0.8;
 
-    if (currentExpKinetic > detonationThreshold) {
+    // 准则 A：起爆判定 (能量突跃越限)
+    if (currentTargetKinetic > detonationThreshold) {
         if (m_matsumPollingTimer) m_matsumPollingTimer->stop();
         m_isEarlyDetonated = true;
+
         if (thresholdConsole) {
-            thresholdConsole->append(QString("   [探针截断] 炸药动能 (%1) 已逼近破片初动能 (%2) 的临界阈值。")
-                .arg(currentExpKinetic, 0, 'e', 4)
-                .arg(m_initialFragKE, 0, 'e', 4));
-            thresholdConsole->append("   [状态研判] 系统打破纯机械能守恒限制，证实发生化学释能，判定为 起爆。");
+            thresholdConsole->append(QString("[探针截断] t=%1 时, 目标系统动能 (%2) 突破起爆阈值 (%3)。")
+                .arg(currentTime, 0, 'f', 2)
+                .arg(currentTargetKinetic, 0, 'e', 4)
+                .arg(detonationThreshold, 0, 'e', 4));
+            thresholdConsole->append("[状态研判] 判定为：起爆 (X)。");
         }
+
         qint64 rootPid = m_batchProcess->processId();
         QProcess::execute("taskkill", QStringList() << "/F" << "/T" << "/PID" << QString::number(rootPid));
         return;
     }
 
-    // ====================================================
-    // 逻辑 B: 物理时域停滞检测 (判定为 死火)
-    // ====================================================
-    // 物理特征窗口：默认为 15.0 μs (涵盖迟滞反应成形期)
-    const double stagnationTimeWindow = 15.0;
+    // 准则 B：死火判定 (动能衰减)
+    // 设定底噪容差 (1e-4)，当动能从明确的历史峰值回落超过 20% 时截断
+    const double noiseTolerance = 1e-4;
+    if (peakTargetKE > noiseTolerance && currentTargetKinetic < peakTargetKE * 0.8) {
+        if (m_matsumPollingTimer) m_matsumPollingTimer->stop();
+        m_isEarlyMisfire = true;
 
-    if (currentTime - m_baselineTime > stagnationTimeWindow) {
-        // 监测窗耗尽后，若炸药获取的总动能未逾越破片初动能的 10%，证实为纯机械损耗
-        if (currentExpKinetic < m_initialFragKE * 0.1) {
-            if (m_matsumPollingTimer) m_matsumPollingTimer->stop();
-            m_isEarlyMisfire = true;
-            if (thresholdConsole) {
-                thresholdConsole->append(QString("   [探针截断] 监测窗耗尽 (t=%1 μs)，炸药动能未发生显著释能增益。")
-                    .arg(currentTime, 0, 'f', 2));
-                thresholdConsole->append("   [状态研判] 确认反应符合纯惰性挤压与机械耗散规律，判定为 死火。");
-            }
-            qint64 rootPid = m_batchProcess->processId();
-            QProcess::execute("taskkill", QStringList() << "/F" << "/T" << "/PID" << QString::number(rootPid));
-            return;
+        if (thresholdConsole) {
+            thresholdConsole->append(QString("[探针截断] t=%1 时，目标系统动能发生显著衰减 (峰值:%2，当前:%3)。")
+                .arg(currentTime, 0, 'f', 2)
+                .arg(peakTargetKE, 0, 'e', 4)
+                .arg(currentTargetKinetic, 0, 'e', 4));
+            thresholdConsole->append("[状态研判] 能量行为符合阻尼耗散规律，判定为：死火 (O)。");
         }
+
+        qint64 rootPid = m_batchProcess->processId();
+        QProcess::execute("taskkill", QStringList() << "/F" << "/T" << "/PID" << QString::number(rootPid));
+        return;
     }
 }
 

@@ -1161,6 +1161,7 @@ void MainWindow::addNumParamToUI(GeneratorUI& ui, const QString& labelText, cons
     QDoubleSpinBox* sb = new QDoubleSpinBox(this);
     sb->setRange(-9999.0, 9999.0);
     sb->setValue(defaultValue);
+    sb->setDecimals(4);
 
     // 🌟 新增：如果传入了单位，就把它作为后缀显示在数字后面
     if (!unit.isEmpty()) {
@@ -1186,7 +1187,7 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
 
     // 重新添加实体名称输入框
     QHBoxLayout* nameRow = new QHBoxLayout();
-    nameRow->addWidget(new QLabel("Entity Name:"));
+    nameRow->addWidget(new QLabel("Entity Name:")); 
     ui.nameInput = new QLineEdit(this);
     ui.nameInput->setText(text.toLower() + "_1");
     nameRow->addWidget(ui.nameInput);
@@ -1194,13 +1195,13 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
 
     // 根据选中的形状生成参数
     if (text == "Cube") {
-        addNumParamToUI(ui, "Length (LX):", "lx", 10.0, " cm");
-        addNumParamToUI(ui, "Width (LY):", "ly", 10.0, " cm");
-        addNumParamToUI(ui, "Height (LZ):", "lz", 10.0, " cm");
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
-        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Length (LX):", "lx", 0.76, " cm");
+        addNumParamToUI(ui, "Width (LY):", "ly", 0.76, " cm");
+        addNumParamToUI(ui, "Height (LZ):", "lz", 0.76, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.02, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 6.0, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 4.0, " cm");
     }
     else if (text == "Cylinder") {
         addNumParamToUI(ui, "Radius (R):", "r", 4.0, " cm");
@@ -1256,12 +1257,12 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
     }
     else if (text == "TriangularPrism" || text == "PentagonalPrism" || text == "HexagonalPrism") {
         // 这三种多边形棱柱的参数是一模一样的
-        addNumParamToUI(ui, "Radius (外接圆半径 R):", "r", 5.0, " cm");
-        addNumParamToUI(ui, "Height (高度 H):", "h", 10.0, " cm");
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
-        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Radius (外接圆半径 R):", "r", 0.38, " cm");
+        addNumParamToUI(ui, "Height (高度 H):", "h", 0.76, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.02, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 6, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 5, " cm");
     }
     else if (text == "HalfCylindricalShell") {
         // 半圆柱壳需要内径、高度、端盖和壁厚
@@ -1924,7 +1925,6 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
         addParam("压力截断 (PC):", "pc", -9.0);
     }
 
-    // 3. 接着读取当前 EOS 选了什么，并在下方画出具体的 EOS 参数！
     QString eosType = m_simSetupUI.eosSelector->currentText();
 
     if (eosType == "*EOS_GRUNEISEN") {

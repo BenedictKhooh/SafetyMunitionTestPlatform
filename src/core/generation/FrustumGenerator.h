@@ -38,4 +38,4 @@ private:
     double m_cx = 0.0, m_cy = 0.0, m_cz = 0.0;
 };
 
-#endif
+#endif // FRUSTUMGENERATOR_H

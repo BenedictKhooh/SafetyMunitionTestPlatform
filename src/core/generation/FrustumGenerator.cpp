@@ -2,90 +2,145 @@
 
 QString FrustumGenerator::buildGeoScript(double rBase, double rTop, double height, double meshSize, double cx, double cy, double cz) const {
     return QString(R"(
-// --- 1. 参数设置 ---
-RB = %1; RT = %2; H = %3;
+// 强制使用内置几何引擎，稳定支持底层映射
+SetFactory("Built-in");
+
+// ==========================================
+// 1. 基础参数定义
+// ==========================================
+R_base = %1; R_top = %2; H = %3;
 ms = %4;
 CX = %5; CY = %6; CZ = %7;
 
 ratio = 0.55; 
-LB = RB * ratio; LT = RT * ratio;
 
-// 动态分段计算
-nC = Max(2, Round((Pi * RB / 2) / ms));
-nR = Max(2, Round(RB / ms));
+// 动态分段计算 (基于输入的 mesh size)
+nC = Max(2, Round((Pi * R_base / 2) / ms));
+nR = Max(2, Round(R_base / ms));
 nH = Max(2, Round(H / ms));
+r_height = 1.0; 
 
-// --- 2. 节点定义 (带偏移) ---
-Point(100) = {CX, CY, CZ};     // 底圆心
-Point(101) = {CX, CY, CZ + H}; // 顶圆心
+L_b = R_base * ratio; 
+L_t = R_top * ratio;
 
-// 核心块 (1-4 底, 5-8 顶)
-Point(1) = { CX+LB, CY+LB, CZ};   Point(2) = {CX-LB, CY+LB, CZ};
-Point(3) = {CX-LB, CY-LB, CZ};   Point(4) = { CX+LB, CY-LB, CZ};
-Point(5) = { CX+LT, CY+LT, CZ+H}; Point(6) = {CX-LT, CY+LT, CZ+H};
-Point(7) = {CX-LT, CY-LT, CZ+H}; Point(8) = { CX+LT, CY-LT, CZ+H};
+// ==========================================
+// 2. 阵列化顶点生成
+// ==========================================
+Point(0) = {CX, CY, CZ};           // 底中心
+Point(1000) = {CX, CY, CZ + H};    // 顶中心
 
-// 外围投影点
-Pb = RB/Sqrt(2); Pt = RT/Sqrt(2);
-Point(11) = { CX+Pb, CY+Pb, CZ};   Point(12) = {CX-Pb, CY+Pb, CZ};
-Point(13) = {CX-Pb, CY-Pb, CZ};   Point(14) = { CX+Pb, CY-Pb, CZ};
-Point(15) = { CX+Pt, CY+Pt, CZ+H}; Point(16) = {CX-Pt, CY+Pt, CZ+H};
-Point(17) = {CX-Pt, CY-Pt, CZ+H}; Point(18) = { CX+Pt, CY-Pt, CZ+H};
+For i In {1:8}
+    a = (2*i - 1) * Pi / 8;
+    
+    // 底面: 1~8 (内), 11~18 (外)
+    Point(i) = {CX + L_b*Cos(a), CY + L_b*Sin(a), CZ};
+    Point(i+10) = {CX + R_base*Cos(a), CY + R_base*Sin(a), CZ};
+    
+    // 顶面: 101~108 (内), 111~118 (外)
+    Point(i+100) = {CX + L_t*Cos(a), CY + L_t*Sin(a), CZ + H};
+    Point(i+110) = {CX + R_top*Cos(a), CY + R_top*Sin(a), CZ + H};
+EndFor
 
-// --- 3. 线段定义 ---
-Line(1)={1,2}; Line(2)={2,3}; Line(3)={3,4}; Line(4)={4,1}; // 底核心
-Line(5)={5,6}; Line(6)={6,7}; Line(7)={7,8}; Line(8)={8,5}; // 顶核心
-Line(9)={1,5}; Line(10)={2,6}; Line(11)={3,7}; Line(12)={4,8}; // 垂直核心
+// ==========================================
+// 3. 阵列化线框生成
+// ==========================================
+// 核心十字线 & 中心垂柱
+Line(50) = {0, 1000};
+Line(31) = {0, 1}; Line(33) = {0, 3}; Line(35) = {0, 5}; Line(37) = {0, 7};
+Line(131)= {1000, 101}; Line(133)= {1000, 103}; Line(135)= {1000, 105}; Line(137)= {1000, 107};
 
-Circle(21)={11,100,12}; Circle(22)={12,100,13}; Circle(23)={13,100,14}; Circle(24)={14,100,11}; 
-Circle(25)={15,101,16}; Circle(26)={16,101,17}; Circle(27)={17,101,18}; Circle(28)={18,101,15}; 
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    
+    // 底面线: 1~8(内), 11~18(外弧), 21~28(径向)
+    Line(i) = {i, ni};
+    Circle(i+10) = {i+10, 0, ni+10};
+    Line(i+20) = {i, i+10};
+    
+    // 顶面线: 101~108(内), 111~118(外弧), 121~128(径向)
+    Line(i+100) = {i+100, ni+100};
+    Circle(i+110) = {i+110, 1000, ni+110};
+    Line(i+120) = {i+100, i+110};
+    
+    // 垂向线: 201~208(内), 211~218(外)
+    Line(i+200) = {i, i+100};
+    Line(i+210) = {i+10, i+110};
+EndFor
 
-Line(41)={1,11}; Line(42)={2,12}; Line(43)={3,13}; Line(44)={4,14}; // 底放射
-Line(45)={5,15}; Line(46)={6,16}; Line(47)={7,17}; Line(48)={8,18}; // 顶放射
-Line(51)={11,15}; Line(52)={12,16}; Line(53)={13,17}; Line(54)={14,18}; // 侧缘线
+// ==========================================
+// 4. 封闭面生成
+// ==========================================
+// --- 核心十字立面 (501,503,505,507) ---
+Curve Loop(501) = {31, 201, -131, -50}; Plane Surface(501) = {501};
+Curve Loop(503) = {33, 203, -133, -50}; Plane Surface(503) = {503};
+Curve Loop(505) = {35, 205, -135, -50}; Plane Surface(505) = {505};
+Curve Loop(507) = {37, 207, -137, -50}; Plane Surface(507) = {507};
 
-// --- 4. 表面定义 (Loop ID -> Surface ID) ---
-Curve Loop(1)={1,2,3,4};     Plane Surface(101)={1};
-Curve Loop(2)={5,6,7,8};     Plane Surface(102)={2};
-Curve Loop(3)={1,10,-5,-9};  Plane Surface(103)={3};
-Curve Loop(4)={2,11,-6,-10}; Plane Surface(104)={4};
-Curve Loop(5)={3,12,-7,-11}; Plane Surface(105)={5};
-Curve Loop(6)={4,9,-8,-12};  Plane Surface(106)={6};
+// --- 核心底/顶扇形面 ---
+Curve Loop(301) = {31, 1, 2, -33}; Plane Surface(301) = {301};
+Curve Loop(302) = {33, 3, 4, -35}; Plane Surface(302) = {302};
+Curve Loop(303) = {35, 5, 6, -37}; Plane Surface(303) = {303};
+Curve Loop(304) = {37, 7, 8, -31}; Plane Surface(304) = {304};
 
-Curve Loop(7)={41,21,-42,-1};  Plane Surface(107)={7};
-Curve Loop(8)={42,22,-43,-2};  Plane Surface(108)={8};
-Curve Loop(9)={43,23,-44,-3};  Plane Surface(109)={9};
-Curve Loop(10)={44,24,-41,-4}; Plane Surface(110)={10};
+Curve Loop(401) = {131, 101, 102, -133}; Plane Surface(401) = {401};
+Curve Loop(402) = {133, 103, 104, -135}; Plane Surface(402) = {402};
+Curve Loop(403) = {135, 105, 106, -137}; Plane Surface(403) = {403};
+Curve Loop(404) = {137, 107, 108, -131}; Plane Surface(404) = {404};
 
-Curve Loop(11)={45,25,-46,-5};  Plane Surface(111)={11};
-Curve Loop(12)={46,26,-47,-6};  Plane Surface(112)={12};
-Curve Loop(13)={47,27,-48,-7};  Plane Surface(113)={13};
-Curve Loop(14)={48,28,-45,-8};  Plane Surface(114)={14};
+// --- 外围扇面及隔板循环生成 ---
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    // 底/顶过渡面
+    Curve Loop(600+i) = {i+20, i+10, -(ni+20), -i};          Plane Surface(600+i) = {600+i};
+    Curve Loop(700+i) = {i+120, i+110, -(ni+120), -(i+100)}; Plane Surface(700+i) = {700+i};
+    // 内/外/径向立面
+    Curve Loop(800+i) = {i, 200+ni, -(i+100), -(200+i)};     Surface(800+i) = {800+i};
+    Curve Loop(900+i) = {i+10, 210+ni, -(i+110), -(210+i)};  Surface(900+i) = {900+i};
+    Curve Loop(1000+i)= {i+20, 210+i, -(i+120), -(200+i)};   Surface(1000+i) = {1000+i};
+EndFor
 
-Curve Loop(15)={9,45,-51,-41};  Surface(115)={15};
-Curve Loop(16)={10,46,-52,-42}; Surface(116)={16};
-Curve Loop(17)={11,47,-53,-43}; Surface(117)={17};
-Curve Loop(18)={12,48,-54,-44}; Surface(118)={18};
+// ==========================================
+// 5. 完美组装 12 个体积
+// ==========================================
+// 中心 4 块
+Surface Loop(2001) = {301, 401, 501, 503, 801, 802}; Volume(2001) = {2001};
+Surface Loop(2002) = {302, 402, 503, 505, 803, 804}; Volume(2002) = {2002};
+Surface Loop(2003) = {303, 403, 505, 507, 805, 806}; Volume(2003) = {2003};
+Surface Loop(2004) = {304, 404, 507, 501, 807, 808}; Volume(2004) = {2004};
 
-Curve Loop(19)={21,52,-25,-51}; Surface(119)={19};
-Curve Loop(20)={22,53,-26,-52}; Surface(120)={20};
-Curve Loop(21)={23,54,-27,-53}; Surface(121)={21};
-Curve Loop(22)={24,51,-28,-54}; Surface(122)={22};
+// 外围 8 块
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    Surface Loop(2100+i) = {600+i, 700+i, 1000+i, 1000+ni, 800+i, 900+i};
+    Volume(2100+i) = {2100+i};
+EndFor
 
-// --- 5. 体积定义 ---
-Surface Loop(1) = {101:106}; Volume(1) = {1};
-Surface Loop(2) = {103, 107, 111, 115, 116, 119}; Volume(2) = {2}; 
-Surface Loop(3) = {104, 108, 112, 116, 117, 120}; Volume(3) = {3};
-Surface Loop(4) = {105, 109, 113, 117, 118, 121}; Volume(4) = {4};
-Surface Loop(5) = {106, 110, 114, 118, 115, 122}; Volume(5) = {5};
+// ==========================================
+// 6. 结构化网格点阵映射 (直接使用公式规避变量域丢失)
+// ==========================================
+// 环向切分
+Transfinite Curve {1:8, 11:18, 101:108, 111:118} = (nC + 1);
+Transfinite Curve {31, 33, 35, 37, 131, 133, 135, 137} = (nC + 1);
 
-// --- 6. 物理组与导出 ---
-Physical Volume("Frustum_Hex") = {1:5};
+// 径向切分
+Transfinite Curve {21:28, 121:128} = (nR + 1);
 
-Transfinite Curve {1:12, 21:28, 41:48, 51:54} = nC;
-Transfinite Surface "*"; Transfinite Volume "*";
+// 垂向切分 (支持几何渐变)
+Transfinite Curve {50, 201:208, 211:218} = (nH + 1) Using Progression r_height;
+
+// ==========================================
+// 7. 纯粹 Type 5 导出机制
+// ==========================================
+// 将所有几何实体打上映射约束标签
+Transfinite Surface "*"; Recombine Surface "*";
+Transfinite Volume "*";  Recombine Volume "*";
+
+// 【仅保存定义的物理体】这 12 个六面体，抛弃其他多余面和线
+Physical Volume("Solid_Hex") = {2001:2004, 2101:2108};
+
 Mesh.RecombineAll = 1;
-Mesh.SaveAll = 0;
+Mesh.SaveAll = 0;   
+Mesh.ElementOrder = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh 3;
     )")

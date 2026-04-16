@@ -297,13 +297,13 @@ void MainWindow::createDockWidgets() {
 
     // 将三个分类作为不同的 Tab 添加进去
     setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
-        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism", "Fragment Simulating Projectile"}, m_fragmentUI);
+        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism","Frustum", "Fragment Simulating Projectile"}, m_fragmentUI);
 
     setupGeneratorTab(tabWidget, tr("壳体 (Shell)"),
-        { "CylindricalShell", "OpenCylindricalShell", "Frustum", "HalfCylindricalShell" }, m_shellUI);
+        { "CylindricalShell", "OpenCylindricalShell", "HalfCylindricalShell","FrustumShell"}, m_shellUI);
 
     setupGeneratorTab(tabWidget, tr("装药 (Charge)"),
-        { "Cylinder", "HalfCylinder", "Cube", "Sphere" }, m_chargeUI);
+        { "Cylinder", "HalfCylinder", "Cube", "Sphere", "Frustum"}, m_chargeUI);
 
     // 将 TabWidget 设置为 Dock 的主体，并添加到右侧
     generatorDock->setWidget(tabWidget);
@@ -1239,13 +1239,13 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Center Z:", "cz", 4.0, " cm");
     }
     else if (text == "Frustum") {
-        addNumParamToUI(ui, "Base R:", "rb", 6.0, " cm");
+        addNumParamToUI(ui, "Base R:", "rb", 4.0, " cm");
         addNumParamToUI(ui, "Top R:", "rt", 3.0, " cm");
-        addNumParamToUI(ui, "Height:", "h", 10.0, " cm");
-        addNumParamToUI(ui, "Mesh Size:", "ms", 1.0, " cm");
-        addNumParamToUI(ui, "Center X:", "cx", 0.6, " cm");
+        addNumParamToUI(ui, "Height:", "h", 8.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.08, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
-        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.6, " cm");
     }
     else if (text == "HalfCylinder") {
         addNumParamToUI(ui, "Radius:", "r", 5.0, " cm");
@@ -1281,6 +1281,17 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "头部高度 (Hn):", "hn", 4.0, " cm");
         addNumParamToUI(ui, "头部顶端半径 (Rt):", "rt", 2.0, " cm");
         addNumParamToUI(ui, "Mesh Size:", "ms", 0.6, " cm");
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+    }
+    else if (text == "FrustumShell") {
+        addNumParamToUI(ui, "Base Inner R:", "rb", 4.0, " cm");
+        addNumParamToUI(ui, "Top Inner R:", "rt", 2.0, " cm");
+        addNumParamToUI(ui, "Wall Thick:", "wall", 0.6, " cm");
+        addNumParamToUI(ui, "Cap Thick:", "hcap", 0.6, " cm");
+        addNumParamToUI(ui, "Void Height:", "hvoid", 8.0, " cm");
+        addNumParamToUI(ui, "Mesh Size:", "ms", 0.08, " cm");
         addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
@@ -1383,6 +1394,15 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     else if (type == "Fragment Simulating Projectile") {
         FSPGenerator gen;
         gen.setParameters(val("r"), val("hb"), val("hn"), val("rt"), val("ms"), val("cx"), val("cy"), val("cz"));
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "FrustumShell") {
+        FrustumShellGenerator gen;
+        gen.setParameters(
+            val("rb"), val("rt"), val("wall"), val("hcap"), val("hvoid"),
+            val("ms"),
+            val("cx"), val("cy"), val("cz")
+        );
         m_meshManager->buildAndLoad(gen, name);
     }
 

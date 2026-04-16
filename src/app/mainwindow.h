@@ -21,6 +21,7 @@
 #include "src/core/generation/PentagonalPrismGenerator.h"
 #include "src/core/generation/TriangularPrismGenerator.h"
 #include "src/core/generation/FSPGenerator.h"
+#include "src/core/generation/FrustumShellGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 

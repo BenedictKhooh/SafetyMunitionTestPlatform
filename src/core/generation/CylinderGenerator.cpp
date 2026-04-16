@@ -1,103 +1,113 @@
 #include "CylinderGenerator.h"
 
 QString CylinderGenerator::buildGeoScript(double radius, double meshSize, double height, double cx, double cy, double cz) const {
+    return QString(R"(
+// 强制使用内置几何引擎，彻底杜绝 ID 分配错乱
+SetFactory("Built-in");
 
-	int nC = 2 * round((radius / (2 * 1.414)) / meshSize);
-	int nH = round(height / meshSize);
-	return QString(R"(
-////////////////////////////////////////////////////
-// Cylindrical O-grid mesh (parameterized)
-////////////////////////////////////////////////////
+// ============================================================================
+// 1. 基础参数定义 (C++ 自动注入)
+// ============================================================================
+R  = %1;
+H  = %2;
+ms = %3;
+CX = %4; 
+CY = %5; 
+CZ = %6;
 
-// 1. 参数定义
-R = %1;
-H = %2;
+// O-Grid 八边形核心比例
+ratio = 0.707; 
+L_in = R * ratio;
 
-nC = %3;
-nH = %4;
+// ============================================================================
+// 2. 自动网格分度算法 (保持长宽比 Aspect Ratio ~ 1:1:1)
+// ============================================================================
+// 环向分度：圆周被切割为8份(八边形)，单段弧长应为 2*Pi*R / 8 = Pi*R / 4
+arc_len = Pi * R / 4.0;
+nC = Max(1, Round(arc_len / ms));
+actual_ms = arc_len / nC; // 真实弧长，作为后续网格的基准
 
-CX = %5;
-CY = %6;
-CZ = %7;
+// 径向与垂向分度 (以 actual_ms 为基准)
+nR = Max(1, Round((R - L_in) / actual_ms));
+nH = Max(1, Round(H / actual_ms));
 
-L = R /(2 * 1.414);
-Rproj = R / 1.414;
-nR = nC / 1.414;
+// 转换为底层需要的节点数
+nC_nodes = nC + 1;
+nR_nodes = nR + 1;
+nH_layers = nH; // Extrude 接收的是层数
 
-Printf("L = %g, R = %g, H = %g", L, R, H);
+// 计算八边形坐标偏移系数
+A = L_in * Cos(Pi/8); B = L_in * Sin(Pi/8);
+AR = R * Cos(Pi/8); BR = R * Sin(Pi/8);
 
-// 2. 点定义
-Point(1)  = {0, 0, 0};
+// ============================================================================
+// 3. 阵列化顶点生成
+// ============================================================================
+Point(0) = {CX, CY, CZ}; // 底面几何中心
 
-Point(2)  = { L,  L, 0};
-Point(3)  = {-L,  L, 0};
-Point(4)  = {-L, -L, 0};
-Point(5)  = { L, -L, 0};
+// 内八边形顶点
+Point(1) = {CX + A,  CY + B,  CZ}; Point(2) = {CX + B,  CY + A,  CZ}; 
+Point(3) = {CX - B,  CY + A,  CZ}; Point(4) = {CX - A,  CY + B,  CZ};
+Point(5) = {CX - A,  CY - B,  CZ}; Point(6) = {CX - B,  CY - A,  CZ}; 
+Point(7) = {CX + B,  CY - A,  CZ}; Point(8) = {CX + A,  CY - B,  CZ};
 
-Point(6)  = { Rproj,  Rproj, 0};
-Point(7)  = {-Rproj,  Rproj, 0};
-Point(8)  = {-Rproj, -Rproj, 0};
-Point(9)  = { Rproj, -Rproj, 0};
+// 外圆周顶点
+Point(11)= {CX + AR, CY + BR, CZ}; Point(12)= {CX + BR, CY + AR, CZ}; 
+Point(13)= {CX - BR, CY + AR, CZ}; Point(14)= {CX - AR, CY + BR, CZ};
+Point(15)= {CX - AR, CY - BR, CZ}; Point(16)= {CX - BR, CY - AR, CZ};
+Point(17)= {CX + BR, CY - AR, CZ}; Point(18)= {CX + AR, CY - BR, CZ};
 
-Point(10) = { 2*L, 0, 0};
-Point(11) = { 0, 2*L, 0};
-Point(12) = {-2*L, 0, 0};
-Point(13) = { 0,-2*L, 0};
+// ============================================================================
+// 4. 线框与面域拓扑生成
+// ============================================================================
+Line(101) = {0, 1}; Line(103) = {0, 3}; Line(105) = {0, 5}; Line(107) = {0, 7};
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    Line(i) = {i, ni};
+    Line(20+i) = {i, 10+i};
+    Circle(30+i) = {10+i, 0, 10+ni};
+EndFor
 
-// 3. 线定义
-Circle(1) = {2, 13, 3};
-Circle(2) = {3, 10, 4};
-Circle(3) = {4, 11, 5};
-Circle(4) = {5, 12, 2};
+// 中心 4 块平面
+Curve Loop(1) = {101, 1, 2, -103}; Plane Surface(1) = {1}; 
+Curve Loop(2) = {103, 3, 4, -105}; Plane Surface(2) = {2}; 
+Curve Loop(3) = {105, 5, 6, -107}; Plane Surface(3) = {3}; 
+Curve Loop(4) = {107, 7, 8, -101}; Plane Surface(4) = {4}; 
 
-Circle(5) = {6, 1, 7};
-Circle(6) = {7, 1, 8};
-Circle(7) = {8, 1, 9};
-Circle(8) = {9, 1, 6};
+// 外围辐射 8 块平面
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    Curve Loop(10+i) = {20+i, 30+i, -(20+ni), -i}; Plane Surface(10+i) = {10+i}; 
+EndFor
 
-Line(9)  = {2, 6};
-Line(10) = {3, 7};
-Line(11) = {4, 8};
-Line(12) = {5, 9};
+// 施加二维点阵约束
+Transfinite Curve {101, 103, 105, 107} = nC_nodes;
+Transfinite Curve {1:8, 31:38} = nC_nodes;
+Transfinite Curve {21:28} = nR_nodes;
 
-// 4. 面定义
-Curve Loop(1) = {1, 2, 3, 4};
-Plane Surface(1) = {1};
-
-Curve Loop(2) = {9, 5, -10, -1};
-Plane Surface(2) = {2};
-
-Curve Loop(3) = {10, 6, -11, -2};
-Plane Surface(3) = {3};
-
-Curve Loop(4) = {11, 7, -12, -3};
-Plane Surface(4) = {4};
-
-Curve Loop(5) = {12, 8, -9, -4};
-Plane Surface(5) = {5};
-
-// 5. 结构化约束
-Transfinite Curve {1,2,3,4,5,6,7,8} = nC;
-Transfinite Curve {9,10,11,12} = nR;
-
-Transfinite Surface {1,2,3,4,5};
-Recombine Surface {1,2,3,4,5};
-
-Translate {CX, CY, CZ} { Surface{1,2,3,4,5}; }
-
-// 6. 扫掠 3D
+// ============================================================================
+// 5. 一键 3D 拉伸与全量组装
+// ============================================================================
+// 将 12 个截面面一次性向上拉伸，生成 12 个实体体积
 Extrude {0, 0, H} {
-  Surface{1,2,3,4,5};
-  Layers{nH};
-  Recombine;
+    Surface{1, 2, 3, 4, 11, 12, 13, 14, 15, 16, 17, 18};
+    Layers{nH_layers};
+    Recombine;
 }
 
-Mesh 3;
+// 强制施加全局结构化约束
+Transfinite Surface "*"; Recombine Surface "*";
+Transfinite Volume "*";  Recombine Volume "*";
+
+// 暴力抓取当前空间所有生成的体积 (避免 ID 错乱导致的空底面 Bug)
+Physical Volume("Solid_Hex") = Volume "*";
+
+Mesh.RecombineAll = 1;
+Mesh.SaveAll = 0; 
+Mesh.ElementOrder = 1;
 Mesh.MshFileVersion = 2.2;
-)")
-.arg(radius)
-.arg(height)
-.arg(nC)
-.arg(nH)
-.arg(cx).arg(cy).arg(cz);
+Mesh 3;
+    )")
+        .arg(radius).arg(height).arg(meshSize)
+        .arg(cx).arg(cy).arg(cz);
 }

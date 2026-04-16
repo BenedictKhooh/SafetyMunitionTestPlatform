@@ -231,10 +231,10 @@
     <QtMoc Include="src\core\common\MeshManager.h">
       <Filter>Generated Files</Filter>
     </QtMoc>
-    <QtMoc Include="src\app\PostProcessing\PostProcessWidget.h">
+    <QtMoc Include="src\app\PostProcessing\qcustomplot.h">
       <Filter>Generated Files</Filter>
     </QtMoc>
-    <QtMoc Include="src\app\PostProcessing\qcustomplot.h">
+    <QtMoc Include="src\app\PostProcessing\PostProcessWidget.h">
       <Filter>Generated Files</Filter>
     </QtMoc>
   </ItemGroup>

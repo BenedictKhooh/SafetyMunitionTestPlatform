@@ -86,11 +86,6 @@ private slots:
     void readSolverOutput(); // 实时读取求解器日志
     void handleSolverFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
-    // --- 后处理 d3plot 接口槽函数 ---
-    void openResultFolder();
-    void launchPostProcessor();
-    //
-
     void showSummaryContextMenu(const QPoint& pos);
 
 
@@ -122,10 +117,6 @@ private:
     QPushButton* btnRunSolver;
     QPushButton* btnStopSolver;
     QTextEdit* solverConsole;   // 实时日志输出窗口
-
-    // --- 后处理接口控件 ---
-    QPushButton* btnOpenFolder;
-    QPushButton* btnLaunchD3plot;
 
     // --- 异步进程对象 ---
     QProcess* m_solverProcess;

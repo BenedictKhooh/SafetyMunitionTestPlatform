@@ -2677,21 +2677,6 @@ void MainWindow::setupPostProcessUI() {
     solveTaskTabs->addTab(scrollArea, "自动化批处理与分析");
 
     // =========================================================
-    // 全局通用模块: 结果目录与后处理入口
-    // =========================================================
-    QGroupBox* postGroup = new QGroupBox("结果目录与后处理入口");
-    QHBoxLayout* postLayout = new QHBoxLayout(postGroup);
-
-    btnOpenFolder = new QPushButton("打开当前结果目录");
-    btnOpenFolder->setStyleSheet("min-height: 35px;");
-    btnLaunchD3plot = new QPushButton("切换至三维曲线分析工作区");
-    btnLaunchD3plot->setStyleSheet("min-height: 35px;");
-    postLayout->addWidget(btnOpenFolder);
-    postLayout->addWidget(btnLaunchD3plot);
-
-    mainLayout->addWidget(postGroup);
-
-    // =========================================================
     // 统一信号与槽绑定
     // =========================================================
 
@@ -2700,8 +2685,6 @@ void MainWindow::setupPostProcessUI() {
     connect(btnBrowseSolver, &QPushButton::clicked, this, &MainWindow::browseSolver);
     connect(btnRunSolver, &QPushButton::clicked, this, &MainWindow::startCalculation);
     connect(btnStopSolver, &QPushButton::clicked, this, &MainWindow::stopCalculation);
-    connect(btnOpenFolder, &QPushButton::clicked, this, &MainWindow::openResultFolder);
-    connect(btnLaunchD3plot, &QPushButton::clicked, this, &MainWindow::launchPostProcessor);
 
     // 自动化批处理专属信号
     connect(btnRefreshTable, &QPushButton::clicked, this, &MainWindow::handleRefreshEntityTable);
@@ -2829,35 +2812,8 @@ void MainWindow::browseSolver() {
     }
 }
 
-// 3. 一键打开结果文件夹
-void MainWindow::openResultFolder() {
-    QString kFile = kFilePathEdit->text();
-    if (kFile.isEmpty()) {
-        // 如果用户还没选择文件，弹出警告并记录日志
-        logCommand("Warning", "请先选择一个 .k 文件！");
-        return;
-    }
-
-    // 提取 .k 文件所在的纯目录路径
-    QString dirPath = QFileInfo(kFile).absolutePath();
-
-    // 调用操作系统的资源管理器打开这个路径
-    QDesktopServices::openUrl(QUrl::fromLocalFile(dirPath));
-    logCommand("System", "已打开结果所在目录: " + dirPath);
-}
-
-// 4. 加载 d3plot 后处理程序 (占位接口)
-void MainWindow::launchPostProcessor() {
-    // 目前处于开发阶段，使用信息弹窗占位
-    QMessageBox::information(
-        this,
-        "后处理接口",
-        "d3plot 可视化接口模块正在开发中...\n\n后续可以在这里唤起官方的 LS-PrePost 软件，或者集成我们自己的 OpenGL 后处理渲染器！"
-    );
-}
-
 // ==========================================
-// 右键菜单与预览功能 (全新增)
+// 右键菜单与预览功能  
 // ==========================================
 void MainWindow::showSummaryContextMenu(const QPoint& pos) {
     QListWidgetItem* item = m_simSetupUI.setupSummaryList->itemAt(pos);

@@ -370,3 +370,5 @@ FodyWeavers.xsd
 *.cfile
 *.msg
 *.db
+/lspost.msg
+/lspost.cfile

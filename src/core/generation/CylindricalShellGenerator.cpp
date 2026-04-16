@@ -1,108 +1,181 @@
 ﻿#include "CylindricalShellGenerator.h"
 
-// 👇 仅仅在这里补上了 cx, cy, cz
 QString CylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize, double cx, double cy, double cz) const {
-    // --- 在 C++ 中预计算 Gmsh 脚本所需的离散分段数 ---
-    // nC: 周向分段, nH_cap: 端盖高度分段, nR_wall: 壁厚分段
-    int nC = 2 * std::round((radius / (2.0 * 1.414)) / meshSize);
-    if (nC < 2) nC = 2;
-
-    int nH_cap = std::round(lid / meshSize);
-    if (nH_cap < 1) nH_cap = 1;
-
-    int nR_wall = std::round(wall / meshSize);
-    if (nR_wall < 1) nR_wall = 1;
-
-    // 中间空腔部分的高度分段数
-    double voidHeight = height - 2.0 * lid;
-    int nH_void = std::round(voidHeight / meshSize);
-    if (nH_void < 1) nH_void = 1;
-
     return QString(R"(
-// --- 1. 参数定义 ---
-R_in = %1; 
-L_val = R_in / (2 * 1.414); 
-Wall = %2;
-R_out = R_in + Wall;
-H_height = %3;
-H_cap = %4; 
-H_void = H_height - 2 * H_cap;
+// 开启 OpenCASCADE 引擎，完美支持 3D 逻辑切割与阵列
+SetFactory("OpenCASCADE");
 
-nC = %5; 
-nR_in = Round(nC / 1.414); 
-nR_wall = %6; 
-nH_cap = %7; 
-nH_void = %8;
+// ============================================================================
+// 1. 基础参数定义 (C++ 自动注入)
+// ============================================================================
+R_in   = %1;
+H_total= %2;
+H_cap  = %3;
+Wall   = %4;
+ms     = %5;
+CX     = %6; 
+CY     = %7; 
+CZ     = %8;
 
-// --- 2. 基础面定义 (Z=0) ---
-Point(1) = {0, 0, 0}; 
-Point(2) = {L_val, L_val, 0};    Point(3) = {-L_val, L_val, 0};
-Point(4) = {-L_val, -L_val, 0};  Point(5) = {L_val, -L_val, 0};
-p = R_in / 1.414;
-Point(6) = {p, p, 0};    Point(7) = {-p, p, 0};
-Point(8) = {-p, -p, 0};  Point(9) = {p, -p, 0};
-p2 = R_out / 1.414;
-Point(10) = {p2, p2, 0}; Point(11) = {-p2, p2, 0};
-Point(12) = {-p2, -p2, 0}; Point(13) = {p2, -p2, 0};
+R_out  = R_in + Wall;
+H_void = H_total - 2 * H_cap;
 
-Line(1)={2,3}; Line(2)={3,4}; Line(3)={4,5}; Line(4)={5,2};
-Line(5)={2,6}; Line(6)={3,7}; Line(7)={4,8}; Line(8)={5,9};
-Circle(9)={6,1,7}; Circle(10)={7,1,8}; Circle(11)={8,1,9}; Circle(12)={9,1,6};
-Line(13)={6,10}; Line(14)={7,11}; Line(15)={8,12}; Line(16)={9,13};
-Circle(17)={10,1,11}; Circle(18)={11,1,12}; Circle(19)={12,1,13}; Circle(20)={13,1,10};
+// O-Grid 核心比例
+ratio = 0.707; 
+L_in = R_in * ratio;
 
-Curve Loop(101) = {1, 2, 3, 4};            Plane Surface(1) = {101}; 
-Curve Loop(102) = {5, 9, -6, -1};          Plane Surface(2) = {102}; 
-Curve Loop(103) = {6, 10, -7, -2};         Plane Surface(3) = {103};
-Curve Loop(104) = {7, 11, -8, -3};         Plane Surface(4) = {104};
-Curve Loop(105) = {8, 12, -5, -4};         Plane Surface(5) = {105};
-Curve Loop(106) = {13, 17, -14, -9};       Plane Surface(6) = {106}; 
-Curve Loop(107) = {14, 18, -15, -10};      Plane Surface(7) = {107};
-Curve Loop(108) = {15, 19, -16, -11};      Plane Surface(8) = {108};
-Curve Loop(109) = {16, 20, -13, -12};      Plane Surface(9) = {109};
+// ============================================================================
+// 2. 自动网格分度算法 (保障 Aspect Ratio ~ 1)
+// ============================================================================
+// 2.1 环向分度 (以外圈周长为主，确保最外侧网格不至于太大)
+// 圆周被切割为8份(八边形)，单段弧长应为 2*Pi*R / 8 = Pi*R / 4.0
+arc_len = Pi * R_out / 4.0;
+nC = Max(1, Round(arc_len / ms));
+actual_ms = arc_len / nC; // 反推实际的环向弧长，作为后续网格的绝对基准尺寸
 
-Transfinite Surface {1:9}; Recombine Surface {1:9};
-Transfinite Curve {1:4, 9:12, 17:20} = nC;
-Transfinite Curve {5:8} = nR_in; Transfinite Curve {13:16} = nR_wall;
+// 2.2 径向分度 (以实际弧长 actual_ms 为基准)
+nR_in   = Max(1, Round((R_in - L_in) / actual_ms));
+nR_wall = Max(1, Round(Wall / actual_ms));
 
-Translate {%9, %10, %11} { Surface{1:9}; }
+// 2.3 垂向分度 (由于无锥度斜边=直边)
+nH_cap  = Max(1, Round(H_cap / actual_ms));
+nH_void = Max(1, Round(H_void / actual_ms));
 
-// --- 3. 顺序拉伸 ---
+// 转换为底层需要的节点数 (单元数 + 1)
+nC_nodes      = nC + 1;
+nR_in_nodes   = nR_in + 1;
+nR_wall_nodes = nR_wall + 1;
+
+// ============================================================================
+// 3. 阵列化基础二维平面生成 (Z = CZ)
+// ============================================================================
+// 计算坐标偏置
+A_in = L_in * Cos(Pi/8);   B_in = L_in * Sin(Pi/8);
+AR_in = R_in * Cos(Pi/8);  BR_in = R_in * Sin(Pi/8);
+AR_out= R_out * Cos(Pi/8); BR_out= R_out * Sin(Pi/8);
+
+Point(0) = {CX, CY, CZ};
+
+// 内八边形顶点 (1-8)
+Point(1) = {CX + A_in,  CY + B_in, CZ}; Point(2) = {CX + B_in,  CY + A_in, CZ};
+Point(3) = {CX - B_in,  CY + A_in, CZ}; Point(4) = {CX - A_in,  CY + B_in, CZ};
+Point(5) = {CX - A_in, CY - B_in, CZ}; Point(6) = {CX - B_in, CY - A_in, CZ};
+Point(7) = {CX + B_in, CY - A_in, CZ}; Point(8) = {CX + A_in, CY - B_in, CZ};
+
+// 内腔圆周顶点 (11-18)
+Point(11)= {CX + AR_in, CY + BR_in, CZ}; Point(12)= {CX + BR_in, CY + AR_in, CZ};
+Point(13)= {CX - BR_in, CY + AR_in, CZ}; Point(14)= {CX - AR_in, CY + BR_in, CZ};
+Point(15)= {CX - AR_in, CY - BR_in, CZ}; Point(16)= {CX - BR_in, CY - AR_in, CZ};
+Point(17)= {CX + BR_in, CY - AR_in, CZ}; Point(18)= {CX + AR_in, CY - BR_in, CZ};
+
+// 外壳圆周顶点 (21-28)
+Point(21)= {CX + AR_out, CY + BR_out, CZ}; Point(22)= {CX + BR_out, CY + AR_out, CZ};
+Point(23)= {CX - BR_out, CY + AR_out, CZ}; Point(24)= {CX - AR_out, CY + BR_out, CZ};
+Point(25)= {CX - AR_out, CY - BR_out, CZ}; Point(26)= {CX - BR_out, CY - AR_out, CZ};
+Point(27)= {CX + BR_out, CY - AR_out, CZ}; Point(28)= {CX + AR_out, CY - BR_out, CZ};
+
+// --- 线段 ---
+Line(101)={0,1}; Line(103)={0,3}; Line(105)={0,5}; Line(107)={0,7};
+
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    // 内八边形边界
+    Line(i) = {i, ni};
+    // 核心辐射线
+    Line(110+i) = {i, 10+i};
+    // 内腔边界弧
+    Circle(120+i) = {10+i, 0, 10+ni};
+    // 壳体辐射线
+    Line(130+i) = {10+i, 20+i};
+    // 外壳边界弧
+    Circle(140+i) = {20+i, 0, 20+ni};
+EndFor
+
+// --- 平面生成 ---
+Curve Loop(1) = {101, 1, 2, -103}; Plane Surface(1) = {1}; Transfinite Surface {1} = {0, 1, 2, 3};
+Curve Loop(2) = {103, 3, 4, -105}; Plane Surface(2) = {2}; Transfinite Surface {2} = {0, 3, 4, 5};
+Curve Loop(3) = {105, 5, 6, -107}; Plane Surface(3) = {3}; Transfinite Surface {3} = {0, 5, 6, 7};
+Curve Loop(4) = {107, 7, 8, -101}; Plane Surface(4) = {4}; Transfinite Surface {4} = {0, 7, 8, 1};
+
+For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    // 核心到内腔过渡块
+    Curve Loop(10+i) = {110+i, 120+i, -(110+ni), -i}; 
+    Plane Surface(10+i) = {10+i};
+    Transfinite Surface {10+i} = {i, 10+i, 10+ni, ni};
+    
+    // 壳体壁厚实体块
+    Curve Loop(20+i) = {130+i, 140+i, -(130+ni), -(120+i)}; 
+    Plane Surface(20+i) = {20+i};
+    Transfinite Surface {20+i} = {10+i, 20+i, 20+ni, 10+ni};
+EndFor
+
+// 施加点阵约束
+Transfinite Curve {101, 103, 105, 107} = nC_nodes;
+Transfinite Curve {1:8, 121:128, 141:148} = nC_nodes;
+Transfinite Curve {111:118} = nR_in_nodes;
+Transfinite Curve {131:138} = nR_wall_nodes;
+
+// 共 20 块表面合并
+S_all[] = {1,2,3,4, 11,12,13,14,15,16,17,18, 21,22,23,24,25,26,27,28};
+Recombine Surface {S_all[]};
+
+// ============================================================================
+// 4. 三层动态拉伸与剔除空腔
+// ============================================================================
 // 第一层：底部端盖
-out1[] = Extrude {0, 0, H_cap} { Surface{1:9}; Layers{nH_cap}; Recombine; };
+out1[] = Extrude {0, 0, H_cap} { Surface{S_all[]}; Layers{nH_cap}; Recombine; };
 
-// 第二层：中间层
-out2[] = Extrude {0, 0, H_void} { 
-  Surface{out1[0], out1[6], out1[12], out1[18], out1[24], out1[30], out1[36], out1[42], out1[48]}; 
-  Layers{nH_void}; Recombine; 
-};
+// 提取底端盖的顶面供第二层拉伸
+S_top1[] = {};
+For i In {0:19}
+  S_top1[i] = out1[i*6]; 
+EndFor
+
+// 第二层：中间壁厚与空腔段
+out2[] = Extrude {0, 0, H_void} { Surface{S_top1[]}; Layers{nH_void}; Recombine; };
+
+// 提取中间层的顶面供第三层拉伸
+S_top2[] = {};
+For i In {0:19}
+  S_top2[i] = out2[i*6];
+EndFor
 
 // 第三层：顶部端盖
-out3[] = Extrude {0, 0, H_cap} { 
-  Surface{out2[0], out2[6], out2[12], out2[18], out2[24], out2[30], out2[36], out2[42], out2[48]}; 
-  Layers{nH_cap}; Recombine; 
-};
+out3[] = Extrude {0, 0, H_cap} { Surface{S_top2[]}; Layers{nH_cap}; Recombine; };
 
-// --- 4. 递归删除中间空腔部分的体积 ---
-Recursive Delete {
-  Volume{out2[1], out2[7], out2[13], out2[19], out2[25]};
-}
+// ============================================================================
+// 5. 递归删除中间层空腔与实体组装
+// ============================================================================
+// 删除第二层的前 12 个体积 (4个核心 + 8个过渡 = 中间空腔)
+vols_to_delete[] = {};
+For i In {0:11}
+  vols_to_delete[i] = out2[i*6 + 1];
+EndFor
+Recursive Delete { Volume{vols_to_delete[]}; }
 
-// --- 5. 重新约束顶部体积 ---
-Transfinite Volume {out3[1], out3[7], out3[13], out3[19], out3[25], out3[31], out3[37], out3[43], out3[49]};
+vols_solid[] = {};
+// 追加底端盖实体 (20块)
+For i In {0:19}
+  vols_solid[#vols_solid[]] = out1[i*6 + 1];
+EndFor
+// 追加中间层外壁实体 (8块，索引 12~19)
+For i In {12:19}
+  vols_solid[#vols_solid[]] = out2[i*6 + 1];
+EndFor
+// 追加顶端盖实体 (20块)
+For i In {0:19}
+  vols_solid[#vols_solid[]] = out3[i*6 + 1];
+EndFor
 
-// --- 6. 物理组定义 ---
-Physical Volume("Shell_Solid") = {
-  out1[1], out1[7], out1[13], out1[19], out1[25], out1[31], out1[37], out1[43], out1[49],
-  out2[31], out2[37], out2[43], out2[49],
-  out3[1], out3[7], out3[13], out3[19], out3[25], out3[31], out3[37], out3[43], out3[49]
-};
+Physical Volume("Cylindrical_Shell_With_Caps") = {vols_solid[]};
 
+Mesh.RecombineAll = 1;
+Mesh.SaveAll = 0; 
 Mesh.ElementOrder = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh 3;
     )")
-        .arg(radius).arg(wall).arg(height).arg(lid)
-        .arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void)
-        .arg(cx).arg(cy).arg(cz); 
+        .arg(radius).arg(height).arg(lid).arg(wall).arg(meshSize)
+        .arg(cx).arg(cy).arg(cz);
 }

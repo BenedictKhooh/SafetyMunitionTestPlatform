@@ -6,9 +6,6 @@ QString FrustumShellGenerator::buildGeoScript(double rInBot, double rInTop, doub
 // 强制使用内置几何引擎，稳定 O-Grid 拓扑映射
 SetFactory("Built-in");
 
-// ============================================================================
-// 1. 基础参数定义 (C++ 自动注入)
-// ============================================================================
 RiB = %1;
 RiT = %2;
 W   = %3;
@@ -28,8 +25,11 @@ ratio = 0.707;
 // ============================================================================
 // 2.1 环向分度 (以外圈平均周长为主，确保最外侧网格不至于太大)
 avg_R_out = (RiB + RiT) / 2.0 + W;
-nC = Max(2, Round((Pi * avg_R_out / 2.0) / ms));
-actual_ms = (Pi * avg_R_out / 2.0) / nC; // 反推实际的环向弧长
+
+// 【核心修正】：圆周被切割为8份(八边形)，单段弧长应为 2*Pi*R / 8 = Pi*R / 4.0
+arc_len = Pi * avg_R_out / 4.0;
+nC = Max(1, Round(arc_len / ms));
+actual_ms = arc_len / nC; // 反推实际的环向弧长，作为后续网格的基准尺寸
 
 // 2.2 径向分度 (以实际弧长 actual_ms 为基准)
 nR_wall = Max(1, Round(W / actual_ms));
@@ -45,7 +45,7 @@ nH_cap  = Max(1, Round(L_slant_cap / actual_ms));
 // 计算空腔段的径向变化量与真实斜边长
 delta_R_void = Fabs(RiT - RiB) * (Hv / H_total);
 L_slant_void = Sqrt(Hv * Hv + delta_R_void * delta_R_void);
-nH_void = Max(2, Round(L_slant_void / actual_ms));
+nH_void = Max(1, Round(L_slant_void / actual_ms));
 
 // 转换为底层需要的节点数 (单元数 + 1)
 nC_nodes      = nC + 1;

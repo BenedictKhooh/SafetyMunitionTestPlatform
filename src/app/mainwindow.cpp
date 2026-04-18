@@ -2600,9 +2600,13 @@ void MainWindow::setupPostProcessUI() {
     btnSubmitExistingBat->setStyleSheet("background-color: #FF9800; color: white; font-weight: bold; min-height: 35px;");
     QPushButton* btnAnalyzeConvergence = new QPushButton("读取网格收敛性结果");
     btnAnalyzeConvergence->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
+    btnStopMeshBatch = new QPushButton("停止当前计算");
+    btnStopMeshBatch->setStyleSheet("background-color: #f44336; color: white; font-weight: bold; min-height: 35px;");
+
     meshBtnLayout->addWidget(btnGenerateMeshBatch);
     meshBtnLayout->addWidget(btnSubmitExistingBat);
     meshBtnLayout->addWidget(btnAnalyzeConvergence);
+    meshBtnLayout->addWidget(btnStopMeshBatch);
     meshConvLayout->addLayout(meshBtnLayout);
 
     hSplitLayout->addWidget(meshConvergenceGroup, 6);
@@ -2739,6 +2743,7 @@ void MainWindow::setupPostProcessUI() {
 
     m_meshMonitorTimer = new QTimer(this);
     connect(m_meshMonitorTimer, &QTimer::timeout, this, &MainWindow::updateMeshConvergencePlot);
+    connect(btnStopMeshBatch, &QPushButton::clicked, this, &MainWindow::handleStopMeshBatch);
 }
 
 
@@ -3203,8 +3208,7 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
         }
         QString stepDirPath = rootDir.filePath(stepFolderName);
 
-        QString stepInfo = QString("Step %1 -> ").arg(i + 1);
-
+        QString stepInfo = QString("Step %1 : ").arg(i + 1);
         // 4.2 遍历并重构所有实体的网格
         for (const auto& s : settings) {
             MeshEntity* mutableEntity = m_repository.getMutableEntity(s.name);
@@ -3251,23 +3255,34 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
     // =========================================================
     // 5. 批处理进程自动调度与执行
     // =========================================================
-    if (m_batchProcess->state() == QProcess::Running) {
-        QMessageBox::warning(this, "资源冲突", "后台计算引擎正在运行中，请等待当前任务队列结束后再提交新任务。");
+    if (!m_meshBatchProcess) {
+        m_meshBatchProcess = new QProcess(this);
+        connect(m_meshBatchProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::updateMeshMonitorConsole);
+        connect(m_meshBatchProcess, &QProcess::readyReadStandardError, this, &MainWindow::updateMeshMonitorConsole);
+    }
+
+    if (m_meshBatchProcess->state() == QProcess::Running) {
+        QMessageBox::warning(this, "资源冲突", "后台计算引擎正在运行中，请等待当前任务结束后再提交。");
         return;
     }
 
-    if (solveTaskTabs) {
-        solveTaskTabs->setCurrentIndex(0);
-    }
+    meshMonitorConsole->clear();
+    meshMonitorConsole->append("========================================");
+    meshMonitorConsole->append("[系统提示] 开始执行实体级网格收敛性批处理队列...");
+    meshMonitorConsole->append("[系统提示] 主工作目录: " + m_workingDirectory);
+    meshMonitorConsole->append("========================================\n");
 
-    solverConsole->clear();
-    solverConsole->append("========================================");
-    solverConsole->append("[系统提示] 开始执行实体级网格收敛性批处理队列 (独立目录隔离模式)...");
-    solverConsole->append("[系统提示] 主工作目录: " + m_workingDirectory);
-    solverConsole->append("========================================\n");
+    // 重置并激活 QCustomPlot 绘图与定时器
+    m_currentMeshStepToMonitor = 1;
+    m_lastGlstatPos = 0;
+    meshConvergencePlot->graph(0)->data()->clear();
 
-    m_batchProcess->setWorkingDirectory(m_workingDirectory);
-    m_batchProcess->start("cmd.exe", QStringList() << "/c" << batFilePath);
+    // 格式化路径，防止空格导致 cmd.exe 闪退
+    m_meshBatchProcess->setWorkingDirectory(m_workingDirectory);
+    QString safeBatPath = "\"" + QDir::toNativeSeparators(batFilePath) + "\"";
+    m_meshBatchProcess->start("cmd.exe", QStringList() << "/c" << safeBatPath);
+
+    m_meshMonitorTimer->start(1000);
 }
 
 /**
@@ -3962,8 +3977,8 @@ void MainWindow::handleTerminateProcess() {
 
     // 4. 输出资源释放审计日志
     if (solverConsole) {
-        solverConsole->append("\n🛑 [中断响应] 捕获系统最高优先级中断请求。");
-        solverConsole->append(QString("🛑 [清理执行] 寻优状态机已强行脱机，底层求解进程树 (根 PID: %1) 已被销毁！").arg(rootPid));
+        solverConsole->append("\n[中断响应] 捕获系统最高优先级中断请求。");
+        solverConsole->append(QString("[清理执行] 寻优状态机已强行脱机，底层求解进程树 (根 PID: %1) 已被销毁！").arg(rootPid));
         solverConsole->append("========================================\n");
     }
 }
@@ -4316,49 +4331,78 @@ void MainWindow::onGlobalSettings() {
     }
 }
 
+/**
+ * @brief 处理运行已有网格收敛性批处理文件 (.bat) 的槽函数
+ * * 该函数负责弹出文件选择对话框，读取用户选择的批处理文件，
+ * 并通过独立的 QProcess 调度执行。执行过程中的标准输出和错误
+ * 会被实时重定向到网格收敛专属的监控终端 (meshMonitorConsole) 中。
+ * 同时会重置并启动定时器，以支持 QCustomPlot 的实时数据绘制。
+ */
 void MainWindow::handleRunExistingBat() {
-    QString batPath = QFileDialog::getOpenFileName(this, "选择批处理文件", m_workingDirectory, "批处理 (*.bat)");
+    QString batPath = QFileDialog::getOpenFileName(this, "选择批处理文件", m_workingDirectory, "批处理文件 (*.bat)");
     if (batPath.isEmpty()) return;
 
     if (!m_meshBatchProcess) {
         m_meshBatchProcess = new QProcess(this);
+        m_meshBatchProcess->setProcessChannelMode(QProcess::MergedChannels);
         connect(m_meshBatchProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::updateMeshMonitorConsole);
-        connect(m_meshBatchProcess, &QProcess::readyReadStandardError, this, &MainWindow::updateMeshMonitorConsole);
     }
 
     if (m_meshBatchProcess->state() == QProcess::Running) {
-        if (QMessageBox::question(this, "确认", "已有任务运行，是否终止并启动新任务？") != QMessageBox::Yes) return;
         m_meshBatchProcess->kill();
         m_meshBatchProcess->waitForFinished();
     }
 
     meshMonitorConsole->clear();
-    meshMonitorConsole->append("[系统] 启动任务: " + batPath);
 
-    // 初始化绘图状态
-    m_currentMeshStepToMonitor = 1;
-    m_lastGlstatPos = 0;
-    meshConvergencePlot->graph(0)->data()->clear();
+    // 使用你项目已有的 m_dynaSolverPath 和 m_dynaEnvPath 配置环境
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
 
+    // 1. 注入求解器目录
+    if (!m_dynaSolverPath.isEmpty()) {
+        QString solverDir = QFileInfo(m_dynaSolverPath).absolutePath();
+        env.insert("PATH", QDir::toNativeSeparators(solverDir) + ";" + env.value("PATH"));
+    }
+
+    // 2. 注入你设置的运行时环境/依赖库目录
+    if (!m_dynaEnvPath.isEmpty()) {
+        env.insert("PATH", QDir::toNativeSeparators(m_dynaEnvPath) + ";" + env.value("PATH"));
+    }
+
+    m_meshBatchProcess->setProcessEnvironment(env);
     m_meshBatchProcess->setWorkingDirectory(QFileInfo(batPath).absolutePath());
-    m_meshBatchProcess->start("cmd.exe", QStringList() << "/c" << batPath);
-    m_meshMonitorTimer->start(1000); // 1秒解析一次文件
+
+    QString nativePath = QDir::toNativeSeparators(batPath);
+    m_meshBatchProcess->start("cmd.exe", QStringList() << "/c" << nativePath);
+
+    if (m_meshMonitorTimer) {
+        m_currentMeshStepToMonitor = 1;
+        m_lastGlstatPos = 0;
+        if (meshConvergencePlot && meshConvergencePlot->graph(0)) {
+            meshConvergencePlot->graph(0)->data()->clear();
+            meshConvergencePlot->replot();
+        }
+        m_meshMonitorTimer->start(1000);
+    }
 }
 
 void MainWindow::updateMeshMonitorConsole() {
+    if (!m_meshBatchProcess || !meshMonitorConsole) return;
+
     QByteArray data = m_meshBatchProcess->readAllStandardOutput();
-    if (data.isEmpty()) data = m_meshBatchProcess->readAllStandardError();
-    QString str = QString::fromLocal8Bit(data);
+    if (data.isEmpty()) return;
+
+    QString text = QString::fromLocal8Bit(data);
 
     meshMonitorConsole->moveCursor(QTextCursor::End);
-    meshMonitorConsole->insertPlainText(str);
+    meshMonitorConsole->insertPlainText(text);
+    meshMonitorConsole->ensureCursorVisible();
 
-    // 智能嗅探：如果发现日志切换了 Step，更新监控目录
     QRegularExpression re("Running Step (\\d+)");
-    auto match = re.match(str);
+    auto match = re.match(text);
     if (match.hasMatch()) {
         m_currentMeshStepToMonitor = match.captured(1).toInt();
-        m_lastGlstatPos = 0; // 重置指针，读新目录的 glstat
+        m_lastGlstatPos = 0;
     }
 }
 
@@ -4409,5 +4453,46 @@ void MainWindow::updateMeshConvergencePlot() {
     if (hasNewData) {
         meshConvergencePlot->graph(0)->rescaleAxes();
         meshConvergencePlot->replot();
+    }
+}
+
+/**
+ * @brief 强行终止当前正在运行的网格收敛性批处理进程
+ * * 该函数会调用系统级 kill 指令终止 cmd.exe 及其派生的子进程（如 lsdyna），
+ * 并同步停止实时绘图定时器，确保 UI 状态回滚。
+ */
+void MainWindow::handleStopMeshBatch() {
+    if (m_meshBatchProcess && m_meshBatchProcess->state() == QProcess::Running) {
+        // 1. 弹出确认对话框防止误操作
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            "确认停止",
+            "确定要强行终止当前的批处理计算任务吗？这可能导致结果文件损坏。",
+            QMessageBox::Yes | QMessageBox::No
+        );
+
+        if (reply == QMessageBox::Yes) {
+            // 2. 强行杀掉进程树
+            m_meshBatchProcess->kill();
+            m_meshBatchProcess->waitForFinished(3000); // 阻塞等待最多3秒以确保清理完毕
+
+            // 3. 停止实时绘图定时器
+            if (m_meshMonitorTimer) {
+                m_meshMonitorTimer->stop();
+            }
+
+            // 4. 更新终端显示
+            if (meshMonitorConsole) {
+                meshMonitorConsole->append("\n----------------------------------------------------------------");
+                meshMonitorConsole->append("[系统警告] 用户手动触发了强行终止命令。");
+                meshMonitorConsole->append("[系统警告] 进程已杀死，计算已中断。");
+                meshMonitorConsole->append("----------------------------------------------------------------\n");
+            }
+
+            QMessageBox::information(this, "提示", "任务已成功终止。");
+        }
+    }
+    else {
+        QMessageBox::information(this, "提示", "当前没有正在运行的批处理任务。");
     }
 }

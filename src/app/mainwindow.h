@@ -374,6 +374,8 @@ private slots:
     void updateMeshConvergencePlot();      // 定时器触发：增量解析 glstat 并绘图
     void onMeshMonitorMetricChanged();     // 切换监控指标（内能/动能）
 
+    void handleStopMeshBatch();            // 停止当前批处理计算
+
 private:
 
     struct SymmetryRule {
@@ -486,5 +488,7 @@ private:
     QTimer* m_meshMonitorTimer = nullptr;   // 实时刷新定时器
     int m_currentMeshStepToMonitor = 0;     // 当前监控的 Step 编号 (Step_1, Step_2...)
     qint64 m_lastGlstatPos = 0;             // 文件读取指针（实现增量读取）
+
+    QPushButton* btnStopMeshBatch;         // 停止按钮
 };
 #endif // MAINWINDOW_H

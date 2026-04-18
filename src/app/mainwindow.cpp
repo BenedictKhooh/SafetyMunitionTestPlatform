@@ -4405,103 +4405,95 @@ void MainWindow::updateMeshMonitorConsole() {
  * @brief 响应全局判定指标下拉框的变化
  */
 void MainWindow::onMeshMonitorMetricChanged() {
-    m_lastGlstatPos = 0; // 强制要求重新解析文件
-
     if (meshConvergencePlot && meshConvergencePlot->graph(0)) {
         meshConvergencePlot->graph(0)->data()->clear();
-        // 直接使用全局下拉框的文本作为 Y 轴标签
         meshConvergencePlot->yAxis->setLabel(comboTargetMetric->currentText());
         meshConvergencePlot->replot();
     }
 
-    // 如果后台计算在跑，立即强刷一次图表
     if (m_meshBatchProcess && m_meshBatchProcess->state() == QProcess::Running) {
         updateMeshConvergencePlot();
     }
 }
 
-/**
- * @brief 核心：实时读取 LS-DYNA 后处理文件并绘制图线
- * @note 采用基于正则的状态机解析，规避文件 IO 读写冲突导致的漏读和白板问题
- */
 void MainWindow::updateMeshConvergencePlot() {
-    // 1. 基础校验
     if (m_workingDirectory.isEmpty() || m_currentMeshStepToMonitor <= 0) return;
 
-    // 2. 判断该去抓取哪个文件 (假设 0=内能, 1=动能, 2=剩余速度)
     int metricIdx = comboTargetMetric->currentIndex();
     QString stepDir = QDir(m_workingDirectory).filePath(QString("Step_%1").arg(m_currentMeshStepToMonitor));
     QString fileName = (metricIdx == 2) ? "matsum" : "glstat";
     QString filePath = QDir(stepDir).filePath(fileName);
 
     QFile file(filePath);
-    // 🚀 核心救命代码：加上 QIODevice::Unbuffered！
-    // LS-DYNA 在后台写文件时，必须强制无缓冲直读硬盘，否则读不到最新数据
+    // 无缓冲模式读取
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text | QIODevice::Unbuffered)) return;
 
-    if (!meshConvergencePlot->graph(0)) return; // 防呆检查
+    if (!meshConvergencePlot || !meshConvergencePlot->graph(0)) return;
 
-    // 每次抓取前清空旧画板
     meshConvergencePlot->graph(0)->data()->clear();
 
     QTextStream in(&file);
     bool hasData = false;
     double currentTime = -1.0;
 
-    // 正则提取时间 (兼容 1.00E-04 这种格式)
-    QRegularExpression timeRegex("time\\s*\\.*=\\s*([+-]?\\d*\\.?\\d+(?:[eE][+-]?\\d+)?)");
-
-    // 3. 逐行全量抓取当前文件里的最新内容
     while (!in.atEnd()) {
         QString line = in.readLine().toLower().trimmed();
+        if (line.isEmpty()) continue;
 
-        // 找时间标记
-        QRegularExpressionMatch timeMatch = timeRegex.match(line);
-        if (timeMatch.hasMatch()) {
-            currentTime = timeMatch.captured(1).toDouble();
+        // 提取时间
+        if (line.contains("time")) {
+            int eqPos = line.indexOf('=');
+            if (eqPos != -1) {
+                QString valStr = line.mid(eqPos + 1).trimmed();
+                bool ok;
+                double t = valStr.toDouble(&ok);
+                if (ok) currentTime = t;
+            }
             continue;
         }
 
-        // 找物理量数据
+        // 提取物理量
         if (currentTime >= 0.0) {
             if (metricIdx == 2) {
-                // 解析 MATSUM (速度)
-                // 找到 mat #: 2 (也就是破片的 Part)
-                if (line.contains("mat #:") && line.contains("2")) {
+                // 解析 matsum (Part ID 2)
+                if ((line.contains("mat #:") || line.contains("part id")) && line.contains("2")) {
                     QString dataLine = in.readLine().trimmed();
                     QStringList parts = dataLine.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
                     if (!parts.isEmpty()) {
-                        // 提取最后一列数据并画图
                         meshConvergencePlot->graph(0)->addData(currentTime, parts.last().toDouble());
                         hasData = true;
-                        currentTime = -1.0; // 抓完这个点，时间复位，等下一个时间
+                        currentTime = -1.0;
                     }
                 }
             }
             else {
-                // 解析 GLSTAT (能量)
+                // 解析 glstat
                 QString targetWord = (metricIdx == 0) ? "internal energy" : "kinetic energy";
                 if (line.contains(targetWord)) {
-                    QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-                    if (!parts.isEmpty()) {
-                        // 提取最后一列数据并画图
-                        meshConvergencePlot->graph(0)->addData(currentTime, parts.last().toDouble());
-                        hasData = true;
-                        currentTime = -1.0; // 抓完这个点，时间复位
+                    int eqPos = line.indexOf('=');
+                    if (eqPos != -1) {
+                        QString valStr = line.mid(eqPos + 1).trimmed();
+                        bool ok;
+                        double val = valStr.toDouble(&ok);
+                        if (ok) {
+                            meshConvergencePlot->graph(0)->addData(currentTime, val);
+                            hasData = true;
+                            currentTime = -1.0;
+                        }
                     }
                 }
             }
         }
     }
+
     file.close();
 
-    // 4. 数据抓取完毕，强行刷新画板
+    // 更新图表
     if (hasData) {
         meshConvergencePlot->graph(0)->rescaleAxes();
         meshConvergencePlot->replot();
     }
 }
-
 /**
  * @brief 强行终止当前正在运行的网格收敛性批处理进程
  * * 该函数会调用系统级 kill 指令终止 cmd.exe 及其派生的子进程（如 lsdyna），

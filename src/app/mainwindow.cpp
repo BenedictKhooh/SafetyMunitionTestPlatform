@@ -2623,10 +2623,6 @@ void MainWindow::setupPostProcessUI() {
     QGroupBox* meshMonitorGroup = new QGroupBox("计算过程实时特征监控");
     QVBoxLayout* meshMonitorLayout = new QVBoxLayout(meshMonitorGroup);
 
-    comboMeshMonitorMetric = new QComboBox();
-    comboMeshMonitorMetric->addItems({ "系统总内能 (Internal Energy)", "系统总动能 (Kinetic Energy)" });
-    meshMonitorLayout->addWidget(comboMeshMonitorMetric);
-
     meshConvergencePlot = new QCustomPlot();
     meshConvergencePlot->setMinimumHeight(250);
     meshConvergencePlot->addGraph();
@@ -2739,8 +2735,7 @@ void MainWindow::setupPostProcessUI() {
     connect(btnSkipStep, &QPushButton::clicked, this, &MainWindow::handleSkipCurrentStep);
 
     connect(btnSubmitExistingBat, &QPushButton::clicked, this, &MainWindow::handleRunExistingBat);
-    connect(comboMeshMonitorMetric, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onMeshMonitorMetricChanged);
-
+    connect(comboTargetMetric, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onMeshMonitorMetricChanged);
     m_meshMonitorTimer = new QTimer(this);
     connect(m_meshMonitorTimer, &QTimer::timeout, this, &MainWindow::updateMeshConvergencePlot);
     connect(btnStopMeshBatch, &QPushButton::clicked, this, &MainWindow::handleStopMeshBatch);
@@ -3214,7 +3209,7 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
             MeshEntity* mutableEntity = m_repository.getMutableEntity(s.name);
             double currentSize = s.baseSize * std::pow(s.factor, i);
             remeshEntityWithNewSize(mutableEntity, currentSize);
-            stepInfo += QString("[%1: %2mm] ").arg(s.name).arg(currentSize, 0, 'f', 1);
+            stepInfo += QString("[%1: %2mm] ").arg(s.name).arg(currentSize, 0, 'f', 4);
         }
 
         QString jobName = QString("MeshConv_Step%1").arg(i + 1);
@@ -4406,51 +4401,102 @@ void MainWindow::updateMeshMonitorConsole() {
     }
 }
 
+/**
+ * @brief 响应全局判定指标下拉框的变化
+ */
 void MainWindow::onMeshMonitorMetricChanged() {
-    m_lastGlstatPos = 0;
-    meshConvergencePlot->graph(0)->data()->clear();
-    updateMeshConvergencePlot();
+    m_lastGlstatPos = 0; // 强制要求重新解析文件
+
+    if (meshConvergencePlot && meshConvergencePlot->graph(0)) {
+        meshConvergencePlot->graph(0)->data()->clear();
+        // 直接使用全局下拉框的文本作为 Y 轴标签
+        meshConvergencePlot->yAxis->setLabel(comboTargetMetric->currentText());
+        meshConvergencePlot->replot();
+    }
+
+    // 如果后台计算在跑，立即强刷一次图表
+    if (m_meshBatchProcess && m_meshBatchProcess->state() == QProcess::Running) {
+        updateMeshConvergencePlot();
+    }
 }
 
+/**
+ * @brief 核心：实时读取 LS-DYNA 后处理文件并绘制图线
+ * @note 采用基于正则的状态机解析，规避文件 IO 读写冲突导致的漏读和白板问题
+ */
 void MainWindow::updateMeshConvergencePlot() {
-    if (m_workingDirectory.isEmpty()) return;
+    // 1. 基础校验
+    if (m_workingDirectory.isEmpty() || m_currentMeshStepToMonitor <= 0) return;
 
-    // 路径：工作目录/Step_N/glstat
-    QString glstatPath = QDir(m_workingDirectory).filePath(QString("Step_%1/glstat").arg(m_currentMeshStepToMonitor));
-    QFile file(glstatPath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+    // 2. 判断该去抓取哪个文件 (假设 0=内能, 1=动能, 2=剩余速度)
+    int metricIdx = comboTargetMetric->currentIndex();
+    QString stepDir = QDir(m_workingDirectory).filePath(QString("Step_%1").arg(m_currentMeshStepToMonitor));
+    QString fileName = (metricIdx == 2) ? "matsum" : "glstat";
+    QString filePath = QDir(stepDir).filePath(fileName);
 
-    // 增量读取
-    if (file.size() >= m_lastGlstatPos) file.seek(m_lastGlstatPos);
-    else { m_lastGlstatPos = 0; meshConvergencePlot->graph(0)->data()->clear(); }
+    QFile file(filePath);
+    // 🚀 核心救命代码：加上 QIODevice::Unbuffered！
+    // LS-DYNA 在后台写文件时，必须强制无缓冲直读硬盘，否则读不到最新数据
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text | QIODevice::Unbuffered)) return;
+
+    if (!meshConvergencePlot->graph(0)) return; // 防呆检查
+
+    // 每次抓取前清空旧画板
+    meshConvergencePlot->graph(0)->data()->clear();
 
     QTextStream in(&file);
-    bool hasNewData = false;
-    double time = -1.0;
-    int idx = comboMeshMonitorMetric->currentIndex();
+    bool hasData = false;
+    double currentTime = -1.0;
 
+    // 正则提取时间 (兼容 1.00E-04 这种格式)
+    QRegularExpression timeRegex("time\\s*\\.*=\\s*([+-]?\\d*\\.?\\d+(?:[eE][+-]?\\d+)?)");
+
+    // 3. 逐行全量抓取当前文件里的最新内容
     while (!in.atEnd()) {
-        QString line = in.readLine().toLower();
-        // 简单解析逻辑 (LS-DYNA glstat 格式)
-        if (line.contains("time")) {
-            QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-            if (parts.size() >= 3) time = parts.last().toDouble();
+        QString line = in.readLine().toLower().trimmed();
+
+        // 找时间标记
+        QRegularExpressionMatch timeMatch = timeRegex.match(line);
+        if (timeMatch.hasMatch()) {
+            currentTime = timeMatch.captured(1).toDouble();
+            continue;
         }
 
-        QString target = (idx == 0) ? "internal energy" : "kinetic energy";
-        if (time >= 0 && line.contains(target)) {
-            QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-            if (parts.size() >= 3) {
-                meshConvergencePlot->graph(0)->addData(time, parts.last().toDouble());
-                hasNewData = true;
-                time = -1.0;
+        // 找物理量数据
+        if (currentTime >= 0.0) {
+            if (metricIdx == 2) {
+                // 解析 MATSUM (速度)
+                // 找到 mat #: 2 (也就是破片的 Part)
+                if (line.contains("mat #:") && line.contains("2")) {
+                    QString dataLine = in.readLine().trimmed();
+                    QStringList parts = dataLine.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+                    if (!parts.isEmpty()) {
+                        // 提取最后一列数据并画图
+                        meshConvergencePlot->graph(0)->addData(currentTime, parts.last().toDouble());
+                        hasData = true;
+                        currentTime = -1.0; // 抓完这个点，时间复位，等下一个时间
+                    }
+                }
+            }
+            else {
+                // 解析 GLSTAT (能量)
+                QString targetWord = (metricIdx == 0) ? "internal energy" : "kinetic energy";
+                if (line.contains(targetWord)) {
+                    QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+                    if (!parts.isEmpty()) {
+                        // 提取最后一列数据并画图
+                        meshConvergencePlot->graph(0)->addData(currentTime, parts.last().toDouble());
+                        hasData = true;
+                        currentTime = -1.0; // 抓完这个点，时间复位
+                    }
+                }
             }
         }
     }
-    m_lastGlstatPos = file.pos();
     file.close();
 
-    if (hasNewData) {
+    // 4. 数据抓取完毕，强行刷新画板
+    if (hasData) {
         meshConvergencePlot->graph(0)->rescaleAxes();
         meshConvergencePlot->replot();
     }

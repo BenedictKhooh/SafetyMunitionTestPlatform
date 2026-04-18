@@ -481,7 +481,6 @@ private:
     QPushButton* btnSubmitExistingBat;     // 提交现有批处理按钮
     QTextEdit* meshMonitorConsole;         // 专属监控终端
     QCustomPlot* meshConvergencePlot;      // 实时曲线图
-    QComboBox* comboMeshMonitorMetric;     // 指标选择下拉框
 
     // 逻辑控制
     QProcess* m_meshBatchProcess = nullptr; // 独立的网格收敛批处理进程

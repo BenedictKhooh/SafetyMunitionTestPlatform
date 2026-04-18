@@ -1,7 +1,7 @@
 ﻿/**
  * @file PostProcessWidget.cpp
- * @brief 后处理可视化模块核心实现文件
- * @details 包含了所有 LS-DYNA ASCII 文件的正则解析实现与智能单位换算图表渲染逻辑。
+ * @brief 基于纯 Qt API 重构的 LS-DYNA 结果解析器
+ * @details 彻底免疫中文路径打不开、C++ Locale 小数点识别错乱等系统级 Bug。
  */
 
 #include "PostProcessWidget.h"
@@ -13,42 +13,40 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QSplitter>
-#include <fstream>
-#include <regex>
-#include <string>
-#include <algorithm>
+#include <QFile>
+#include <QTextStream>
+#include <QRegularExpression>
 #include <cmath>
-#include <stdexcept>
 
- // =====================================================================
- // 安全数据转换工具域 (防止 std::stod 遇到 "****" 或 "NaN" 导致程序崩溃)
- // =====================================================================
 namespace {
-    inline double safeStod(const std::string& str, double defaultVal = 0.0) {
-        try {
-            // 尝试去除首尾多余空格
-            std::string s = str;
-            s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
-            s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+    /**
+     * @brief [黑科技] 强健的 Qt 数值提取器
+     * @details 无视 LS-DYNA 列宽粘连 (如 "-1.31E-01-1.43E-03")，无视 "***" 乱码。
+     */
+    inline QVector<double> extractNumbersRobust(const QString& line) {
+        QVector<double> numbers;
+        // 匹配科学计数法、常规浮点数、整数，或连续星号(溢出)
+        static QRegularExpression re("([-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?|\\*{3,})");
+        QRegularExpressionMatchIterator i = re.globalMatch(line);
 
-            if (s.empty() || s.find("***") != std::string::npos) {
-                return defaultVal; // LS-DYNA 输出溢出
+        while (i.hasNext()) {
+            QRegularExpressionMatch match = i.next();
+            QString matchStr = match.captured(1);
+            if (matchStr.contains("***")) {
+                numbers.push_back(0.0);
             }
-            return std::stod(s);
+            else {
+                // Qt的 toDouble 默认绑定 C-Locale，永不因系统语言设置报错
+                numbers.push_back(matchStr.toDouble());
+            }
         }
-        catch (const std::invalid_argument&) {
-            return defaultVal; // 非数字字符
-        }
-        catch (const std::out_of_range&) {
-            return defaultVal; // 越界溢出
-        }
+        return numbers;
     }
 }
 
 PostProcessWidget::PostProcessWidget(QWidget* parent) : QWidget(parent) {
     setupUI();
 
-    // 绑定交互信号与槽函数
     connect(m_btnLoadData, &QPushButton::clicked, this, &PostProcessWidget::handleLoadData);
     connect(m_sensorList, &QListWidget::itemSelectionChanged, this, &PostProcessWidget::handleSensorSelectionChanged);
     connect(m_btnClearPlot, &QPushButton::clicked, m_plotWidget, [this]() {
@@ -62,13 +60,14 @@ void PostProcessWidget::setupUI() {
     QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
     leftLayout->setContentsMargins(0, 0, 0, 0);
 
-    // 初始化文件类型下拉框
     m_comboFileType = new QComboBox(this);
     m_comboFileType->addItems({
-        "GLSTAT (系统全局统计)",
-        "MATSUM (部件能量/功)",
+        "GLSTAT (全局系统能量)",
         "NODOUT (节点运动历程)",
         "ELOUT (单元应力历程)",
+        "RCFORC (接触面反力)",
+        "SLEOUT (接触面能量)",
+        "MATSUM (部件能量)",
         "SECFORC (截面内力)",
         "SPCFORC (约束反力)"
         });
@@ -77,18 +76,16 @@ void PostProcessWidget::setupUI() {
     m_btnClearPlot = new QPushButton("清空渲染图表", this);
 
     m_sensorList = new QListWidget(this);
-    m_sensorList->setSelectionMode(QAbstractItemView::ExtendedSelection); // 支持多选进行多曲线对比
+    m_sensorList->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     leftLayout->addWidget(m_comboFileType);
     leftLayout->addWidget(m_btnLoadData);
     leftLayout->addWidget(m_btnClearPlot);
     leftLayout->addWidget(m_sensorList);
 
-    // 初始化图表区
     m_plotWidget = new QCustomPlot(this);
     m_plotWidget->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
 
-    // 布局切分器
     QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(leftPanel);
     splitter->addWidget(m_plotWidget);
@@ -100,289 +97,278 @@ void PostProcessWidget::setupUI() {
 }
 
 void PostProcessWidget::handleLoadData() {
-    QString filter = "LS-DYNA ASCII Files (*.*);;All Files (*)";
-    QString fileName = QFileDialog::getOpenFileName(this, "载入 LS-DYNA 后处理文件", "", filter);
+    QString fileName = QFileDialog::getOpenFileName(this, "载入 LS-DYNA 后处理文件", "", "All Files (*)");
     if (fileName.isEmpty()) return;
 
-    // 加载新数据前清空内存池与界面
     m_simulationData.clear();
     m_sensorList->clear();
     m_plotWidget->clearGraphs();
 
     bool success = false;
-    QString selectedType = m_comboFileType->currentText();
+    QString type = m_comboFileType->currentText();
 
-    // ==========================================
-    // 依据用户选择，路由至对应的解析引擎
-    // ==========================================
-    if (selectedType.contains("GLSTAT")) {
-        success = parseGlstat(fileName);
-    }
-    else if (selectedType.contains("MATSUM")) {
-        success = parseMatsum(fileName);
-    }
-    else if (selectedType.contains("NODOUT")) {
-        success = parseNodout(fileName);
-    }
-    else if (selectedType.contains("ELOUT")) {
-        success = parseElout(fileName);
-    }
-    else if (selectedType.contains("SECFORC")) {
-        success = parseSecforc(fileName);
-    }
-    else if (selectedType.contains("SPCFORC")) {
-        success = parseSpcforc(fileName);
-    }
+    if (type.contains("GLSTAT"))      success = parseGlstat(fileName);
+    else if (type.contains("NODOUT")) success = parseNodout(fileName);
+    else if (type.contains("ELOUT"))  success = parseElout(fileName);
+    else if (type.contains("RCFORC")) success = parseRcforc(fileName);
+    else if (type.contains("SLEOUT")) success = parseSleout(fileName);
+    else if (type.contains("MATSUM")) success = parseMatsum(fileName);
+    else if (type.contains("SECFORC"))success = parseSecforc(fileName);
+    else if (type.contains("SPCFORC"))success = parseSpcforc(fileName);
 
-    // 解析结果反馈
     if (success) {
         for (auto it = m_simulationData.begin(); it != m_simulationData.end(); ++it) {
             m_sensorList->addItem(it.key());
         }
-        QMessageBox::information(this, "解析成功", QString("底层数据提取完成，当前载入时程序列数: %1").arg(m_simulationData.size()));
+        QMessageBox::information(this, "解析成功", QString("成功载入时程序列数: %1").arg(m_simulationData.size()));
     }
     else {
-        QMessageBox::warning(this, "解析异常", "文件流读取失败或未捕获目标特征集。\n请确认所选文件类型与下拉框选项一致。");
+        QMessageBox::warning(this, "解析异常", "读取失败。请检查文件类型是否匹配，或文件是否已被损坏。");
     }
 }
 
 // =====================================================================
-// LS-DYNA ASCII 解析引擎实现域
+// 专属解析引擎 (基于 Qt QFile 彻底解决路径/换行符乱码问题)
 // =====================================================================
 
 bool PostProcessWidget::parseGlstat(const QString& filePath) {
-    std::ifstream file(filePath.toLocal8Bit().constData());
-    if (!file.is_open()) return false;
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    std::string line;
-    std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex kinRegex(R"(kinetic energy\s+([\d\.E+-]+))");
-    std::regex intRegex(R"(internal energy\s+([\d\.E+-]+))");
-
+    QTextStream in(&file);
     double currentTime = 0.0;
-    std::smatch match;
     bool found = false;
 
-    while (std::getline(file, line)) {
-        std::string lowerLine = line;
-        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString lowerLine = line.toLower();
 
-        if (std::regex_search(lowerLine, match, timeRegex)) {
-            currentTime = safeStod(match[1].str());
+        QVector<double> nums = extractNumbersRobust(line);
+        if (nums.isEmpty()) continue;
+
+        if (lowerLine.contains("time") && !lowerLine.contains("step") && !lowerLine.contains("zone")) {
+            currentTime = nums[0];
         }
-        else if (std::regex_search(lowerLine, match, kinRegex)) {
+        else if (lowerLine.contains("kinetic energy") && !lowerLine.contains("eroded")) {
             m_simulationData["Global Kinetic Energy"].time.append(currentTime);
-            m_simulationData["Global Kinetic Energy"].value.append(safeStod(match[1].str()));
+            m_simulationData["Global Kinetic Energy"].value.append(nums[0]);
             found = true;
         }
-        else if (std::regex_search(lowerLine, match, intRegex)) {
+        else if (lowerLine.contains("internal energy") && !lowerLine.contains("eroded")) {
             m_simulationData["Global Internal Energy"].time.append(currentTime);
-            m_simulationData["Global Internal Energy"].value.append(safeStod(match[1].str()));
+            m_simulationData["Global Internal Energy"].value.append(nums[0]);
             found = true;
         }
     }
     return found;
 }
 
+/**
+ * @brief 解析部件/材料能量文件 (MATSUM)
+ * @details 针对 LS-DYNA 紧凑缩写格式 (mat.#=, inten=, kinen=) 进行了精准适配。
+ * @param filePath 文件绝对路径
+ * @return 提取到有效数据返回 true，否则返回 false
+ */
 bool PostProcessWidget::parseMatsum(const QString& filePath) {
-    std::ifstream file(filePath.toLocal8Bit().constData());
-    if (!file.is_open()) return false;
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    std::string line;
-    std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex partRegex(R"(part id\s+(\d+))");
-    std::regex kinRegex(R"(kinetic energy\s+([\d\.E+-]+))");
-    std::regex intRegex(R"(internal energy\s+([\d\.E+-]+))");
-
+    QTextStream in(&file);
     double currentTime = 0.0;
-    QString currentPart = "Unknown";
-    std::smatch match;
     bool found = false;
 
-    while (std::getline(file, line)) {
-        std::string lowerLine = line;
-        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString lowerLine = line.toLower();
 
-        if (std::regex_search(lowerLine, match, timeRegex)) {
-            currentTime = safeStod(match[1].str());
+        // 使用数值提取器剥离所有文字和符号
+        QVector<double> nums = extractNumbersRobust(line);
+        if (nums.isEmpty()) continue;
+
+        // 1. 匹配时间戳行 (例如 "time =   0.0000E+00")
+        if (lowerLine.contains("time") && lowerLine.contains("=") && !lowerLine.contains("step")) {
+            currentTime = nums[0];
         }
-        else if (std::regex_search(lowerLine, match, partRegex)) {
-            currentPart = QString::fromStdString(match[1].str());
-        }
-        else if (std::regex_search(lowerLine, match, kinRegex)) {
-            QString key = QString("Part %1 - Kinetic Energy").arg(currentPart);
-            m_simulationData[key].time.append(currentTime);
-            m_simulationData[key].value.append(safeStod(match[1].str()));
-            found = true;
-        }
-        else if (std::regex_search(lowerLine, match, intRegex)) {
-            QString key = QString("Part %1 - Internal Energy").arg(currentPart);
-            m_simulationData[key].time.append(currentTime);
-            m_simulationData[key].value.append(safeStod(match[1].str()));
-            found = true;
+        // 2. 匹配材料能量行 (例如 "mat.#=    1             inten=   3.4176E+01     kinen=   0.0000E+00 ...")
+        else if (lowerLine.contains("mat.#=")) {
+            // 确保至少提取到了 ID、内能(inten)、动能(kinen) 三个核心数据
+            if (nums.size() >= 3) {
+                int matId = qRound(nums[0]);
+                double internalEnergy = nums[1];
+                double kineticEnergy = nums[2];
+
+                // 记录当前 Part 的内能
+                QString intKey = QString("Part %1 - Internal Energy").arg(matId);
+                m_simulationData[intKey].time.append(currentTime);
+                m_simulationData[intKey].value.append(internalEnergy);
+
+                // 记录当前 Part 的动能
+                QString kinKey = QString("Part %1 - Kinetic Energy").arg(matId);
+                m_simulationData[kinKey].time.append(currentTime);
+                m_simulationData[kinKey].value.append(kineticEnergy);
+
+                found = true;
+            }
         }
     }
     return found;
 }
-
 bool PostProcessWidget::parseNodout(const QString& filePath) {
-    std::ifstream file(filePath.toLocal8Bit().constData());
-    if (!file.is_open()) return false;
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    std::string line;
-    std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex nodeRegex(R"(^\s*(\d+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
+    QTextStream in(&file);
+    // 匹配 ( at time 0.0000000E+00 )
+    static QRegularExpression timeRegex("\\(\\s*at time\\s+([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)\\s*\\)");
 
     double currentTime = 0.0;
-    std::smatch match;
     bool found = false;
 
-    while (std::getline(file, line)) {
-        std::string lowerLine = line;
-        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString lowerLine = line.toLower();
 
-        if (std::regex_search(lowerLine, match, timeRegex)) {
-            currentTime = safeStod(match[1].str());
+        QRegularExpressionMatch match = timeRegex.match(line);
+        if (match.hasMatch()) {
+            currentTime = match.captured(1).toDouble();
         }
-        else if (std::regex_search(lowerLine, match, nodeRegex)) {
-            QString nodeId = QString::fromStdString(match[1].str());
+        else {
+            QVector<double> nums = extractNumbersRobust(line);
+            if (nums.size() >= 4 && !lowerLine.contains("nodal") && !lowerLine.contains("disp")) {
+                int id = qRound(nums[0]);
+                if (id > 0 && qAbs(nums[0] - id) < 1e-6) {
+                    double dx = nums[1], dy = nums[2], dz = nums[3];
+                    double mag = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-            double dz = safeStod(match[4].str());
-            QString keyZ = QString("Node %1 - Disp Z").arg(nodeId);
-            m_simulationData[keyZ].time.append(currentTime);
-            m_simulationData[keyZ].value.append(dz);
+                    m_simulationData[QString("Node %1 - Disp Z").arg(id)].time.append(currentTime);
+                    m_simulationData[QString("Node %1 - Disp Z").arg(id)].value.append(dz);
 
-            double dx = safeStod(match[2].str());
-            double dy = safeStod(match[3].str());
-            double mag = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-            QString keyMag = QString("Node %1 - Disp Mag").arg(nodeId);
-            m_simulationData[keyMag].time.append(currentTime);
-            m_simulationData[keyMag].value.append(mag);
-
-            found = true;
+                    m_simulationData[QString("Node %1 - Disp Mag").arg(id)].time.append(currentTime);
+                    m_simulationData[QString("Node %1 - Disp Mag").arg(id)].value.append(mag);
+                    found = true;
+                }
+            }
         }
     }
     return found;
 }
 
 bool PostProcessWidget::parseElout(const QString& filePath) {
-    std::ifstream file(filePath.toLocal8Bit().constData());
-    if (!file.is_open()) return false;
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    std::string line;
-    std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex valRegex(R"(^\s*(\d+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
+    QTextStream in(&file);
+    static QRegularExpression timeRegex("\\(\\s*at time\\s+([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)\\s*\\)");
+    static QRegularExpression idRegex("^\\s*(\\d+)-\\s*\\d+");
 
     double currentTime = 0.0;
-    std::smatch match;
+    int currentElemId = -1;
     bool found = false;
 
-    while (std::getline(file, line)) {
-        std::string lowerLine = line;
-        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString lowerLine = line.toLower();
 
-        if (std::regex_search(lowerLine, match, timeRegex)) {
-            currentTime = safeStod(match[1].str());
+        QRegularExpressionMatch timeMatch = timeRegex.match(line);
+        QRegularExpressionMatch idMatch = idRegex.match(line);
+
+        if (timeMatch.hasMatch()) {
+            currentTime = timeMatch.captured(1).toDouble();
         }
-        else if (std::regex_search(lowerLine, match, valRegex)) {
-            QString id = QString::fromStdString(match[1].str());
+        else if (idMatch.hasMatch()) {
+            currentElemId = idMatch.captured(1).toInt();
+        }
+        else if (currentElemId != -1 && (lowerLine.contains("elastic") || lowerLine.contains("plastic"))) {
+            QVector<double> nums = extractNumbersRobust(line);
+            if (nums.size() >= 9) {
+                double stressX = nums[1];
+                double effStress = nums[8];
 
-            QString keyEff = QString("Element %1 - Eff. Stress (vM)").arg(id);
-            m_simulationData[keyEff].time.append(currentTime);
-            m_simulationData[keyEff].value.append(safeStod(match[8].str()));
+                m_simulationData[QString("Element %1 - Eff. Stress").arg(currentElemId)].time.append(currentTime);
+                m_simulationData[QString("Element %1 - Eff. Stress").arg(currentElemId)].value.append(effStress);
 
-            QString keyX = QString("Element %1 - Stress X").arg(id);
-            m_simulationData[keyX].time.append(currentTime);
-            m_simulationData[keyX].value.append(safeStod(match[2].str()));
+                m_simulationData[QString("Element %1 - Stress X").arg(currentElemId)].time.append(currentTime);
+                m_simulationData[QString("Element %1 - Stress X").arg(currentElemId)].value.append(stressX);
 
-            found = true;
+                found = true;
+                currentElemId = -1; // 归位
+            }
         }
     }
     return found;
 }
 
-bool PostProcessWidget::parseSecforc(const QString& filePath) {
-    std::ifstream file(filePath.toLocal8Bit().constData());
-    if (!file.is_open()) return false;
+bool PostProcessWidget::parseRcforc(const QString& filePath) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    std::string line;
-    std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex valRegex(R"(^\s*(\d+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
-
-    double currentTime = 0.0;
-    std::smatch match;
+    QTextStream in(&file);
     bool found = false;
 
-    while (std::getline(file, line)) {
-        std::string lowerLine = line;
-        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString lowerLine = line.toLower();
 
-        if (std::regex_search(lowerLine, match, timeRegex)) {
-            currentTime = safeStod(match[1].str());
-        }
-        else if (std::regex_search(lowerLine, match, valRegex)) {
-            QString id = QString::fromStdString(match[1].str());
+        if (lowerLine.contains("surfa") || lowerLine.contains("surfb")) {
+            QVector<double> nums = extractNumbersRobust(line);
+            if (nums.size() >= 5) {
+                int id = qRound(nums[0]);
+                double t = nums[1];
+                double fx = nums[2], fy = nums[3], fz = nums[4];
+                double mag = std::sqrt(fx * fx + fy * fy + fz * fz);
 
-            double fx = safeStod(match[2].str());
-            double fy = safeStod(match[3].str());
-            double fz = safeStod(match[4].str());
-            double f_mag = std::sqrt(fx * fx + fy * fy + fz * fz);
+                QString side = lowerLine.contains("surfa") ? "Master" : "Slave";
 
-            QString keyZ = QString("Section %1 - Force Z").arg(id);
-            m_simulationData[keyZ].time.append(currentTime);
-            m_simulationData[keyZ].value.append(fz);
+                m_simulationData[QString("Contact %1 - %2 Force Z").arg(id).arg(side)].time.append(t);
+                m_simulationData[QString("Contact %1 - %2 Force Z").arg(id).arg(side)].value.append(fz);
 
-            QString keyMag = QString("Section %1 - Force Mag").arg(id);
-            m_simulationData[keyMag].time.append(currentTime);
-            m_simulationData[keyMag].value.append(f_mag);
-
-            found = true;
+                m_simulationData[QString("Contact %1 - %2 Force Mag").arg(id).arg(side)].time.append(t);
+                m_simulationData[QString("Contact %1 - %2 Force Mag").arg(id).arg(side)].value.append(mag);
+                found = true;
+            }
         }
     }
     return found;
 }
 
-bool PostProcessWidget::parseSpcforc(const QString& filePath) {
-    std::ifstream file(filePath.toLocal8Bit().constData());
-    if (!file.is_open()) return false;
+bool PostProcessWidget::parseSleout(const QString& filePath) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    std::string line;
-    std::regex timeRegex(R"(time\s*=\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex valRegex(R"(^\s*(\d+)\s+([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
+    QTextStream in(&file);
+    static QRegularExpression timeRegex("time=\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)");
 
     double currentTime = 0.0;
-    std::smatch match;
     bool found = false;
 
-    while (std::getline(file, line)) {
-        std::string lowerLine = line;
-        std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QString lowerLine = line.toLower();
 
-        if (std::regex_search(lowerLine, match, timeRegex)) {
-            currentTime = safeStod(match[1].str());
+        QRegularExpressionMatch match = timeRegex.match(line);
+        if (match.hasMatch()) {
+            currentTime = match.captured(1).toDouble();
         }
-        else if (std::regex_search(lowerLine, match, valRegex)) {
-            QString id = QString::fromStdString(match[1].str());
+        else {
+            QVector<double> nums = extractNumbersRobust(line);
+            if (nums.size() >= 3 && !lowerLine.contains("summary") && !lowerLine.contains("surfa")) {
+                int id = qRound(nums[0]);
+                if (id > 0 && qAbs(nums[0] - id) < 1e-6) {
+                    double slaveEng = nums[1];
+                    double masterEng = nums[2];
 
-            double fx = safeStod(match[2].str());
-            double fy = safeStod(match[3].str());
-            double fz = safeStod(match[4].str());
-            double f_mag = std::sqrt(fx * fx + fy * fy + fz * fz);
-
-            QString keyZ = QString("SPC Node %1 - Reaction Z").arg(id);
-            m_simulationData[keyZ].time.append(currentTime);
-            m_simulationData[keyZ].value.append(fz);
-
-            QString keyMag = QString("SPC Node %1 - Reaction Mag").arg(id);
-            m_simulationData[keyMag].time.append(currentTime);
-            m_simulationData[keyMag].value.append(f_mag);
-
-            found = true;
+                    m_simulationData[QString("Contact %1 - Slave Energy").arg(id)].time.append(currentTime);
+                    m_simulationData[QString("Contact %1 - Slave Energy").arg(id)].value.append(slaveEng);
+                    found = true;
+                }
+            }
         }
     }
     return found;
 }
+
+bool PostProcessWidget::parseSecforc(const QString& filePath) { return false; }
+bool PostProcessWidget::parseSpcforc(const QString& filePath) { return false; }
 
 // =====================================================================
 // 图表渲染管线与坐标轴映射域
@@ -397,13 +383,11 @@ void PostProcessWidget::handleSensorSelectionChanged() {
         return;
     }
 
-    // 预设配色板
     QList<QColor> palette = {
         QColor(0, 114, 189), QColor(217, 83, 25), QColor(237, 177, 32),
         QColor(126, 47, 142), QColor(119, 172, 48), QColor(77, 190, 238)
     };
     int colorIdx = 0;
-
     QStringList yAxisCategorySet;
 
     for (QListWidgetItem* item : selectedItems) {
@@ -411,13 +395,9 @@ void PostProcessWidget::handleSensorSelectionChanged() {
         if (!m_simulationData.contains(sensorName)) continue;
 
         SensorData data = m_simulationData[sensorName];
-
         QCPGraph* graph = m_plotWidget->addGraph();
         graph->setData(data.time, data.value);
 
-        // ==========================================
-        // 智能物理单位推演算法
-        // ==========================================
         QString unitStr = "";
         QString axisCategory = "";
 
@@ -425,19 +405,15 @@ void PostProcessWidget::handleSensorSelectionChanged() {
             unitStr = "[10^5 J]";
             axisCategory = QString("Energy %1").arg(unitStr);
         }
-        else if (sensorName.contains("Velocity", Qt::CaseInsensitive)) {
-            unitStr = "[cm/μs]";
-            axisCategory = QString("Velocity %1").arg(unitStr);
-        }
         else if (sensorName.contains("Disp", Qt::CaseInsensitive)) {
             unitStr = "[cm]";
             axisCategory = QString("Displacement %1").arg(unitStr);
         }
         else if (sensorName.contains("Stress", Qt::CaseInsensitive)) {
-            unitStr = "[Mbar/100GPa]";
+            unitStr = "[Mbar]";
             axisCategory = QString("Stress %1").arg(unitStr);
         }
-        else if (sensorName.contains("Force", Qt::CaseInsensitive) || sensorName.contains("Reaction", Qt::CaseInsensitive)) {
+        else if (sensorName.contains("Force", Qt::CaseInsensitive)) {
             unitStr = "[10^7 Dyne]";
             axisCategory = QString("Force %1").arg(unitStr);
         }
@@ -446,28 +422,19 @@ void PostProcessWidget::handleSensorSelectionChanged() {
             yAxisCategorySet << axisCategory;
         }
 
-        // 图例显示带上单位
         graph->setName(QString("%1 %2").arg(sensorName).arg(unitStr));
 
-        // 设置画笔
         QPen pen;
         pen.setColor(palette[colorIdx % palette.size()]);
         pen.setWidth(2);
         graph->setPen(pen);
-
         colorIdx++;
     }
 
-    // 设置坐标轴标签
     m_plotWidget->xAxis->setLabel("Time [μs]");
-    if (yAxisCategorySet.isEmpty()) {
-        m_plotWidget->yAxis->setLabel("Numerical Value (Unspecified Unit)");
-    }
-    else {
-        m_plotWidget->yAxis->setLabel(yAxisCategorySet.join("  |  "));
-    }
+    if (yAxisCategorySet.isEmpty()) m_plotWidget->yAxis->setLabel("Value");
+    else m_plotWidget->yAxis->setLabel(yAxisCategorySet.join("  |  "));
 
-    // 应用设置并重绘
     m_plotWidget->legend->setVisible(true);
     m_plotWidget->rescaleAxes();
     m_plotWidget->replot();

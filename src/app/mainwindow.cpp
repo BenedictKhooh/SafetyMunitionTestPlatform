@@ -969,6 +969,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
     int globalElemId = 1;  // 全局单元计数器
     std::vector<int> globalSensorIds; // 收集所有传感器的全局 ID
     std::set<int> globalSensorElemIds;
+    QMap<QString, QSet<int>> matchedSensorNodes; // 记录已分配过单元的监测点节点
 
     for (auto it = allEntities.begin(); it != allEntities.end(); ++it) {
         const MeshEntity& entity = it->second;
@@ -1015,7 +1016,10 @@ void MainWindow::exportToKFile(const QString& fileName) {
                 out << QString("%1").arg(localToGlobal[localIdx], 8);
 
                 if (m_sensorNodes.contains(entityName) && m_sensorNodes[entityName].contains(localIdx)) {
-                    isSensorElement = true;
+                    if (!matchedSensorNodes[entityName].contains(localIdx)) {
+                        matchedSensorNodes[entityName].insert(localIdx);
+                        isSensorElement = true;
+                    }
                 }
             }
             out << "\n";

@@ -189,7 +189,7 @@ private:
 	void handleRotateEntity(const QString& entityName);   //旋转
 	void applyTransformation(const QString& entityName, const QMatrix4x4& mat); // 变换应用函数
 
-    QString m_workingDirectory; // [新增] 用于保存当前的工作目录路径
+    QString m_workingDirectory; //用于保存当前的工作目录路径
     // ==========================================
     // 全局系统环境与路径设置
     // ==========================================
@@ -320,7 +320,7 @@ private:
     void loadMaterialPresetsFromJson(); // 读取 JSON 文件的辅助函数
 
 
-    // 🌟 [新增] 专门追踪唯一的控制卡片，确保它在 K 文件中最先输出
+    //专门追踪唯一的控制卡片，确保它在 K 文件中最先输出
     std::shared_ptr<GlobalControlCard> m_globalControlCard = nullptr;
 
 private slots:
@@ -368,6 +368,11 @@ private slots:
      */
     void handleMatsumPolling();
     void handleSkipCurrentStep();
+
+    void handleRunExistingBat();           // 运行已有的网格收敛性分析 bat 文件
+    void updateMeshMonitorConsole();       // 更新网格收敛性分析的 Tab 终端的输出
+    void updateMeshConvergencePlot();      // 定时器触发：增量解析 glstat 并绘图
+    void onMeshMonitorMetricChanged();     // 切换监控指标（内能/动能）
 
 private:
 
@@ -468,5 +473,18 @@ private:
     double m_lowerBoundMag = -1.0; ///< 已知死火的最大绝对速度 (-1表示未找到)
     double m_upperBoundMag = -1.0; ///< 已知起爆的最小绝对速度 (-1表示未找到)
     QPushButton* btnSkipStep = nullptr;
+
+private:
+
+    QPushButton* btnSubmitExistingBat;     // 提交现有批处理按钮
+    QTextEdit* meshMonitorConsole;         // 专属监控终端
+    QCustomPlot* meshConvergencePlot;      // 实时曲线图
+    QComboBox* comboMeshMonitorMetric;     // 指标选择下拉框
+
+    // 逻辑控制
+    QProcess* m_meshBatchProcess = nullptr; // 独立的网格收敛批处理进程
+    QTimer* m_meshMonitorTimer = nullptr;   // 实时刷新定时器
+    int m_currentMeshStepToMonitor = 0;     // 当前监控的 Step 编号 (Step_1, Step_2...)
+    qint64 m_lastGlstatPos = 0;             // 文件读取指针（实现增量读取）
 };
 #endif // MAINWINDOW_H

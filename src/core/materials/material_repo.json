@@ -157,7 +157,7 @@
         "ig_ar1": 0.333,
         "ig_es1": 0.667,
         "ig_cvp": 1.0e-5,
-        "ig_cvr": 2.478e-5,
+        "ig_cvr": 2.48e-5,
         "ig_eetal": 7.0,
         "ig_ccrit": 0.0367,
         "ig_enq": 0.085,

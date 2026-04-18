@@ -34,6 +34,8 @@
 #include <regex>
 #include <QTimer>
 
+#include "src/app/PostProcessing/qcustomplot.h"
+
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
     // 引入多工作区
@@ -1910,7 +1912,7 @@ void MainWindow::handleMaterialTypeChanged(const QString& matType) {
     auto addParam = [&](const QString& label, const QString& key, double defaultVal, const QString& unit = "") {
         QDoubleSpinBox* box = new QDoubleSpinBox();
         box->setRange(-999999, 999999);
-        box->setDecimals(5);
+        box->setDecimals(10);
         box->setValue(defaultVal);
 
         if (!unit.isEmpty()) {
@@ -2465,9 +2467,9 @@ void MainWindow::handleAddSensor() {
 /**
  * @brief 初始化“求解与仿真试验方案设计”工作区界面 (自动化综合控制台)
  * @details 该函数负责构建后处理模块的 UI 布局，主要包含三个核心部分：
- * 1. 单次求解与控制台监控面板。
- * 2. 基于实体级别的网格收敛性智能批处理与研判面板（左侧占比 60%）。
- * 3. 基于升降法的起爆阈值寻优批处理及序列预览面板（右侧占比 40%）。
+ * 1. 单次求解与控制台监控面板
+ * 2. 基于实体级别的网格收敛性智能批处理与研判面板
+ * 3. 基于升降法的起爆阈值寻优批处理及序列预览面板
  * 注：自动化批处理界面的表格控件被设置为垂直方向自动扩展，以充分利用屏幕高度。
  */
 void MainWindow::setupPostProcessUI() {
@@ -2570,7 +2572,7 @@ void MainWindow::setupPostProcessUI() {
     meshConvLayout->addLayout(tableHeaderLayout);
 
     tableMeshSettings = new QTableWidget(0, 4);
-    tableMeshSettings->setHorizontalHeaderLabels({ "物理实体名称", "分类语义", "基础网格尺寸(mm)", "迭代缩放因子" });
+    tableMeshSettings->setHorizontalHeaderLabels({ "物理实体名称", "实体类型", "基础网格尺寸(mm)", "网格缩放因子" });
     tableMeshSettings->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     tableMeshSettings->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     tableMeshSettings->setMinimumHeight(150);
@@ -2592,15 +2594,45 @@ void MainWindow::setupPostProcessUI() {
 
     // A.3 收敛性批处理执行按钮区
     QHBoxLayout* meshBtnLayout = new QHBoxLayout();
-    QPushButton* btnGenerateMeshBatch = new QPushButton("① 一键生成网格收敛 .bat 脚本");
+    QPushButton* btnGenerateMeshBatch = new QPushButton("生成网格收敛批处理脚本");
     btnGenerateMeshBatch->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
-    QPushButton* btnAnalyzeConvergence = new QPushButton("② 读取结果生成收敛报告");
+    btnSubmitExistingBat = new QPushButton("提交计算现有批处理文件");
+    btnSubmitExistingBat->setStyleSheet("background-color: #FF9800; color: white; font-weight: bold; min-height: 35px;");
+    QPushButton* btnAnalyzeConvergence = new QPushButton("读取网格收敛性结果");
     btnAnalyzeConvergence->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
     meshBtnLayout->addWidget(btnGenerateMeshBatch);
+    meshBtnLayout->addWidget(btnSubmitExistingBat);
     meshBtnLayout->addWidget(btnAnalyzeConvergence);
     meshConvLayout->addLayout(meshBtnLayout);
 
     hSplitLayout->addWidget(meshConvergenceGroup, 6);
+
+    // --- [新增] 监控终端 (Terminal) ---
+    meshMonitorConsole = new QTextEdit();
+    meshMonitorConsole->setReadOnly(true);
+    meshMonitorConsole->setPlaceholderText("等待任务提交... 实时输出将显示在此");
+    meshMonitorConsole->setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas'; font-size: 10pt;");
+    meshMonitorConsole->setMinimumHeight(120);
+    meshConvLayout->addWidget(meshMonitorConsole);
+
+    // --- [新增] QCustomPlot 绘图区 ---
+    QGroupBox* meshMonitorGroup = new QGroupBox("计算过程实时特征监控");
+    QVBoxLayout* meshMonitorLayout = new QVBoxLayout(meshMonitorGroup);
+
+    comboMeshMonitorMetric = new QComboBox();
+    comboMeshMonitorMetric->addItems({ "系统总内能 (Internal Energy)", "系统总动能 (Kinetic Energy)" });
+    meshMonitorLayout->addWidget(comboMeshMonitorMetric);
+
+    meshConvergencePlot = new QCustomPlot();
+    meshConvergencePlot->setMinimumHeight(250);
+    meshConvergencePlot->addGraph();
+    meshConvergencePlot->graph(0)->setPen(QPen(Qt::cyan, 2));
+    meshConvergencePlot->xAxis->setLabel("时间 (Time)");
+    meshConvergencePlot->yAxis->setLabel("能量值");
+    meshConvergencePlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    meshMonitorLayout->addWidget(meshConvergencePlot);
+
+    meshConvLayout->addWidget(meshMonitorGroup);
 
     // ---------------------------------------------------------
     // 右半区 (模块 B): 起爆阈值闭环寻优操作面板
@@ -2643,7 +2675,6 @@ void MainWindow::setupPostProcessUI() {
     velContainerLayout->addLayout(formLayout);
 
     // B.3 动作控制总线布局 
-    // [重构] 现已增加“人工干预跳过”按钮
     QHBoxLayout* thresholdBtnLayout = new QHBoxLayout();
 
     btnGenerateThreshold = new QPushButton("生成基础模型");
@@ -2700,8 +2731,14 @@ void MainWindow::setupPostProcessUI() {
     connect(btnTerminateProcess, &QPushButton::clicked, this, &MainWindow::handleTerminateProcess);
     connect(btnRefreshVelocity, &QPushButton::clicked, this, &MainWindow::handleRefreshInitialVelocity);
 
-    // [新增] 绑定跳过按钮的槽函数
+    //绑定跳过按钮的槽函数
     connect(btnSkipStep, &QPushButton::clicked, this, &MainWindow::handleSkipCurrentStep);
+
+    connect(btnSubmitExistingBat, &QPushButton::clicked, this, &MainWindow::handleRunExistingBat);
+    connect(comboMeshMonitorMetric, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onMeshMonitorMetricChanged);
+
+    m_meshMonitorTimer = new QTimer(this);
+    connect(m_meshMonitorTimer, &QTimer::timeout, this, &MainWindow::updateMeshConvergencePlot);
 }
 
 
@@ -4276,5 +4313,101 @@ void MainWindow::onGlobalSettings() {
         }
 
         logCommand("System", "全局设置已更新：求解器引擎路径变更。");
+    }
+}
+
+void MainWindow::handleRunExistingBat() {
+    QString batPath = QFileDialog::getOpenFileName(this, "选择批处理文件", m_workingDirectory, "批处理 (*.bat)");
+    if (batPath.isEmpty()) return;
+
+    if (!m_meshBatchProcess) {
+        m_meshBatchProcess = new QProcess(this);
+        connect(m_meshBatchProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::updateMeshMonitorConsole);
+        connect(m_meshBatchProcess, &QProcess::readyReadStandardError, this, &MainWindow::updateMeshMonitorConsole);
+    }
+
+    if (m_meshBatchProcess->state() == QProcess::Running) {
+        if (QMessageBox::question(this, "确认", "已有任务运行，是否终止并启动新任务？") != QMessageBox::Yes) return;
+        m_meshBatchProcess->kill();
+        m_meshBatchProcess->waitForFinished();
+    }
+
+    meshMonitorConsole->clear();
+    meshMonitorConsole->append("[系统] 启动任务: " + batPath);
+
+    // 初始化绘图状态
+    m_currentMeshStepToMonitor = 1;
+    m_lastGlstatPos = 0;
+    meshConvergencePlot->graph(0)->data()->clear();
+
+    m_meshBatchProcess->setWorkingDirectory(QFileInfo(batPath).absolutePath());
+    m_meshBatchProcess->start("cmd.exe", QStringList() << "/c" << batPath);
+    m_meshMonitorTimer->start(1000); // 1秒解析一次文件
+}
+
+void MainWindow::updateMeshMonitorConsole() {
+    QByteArray data = m_meshBatchProcess->readAllStandardOutput();
+    if (data.isEmpty()) data = m_meshBatchProcess->readAllStandardError();
+    QString str = QString::fromLocal8Bit(data);
+
+    meshMonitorConsole->moveCursor(QTextCursor::End);
+    meshMonitorConsole->insertPlainText(str);
+
+    // 智能嗅探：如果发现日志切换了 Step，更新监控目录
+    QRegularExpression re("Running Step (\\d+)");
+    auto match = re.match(str);
+    if (match.hasMatch()) {
+        m_currentMeshStepToMonitor = match.captured(1).toInt();
+        m_lastGlstatPos = 0; // 重置指针，读新目录的 glstat
+    }
+}
+
+void MainWindow::onMeshMonitorMetricChanged() {
+    m_lastGlstatPos = 0;
+    meshConvergencePlot->graph(0)->data()->clear();
+    updateMeshConvergencePlot();
+}
+
+void MainWindow::updateMeshConvergencePlot() {
+    if (m_workingDirectory.isEmpty()) return;
+
+    // 路径：工作目录/Step_N/glstat
+    QString glstatPath = QDir(m_workingDirectory).filePath(QString("Step_%1/glstat").arg(m_currentMeshStepToMonitor));
+    QFile file(glstatPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+    // 增量读取
+    if (file.size() >= m_lastGlstatPos) file.seek(m_lastGlstatPos);
+    else { m_lastGlstatPos = 0; meshConvergencePlot->graph(0)->data()->clear(); }
+
+    QTextStream in(&file);
+    bool hasNewData = false;
+    double time = -1.0;
+    int idx = comboMeshMonitorMetric->currentIndex();
+
+    while (!in.atEnd()) {
+        QString line = in.readLine().toLower();
+        // 简单解析逻辑 (LS-DYNA glstat 格式)
+        if (line.contains("time")) {
+            QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+            if (parts.size() >= 3) time = parts.last().toDouble();
+        }
+
+        QString target = (idx == 0) ? "internal energy" : "kinetic energy";
+        if (time >= 0 && line.contains(target)) {
+            QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+            if (parts.size() >= 3) {
+                meshConvergencePlot->graph(0)->addData(time, parts.last().toDouble());
+                hasNewData = true;
+                time = -1.0;
+            }
+        }
+    }
+    m_lastGlstatPos = file.pos();
+    file.close();
+
+    if (hasNewData) {
+        meshConvergencePlot->graph(0)->rescaleAxes();
+        meshConvergencePlot->replot();
     }
 }

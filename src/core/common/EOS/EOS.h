@@ -85,7 +85,7 @@ struct EOSCard : public KeywordCard {
                 "$#      r2        r3        r5        r6     fmxig      freq     grow1        em\n"
                 "%10.5f%10.4E%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n"
                 "$#     ar1       es1       cvp       cvr     eetal     ccrit       enq      tmp0\n"
-                "%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n"
+                "%10.4f%10.4f%10.4E%10.4E%10.4f%10.4f%10.4f%10.4f\n"
                 "$#   grow2       ar2       es2        en     fmxgr     fmngr\n"
                 "%10.4f%10.4f%10.4f%10.4f%10.4f%10.4f\n",
                 eosid, getVal("ig_a"), getVal("ig_b"), getVal("ig_xp1"), getVal("ig_xp2"),

@@ -22,6 +22,10 @@
 #include "src/core/generation/TriangularPrismGenerator.h"
 #include "src/core/generation/FSPGenerator.h"
 #include "src/core/generation/FrustumShellGenerator.h"
+#include "src/core/generation/RefinedCylinderGenerator.h"
+#include "src/core/generation/RefinedFrustumGenerator.h"
+#include "src/core/generation/RefinedCylindricalShellGenerator.h"
+#include "src/core/generation/RefinedFrustumShellGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 
@@ -132,6 +136,12 @@ private:
         QVBoxLayout* paramLayout;
         QLineEdit* nameInput;
         QMap<QString, QDoubleSpinBox*> paramInputs;
+
+        QCheckBox* chkVerticalRefinement;
+        QWidget* refinementContainer;
+        QDoubleSpinBox* spinZStart;
+        QDoubleSpinBox* spinZEnd;
+        QDoubleSpinBox* spinMsLocalZ;
     };
 
     // 声明三个独立窗口的 UI 管理器
@@ -489,5 +499,6 @@ private:
     qint64 m_lastGlstatPos = 0;             // 文件读取指针（实现增量读取）
 
     QPushButton* btnStopMeshBatch;         // 停止按钮
+
 };
 #endif // MAINWINDOW_H

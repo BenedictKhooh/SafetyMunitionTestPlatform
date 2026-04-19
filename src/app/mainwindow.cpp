@@ -1119,44 +1119,116 @@ void MainWindow::exportToKFile(const QString& fileName) {
 }
 
 
-// 辅助函数：创建独立且不可关闭的 Dock 窗口
-void MainWindow::setupGeneratorTab(QTabWidget* tabWidget, const QString& title, const QStringList& shapes, GeneratorUI& ui) {
-    // 1. 创建一个普通的 QWidget 作为单独的标签页
+/**
+ * @brief 构建并初始化物理实体生成器的选项卡界面 (UI Setup)
+ * * 该函数负责为不同类别的物理实体（如破片、壳体、装药等）动态生成输入面板，
+ * 包括形状选择下拉框、基础几何参数输入区，以及可选的“竖直方向局部细化”高级网格控制区。
+ * * @param tabWidget 目标父级选项卡控件 (QTabWidget)
+ * @param title     选项卡标题 (如 "Fragment", "Shell")
+ * @param shapes    该选项卡支持生成的形状列表 (如 "Cylinder", "Cube" 等)
+ * @param ui        关联的 GeneratorUI 结构体引用，用于持久化存储该选项卡内的控件指针
+ */
+void MainWindow::setupGeneratorTab(QTabWidget* tabWidget, const QString& title, const QStringList& shapes, GeneratorUI& ui)
+{
+    // 1. 创建主容器与垂直布局
     QWidget* tab = new QWidget(tabWidget);
     QVBoxLayout* mainLayout = new QVBoxLayout(tab);
 
-    // 2. 形状选择下拉框
-    mainLayout->addWidget(new QLabel("Select Shape:"));
+    // 2. 形状选择区 (Shape Selection)
+    mainLayout->addWidget(new QLabel("Select Shape:", tab));
     ui.shapeComboBox = new QComboBox(tab);
     ui.shapeComboBox->addItems(shapes);
     mainLayout->addWidget(ui.shapeComboBox);
 
-    // 3. 动态参数区域
     mainLayout->addSpacing(10);
-    mainLayout->addWidget(new QLabel("Parameters:"));
+
+    // 3. 动态基础参数区 (Dynamic Base Parameters)
+    // 注意：此处的具体输入框会由 handleShapeTypeChanged 根据所选形状动态生成
+    mainLayout->addWidget(new QLabel("Parameters:", tab));
     ui.paramContainer = new QWidget(tab);
     ui.paramLayout = new QVBoxLayout(ui.paramContainer);
     ui.paramLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->addWidget(ui.paramContainer);
 
+    // =========================================================================
+    // 4. 局部网格细化高级控制区 (Vertical Mesh Refinement Parameters)
+    // =========================================================================
+
+    // 4.1 启用开关
+    ui.chkVerticalRefinement = new QCheckBox("启用竖直方向局部网格细化", tab);
+    mainLayout->addWidget(ui.chkVerticalRefinement);
+
+    // 4.2 细化参数子容器与表单布局
+    ui.refinementContainer = new QWidget(tab);
+    QFormLayout* refineLayout = new QFormLayout(ui.refinementContainer);
+    refineLayout->setContentsMargins(15, 0, 0, 0); // 左侧缩进15px，体现层级从属关系
+
+    // 4.3 实例化细化参数输入组件 (Z_start, Z_end, ms_local_z)
+    ui.spinZStart = new QDoubleSpinBox(tab);
+    ui.spinZStart->setRange(0.0, 10000.0);
+    ui.spinZStart->setDecimals(3);
+
+    ui.spinZEnd = new QDoubleSpinBox(tab);
+    ui.spinZEnd->setRange(0.0, 10000.0);
+    ui.spinZEnd->setDecimals(3);
+
+    ui.spinMsLocalZ = new QDoubleSpinBox(tab);
+    ui.spinMsLocalZ->setRange(0.001, 100.0);
+    ui.spinMsLocalZ->setDecimals(3);
+    ui.spinMsLocalZ->setValue(0.1); // 设置默认的高密度网格尺寸
+
+    refineLayout->addRow("起始高度 (Z_start):", ui.spinZStart);
+    refineLayout->addRow("结束高度 (Z_end):", ui.spinZEnd);
+    refineLayout->addRow("局部网格尺寸 (ms_z):", ui.spinMsLocalZ);
+
+    mainLayout->addWidget(ui.refinementContainer);
+
+    // 初始状态下隐藏高级参数面板
+    ui.refinementContainer->setVisible(false);
+
+    // 4.4 绑定勾选框的显隐交互逻辑
+    connect(ui.chkVerticalRefinement, &QCheckBox::toggled, this, [&ui](bool checked) {
+        ui.refinementContainer->setVisible(checked);
+        });
+    // =========================================================================
+
     mainLayout->addStretch(1);
 
-    // 4. 生成按钮
+    // 5. 触发生成按钮 (Generate Button)
     QPushButton* generateBtn = new QPushButton("Generate " + title, tab);
     mainLayout->addWidget(generateBtn);
 
-    // 5. 将配置好的页面添加到 TabWidget 中
+    // 6. 将当前 Tab 注册到主控件中
     tabWidget->addTab(tab, title);
 
-    // 6. 信号槽连接
+    // =========================================================================
+    // 7. 核心信号与槽绑定 (Signals & Slots)
+    // =========================================================================
+
+    // 7.1 形状切换响应逻辑：动态刷新参数列表，并控制细化选项的可用性
     connect(ui.shapeComboBox, &QComboBox::currentTextChanged, this, [this, &ui](const QString& text) {
         handleShapeTypeChanged(ui, text);
+
+        // 智能显示判定：目前仅以下四种支持 Z 轴分层特征的几何体允许使用局部细化
+        bool supportsRefinement = (text == "Cylinder" ||
+            text == "Frustum" ||
+            text == "CylindricalShell" ||
+            text == "FrustumShell");
+
+        ui.chkVerticalRefinement->setVisible(supportsRefinement);
+
+        // 若切换到不支持的形状（如 Cube, Sphere），自动取消勾选并折叠面板
+        if (!supportsRefinement) {
+            ui.chkVerticalRefinement->setChecked(false);
+        }
         });
+
+    // 7.2 生成按钮响应逻辑：交由集中式构建函数处理
     connect(generateBtn, &QPushButton::clicked, this, [this, &ui]() {
         handleGenerateButtonClicked(ui);
         });
 
-    // 初始化显示
+    // 初始化时主动触发一次形状刷新，以构建默认形状的参数输入框
     handleShapeTypeChanged(ui, ui.shapeComboBox->currentText());
 }
 
@@ -1336,6 +1408,19 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
     m_repository.addEntity(name, preEntity);
     // ==========================================
 
+    // ==========================================
+    // 🌟 提取局部细化参数
+    // ==========================================
+    bool isRefined = false;
+    double zStart = 0.0, zEnd = 0.0, msLocalZ = 0.0;
+    if (ui.chkVerticalRefinement && ui.chkVerticalRefinement->isChecked()) {
+        isRefined = true;
+        zStart = ui.spinZStart->value();
+        zEnd = ui.spinZEnd->value();
+        msLocalZ = ui.spinMsLocalZ->value();
+    }
+    // ==========================================
+
     // 再调用异步底层生成逻辑
     if (type == "Cube") {
         CubeGenerator gen;
@@ -1343,14 +1428,30 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         m_meshManager->buildAndLoad(gen, name);
     }
     else if (type == "Cylinder") {
-        CylinderGenerator gen;
-        gen.setParameters(val("r"), val("ms"), val("h"), val("cx"), val("cy"), val("cz"));
-        m_meshManager->buildAndLoad(gen, name);
+        if (isRefined) {
+            RefinedCylinderGenerator gen;
+            gen.setParameters(val("r"), val("ms"), val("h"), val("cx"), val("cy"), val("cz"), zStart, zEnd, msLocalZ);
+            m_meshManager->buildAndLoad(gen, name);
+        }
+        else {
+            CylinderGenerator gen;
+            gen.setParameters(val("r"), val("ms"), val("h"), val("cx"), val("cy"), val("cz"));
+            m_meshManager->buildAndLoad(gen, name);
+        }
     }
     else if (type == "CylindricalShell") {
-        CylindricalShellGenerator gen;
-        gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
-        m_meshManager->buildAndLoad(gen, name);
+        if (isRefined) {
+            RefinedCylindricalShellGenerator gen;
+            // 原逻辑是 h 为总高，lid 为端盖。新类需要内部空腔高度 hVoid
+            double hVoid = val("h") - 2.0 * val("lid");
+            gen.setParameters(val("r"), val("wall"), val("lid"), hVoid, val("ms"), val("cx"), val("cy"), val("cz"), zStart, zEnd, msLocalZ);
+            m_meshManager->buildAndLoad(gen, name);
+        }
+        else {
+            CylindricalShellGenerator gen;
+            gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
+            m_meshManager->buildAndLoad(gen, name);
+        }
     }
     else if (type == "OpenCylindricalShell") {
         OpenCylindricalShellGenerator gen;
@@ -1368,9 +1469,16 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         m_meshManager->buildAndLoad(gen, name);
     }
     else if (type == "Frustum") {
-        FrustumGenerator gen;
-        gen.setParameters(val("rb"), val("rt"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
-        m_meshManager->buildAndLoad(gen, name);
+        if (isRefined) {
+            RefinedFrustumGenerator gen;
+            gen.setParameters(val("rb"), val("rt"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"), zStart, zEnd, msLocalZ);
+            m_meshManager->buildAndLoad(gen, name);
+        }
+        else {
+            FrustumGenerator gen;
+            gen.setParameters(val("rb"), val("rt"), val("h"), val("ms"), val("cx"), val("cy"), val("cz"));
+            m_meshManager->buildAndLoad(gen, name);
+        }
     }
     else if (type == "HalfCylinder") {
         HalfCylinderGenerator gen;
@@ -1403,13 +1511,22 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         m_meshManager->buildAndLoad(gen, name);
     }
     else if (type == "FrustumShell") {
-        FrustumShellGenerator gen;
-        gen.setParameters(
-            val("rb"), val("rt"), val("wall"), val("hcap"), val("hvoid"),
-            val("ms"),
-            val("cx"), val("cy"), val("cz")
-        );
-        m_meshManager->buildAndLoad(gen, name);
+        if (isRefined) {
+            
+            RefinedFrustumShellGenerator gen;
+            gen.setParameters(val("rb"), val("rt"), val("wall"), val("hcap"), val("hvoid"), val("ms"), val("cx"), val("cy"), val("cz"), zStart, zEnd, msLocalZ);
+            m_meshManager->buildAndLoad(gen, name);
+            
+        }
+        else {
+            FrustumShellGenerator gen;
+            gen.setParameters(
+                val("rb"), val("rt"), val("wall"), val("hcap"), val("hvoid"),
+                val("ms"),
+                val("cx"), val("cy"), val("cz")
+            );
+            m_meshManager->buildAndLoad(gen, name);
+        }
     }
 
     logCommand("GUI Generate (" + type + "): " + name);

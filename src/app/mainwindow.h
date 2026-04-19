@@ -26,6 +26,8 @@
 #include "src/core/generation/RefinedFrustumGenerator.h"
 #include "src/core/generation/RefinedCylindricalShellGenerator.h"
 #include "src/core/generation/RefinedFrustumShellGenerator.h"
+#include "src/core/generation/RefinedHalfCylindricalShellGenerator.h"
+#include "src/core/generation/RefinedOpenCylindricalShellGenerator.h"
 #include "src/core/common/EntityRepository.h"
 #include "commandline.h"
 

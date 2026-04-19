@@ -1213,7 +1213,9 @@ void MainWindow::setupGeneratorTab(QTabWidget* tabWidget, const QString& title, 
         bool supportsRefinement = (text == "Cylinder" ||
             text == "Frustum" ||
             text == "CylindricalShell" ||
-            text == "FrustumShell");
+            text == "FrustumShell" ||
+            text == "OpenCylindricalShell" || 
+            text == "HalfCylindricalShell");
 
         ui.chkVerticalRefinement->setVisible(supportsRefinement);
 
@@ -1454,9 +1456,19 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         }
     }
     else if (type == "OpenCylindricalShell") {
-        OpenCylindricalShellGenerator gen;
-        gen.setParameters(val("r"), val("wall"), val("h_base"), val("h_wall"), val("ms"), val("cx"), val("cy"), val("cz"));
-        m_meshManager->buildAndLoad(gen, name);
+        if (isRefined) {
+            RefinedOpenCylindricalShellGenerator gen;
+            // 传入局部细化参数 zStart, zEnd, msLocalZ
+            gen.setParameters(val("r"), val("wall"), val("h_base"), val("h_wall"), val("ms"),
+                val("cx"), val("cy"), val("cz"),
+                zStart, zEnd, msLocalZ);
+            m_meshManager->buildAndLoad(gen, name);
+        }
+        else {
+            OpenCylindricalShellGenerator gen;
+            gen.setParameters(val("r"), val("wall"), val("h_base"), val("h_wall"), val("ms"), val("cx"), val("cy"), val("cz"));
+            m_meshManager->buildAndLoad(gen, name);
+        }
     }
     else if (type == "Sphere") {
         SphereGenerator gen;
@@ -1501,9 +1513,19 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui) {
         m_meshManager->buildAndLoad(gen, name);
     }
     else if (type == "HalfCylindricalShell") {
-        HalfCylindricalShellGenerator gen;
-        gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
-        m_meshManager->buildAndLoad(gen, name);
+        if (isRefined) {
+            RefinedHalfCylindricalShellGenerator gen;
+            // 传入局部细化参数 zStart, zEnd, msLocalZ
+            gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"),
+                val("cx"), val("cy"), val("cz"),
+                zStart, zEnd, msLocalZ);
+            m_meshManager->buildAndLoad(gen, name);
+        }
+        else {
+            HalfCylindricalShellGenerator gen;
+            gen.setParameters(val("r"), val("h"), val("lid"), val("wall"), val("ms"), val("cx"), val("cy"), val("cz"));
+            m_meshManager->buildAndLoad(gen, name);
+        }
     }
     else if (type == "Fragment Simulating Projectile") {
         FSPGenerator gen;
@@ -1889,7 +1911,7 @@ void MainWindow::createSimulationSetupDock() {
     ctrlLayout->insertRow(0, "项目名称 (TITLE):", m_simSetupUI.jobTitleInput);
 
     m_simSetupUI.tssfacInput = new QDoubleSpinBox();
-    m_simSetupUI.tssfacInput->setRange(0.1, 1.0); m_simSetupUI.tssfacInput->setValue(0.9); m_simSetupUI.tssfacInput->setSingleStep(0.1);
+    m_simSetupUI.tssfacInput->setRange(0.1, 1.0); m_simSetupUI.tssfacInput->setValue(0.67); m_simSetupUI.tssfacInput->setSingleStep(0.1);
     ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
 
     // ==========================================

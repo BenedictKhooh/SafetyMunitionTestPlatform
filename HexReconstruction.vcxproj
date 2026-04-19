@@ -375,6 +375,8 @@
     <ClCompile Include="src\core\generation\RefinedCylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\RefinedFrustumGenerator.cpp" />
     <ClCompile Include="src\core\generation\RefinedFrustumShellGenerator.cpp" />
+    <ClCompile Include="src\core\generation\RefinedHalfCylindricalShellGenerator.cpp" />
+    <ClCompile Include="src\core\generation\RefinedOpenCylindricalShellGenerator.cpp" />
     <ClCompile Include="src\core\generation\SphereGenerator.cpp" />
     <ClCompile Include="src\core\generation\TriangularPrismGenerator.cpp" />
   </ItemGroup>
@@ -416,6 +418,8 @@
     <ClInclude Include="src\core\generation\RefinedCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\RefinedFrustumGenerator.h" />
     <ClInclude Include="src\core\generation\RefinedFrustumShellGenerator.h" />
+    <ClInclude Include="src\core\generation\RefinedHalfCylindricalShellGenerator.h" />
+    <ClInclude Include="src\core\generation\RefinedOpenCylindricalShellGenerator.h" />
     <ClInclude Include="src\core\generation\SphereGenerator.h" />
     <QtMoc Include="src\app\mainwindow.h" />
     <ClInclude Include="src\core\generation\TriangularPrismGenerator.h" />

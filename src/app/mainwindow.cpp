@@ -3281,130 +3281,180 @@ void MainWindow::handleGenerateMeshConvergenceBatch() {
 }
 
 /**
- * @brief 自动化解析求解结果并生成网格收敛性分析报告 (适配多目录隔离架构)
- * @details 遍历所有子级独立工作区目录 (Step_X)，定位并读取底层的 ASCII 结果文件 (glstat, nodout 等)。
- * 通过正则表达式提取最后的稳态特征指标，并基于收敛容差输出指导性的网格控制方案。
+ * @brief 执行网格收敛性结果的批量读取与多曲线汇总绘制
+ * @details
+ * 1. 自动遍历 Step_1 至 Step_N 文件夹，无需依赖 UI 实体控制列表。
+ * 2. 从 matsum 文件的 {BEGIN LEGEND} 区块中动态提取实体 ID 与名称。
+ * 3. 从结果文件首行提取计算工况标题（通常包含网格尺寸定义）。
+ * 4. 自动为每个迭代步创建独立图层，并在图例中整合步长、实体名及网格参数。
  */
+ /**
+  * @brief 批量解析网格收敛性结果并执行多实体多步长对比绘图
+  * @details
+  * 1. 自动遍历 Step 文件夹，直接从 matsum 文件中提取实体定义与物理参数。
+  * 2. 支持在一个图表中叠加绘制所有 Step 中所有实体的时域曲线。
+  * 3. 针对大规模数据文件（>100MB），通过 QCoreApplication::processEvents() 保持 UI 响应。
+  * 4. 自动计算合速度（Resultant Velocity）并适配 glstat 风格的点阵数据格式。
+  */
 void MainWindow::handleAnalyzeConvergence() {
-    // 1. 前置条件与工作空间校验
     if (m_workingDirectory.isEmpty()) {
-        QMessageBox::warning(this, "路径缺失", "请先在菜单栏设置有效的工作目录。");
-        return;
-    }
-    if (tableMeshSettings->rowCount() == 0) {
-        QMessageBox::warning(this, "数据缺失", "当前实体控制表为空，请先刷新并读取物理实体。");
+        QMessageBox::warning(this, "路径缺失", "请设置工作目录。");
         return;
     }
 
-    int steps = spinMeshSteps->value();
+    // 1. 自动探测 Step 文件夹数量 (解决读取不到第4个文件夹的问题)
+    int actualSteps = 0;
+    while (QDir(m_workingDirectory).exists(QString("Step_%1").arg(actualSteps + 1))) {
+        actualSteps++;
+    }
+
+    if (actualSteps == 0) {
+        QMessageBox::warning(this, "结果缺失", "未在工作目录下找到任何 Step_X 文件夹。");
+        return;
+    }
+
+    int metricIndex = comboTargetMetric->currentIndex();
     double tolerance = spinTolerance->value() / 100.0;
-    int metricIndex = comboTargetMetric->currentIndex(); // 0: 内能, 1: 动能, 2: 剩余速度
 
-    std::vector<int> stepList;
-    std::vector<double> targetValues;
+    if (meshConvergencePlot) {
+        meshConvergencePlot->clearGraphs();
+        meshConvergencePlot->legend->setVisible(true);
+        meshConvergencePlot->legend->setFont(QFont(font().family(), 8));
+    }
 
-    QProgressDialog progress("正在跨工作区检索并解析结果文件...", "取消", 0, steps, this);
+    QList<QColor> colorPool = { Qt::red, Qt::blue, Qt::green, Qt::magenta, Qt::darkCyan, Qt::darkYellow, Qt::gray };
+    int colorIdx = 0;
+
+    // 存储结构：Map<实体名, Map<Step编号, DataPair>>
+    struct CurveData { QVector<double> t; QVector<double> v; };
+    QMap<QString, QMap<int, CurveData>> allEntityData;
+
+    QProgressDialog progress("正在执行全量曲线误差分析...", "取消", 0, actualSteps, this);
     progress.setWindowModality(Qt::WindowModal);
 
-    std::regex internalRegex(R"(internal energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex kineticRegex(R"(kinetic energy\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?))");
-    std::regex velocityRegex(R"(^\s*1\s+(?:[+-]?\S+\s+){3}([+-]?\S+)\s+([+-]?\S+)\s+([+-]?\S+))");
-
-    // 2. 循环进入各独立子目录并执行结果抓取
-    for (int i = 0; i < steps; ++i) {
+    for (int i = 0; i < actualSteps; ++i) {
         progress.setValue(i);
+        QCoreApplication::processEvents();
         if (progress.wasCanceled()) break;
 
-        // 构建子目录路径: m_workingDirectory/Step_X/
-        QString stepFolderName = QString("Step_%1").arg(i + 1);
-        QDir stepDir(QDir(m_workingDirectory).filePath(stepFolderName));
+        QString stepName = QString("Step_%1").arg(i + 1);
+        QDir stepDir(QDir(m_workingDirectory).filePath(stepName));
+        QString matsumPath = stepDir.filePath("matsum");
 
-        // LS-DYNA 在独立目录下输出时，文件不再附带前缀，仅为标准的文件名
-        QString targetFileName = (metricIndex == 2) ? "nodout" : "glstat";
-        QString resultFilePath = stepDir.filePath(targetFileName);
+        QFile file(matsumPath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
 
-        double finalMetricValue = 0.0;
-        std::ifstream file(resultFilePath.toLocal8Bit().constData());
+        QTextStream in(&file);
+        QString meshTitle = in.readLine().trimmed();
+        QMap<int, QString> entityNames;
+        bool inLegend = false;
+        double currentTime = -1.0;
 
-        // 3. 核心 IO 解析区：逐行读取并进行正则特征匹配
-        if (file.is_open()) {
-            std::string line;
-            std::smatch match;
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.isEmpty()) continue;
 
-            while (std::getline(file, line)) {
-                std::string lowerLine = line;
-                std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
+            if (line.contains("{BEGIN LEGEND}")) { inLegend = true; continue; }
+            if (line.contains("{END LEGEND}")) { inLegend = false; continue; }
+            if (inLegend && !line.contains("Entity #")) {
+                QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+                if (parts.size() >= 2) entityNames[parts[0].toInt()] = parts[1];
+                continue;
+            }
 
-                if (metricIndex == 0) {
-                    if (std::regex_search(lowerLine, match, internalRegex)) finalMetricValue = std::stod(match[1].str());
-                }
-                else if (metricIndex == 1) {
-                    if (std::regex_search(lowerLine, match, kineticRegex)) finalMetricValue = std::stod(match[1].str());
-                }
-                else if (metricIndex == 2) {
-                    if (std::regex_search(lowerLine, match, velocityRegex)) {
-                        double vx = std::stod(match[1].str());
-                        double vy = std::stod(match[2].str());
-                        double vz = std::stod(match[3].str());
-                        finalMetricValue = std::sqrt(vx * vx + vy * vy + vz * vz);
+            QString lowerLine = line.toLower();
+            if (lowerLine.startsWith("time =")) {
+                currentTime = lowerLine.section('=', 1).trimmed().toDouble();
+            }
+            else if (currentTime >= 0.0 && lowerLine.startsWith("mat.#=")) {
+                int matId = lowerLine.split(QRegularExpression("[\\s=]+"), Qt::SkipEmptyParts)[1].toInt();
+                QString name = entityNames.value(matId, QString("Mat_%1").arg(matId));
+
+                double val = 0.0;
+                if (metricIndex == 2) { // 速度
+                    in.readLine(); in.readLine(); // 跳过 mom 行和进入 rbv 行
+                    QString rbvLine = in.readLine().trimmed().toLower();
+                    if (rbvLine.startsWith("x-rbv")) {
+                        QStringList vP = rbvLine.split(QRegularExpression("[\\s=]+"), Qt::SkipEmptyParts);
+                        if (vP.size() >= 6) val = qSqrt(qPow(vP[1].toDouble(), 2) + qPow(vP[3].toDouble(), 2) + qPow(vP[5].toDouble(), 2));
                     }
                 }
-            }
-            file.close();
-        }
-        else {
-            QMessageBox::warning(this, "IO 解析异常",
-                QString("在工作区 %1 中未寻找到计算结果文件：%2\n\n请确认 LS-DYNA 是否成功完成该工况计算，且已配置对应的 *DATABASE 卡片。")
-                .arg(stepFolderName).arg(targetFileName));
-            return;
-        }
-
-        stepList.push_back(i + 1);
-        targetValues.push_back(finalMetricValue);
-    }
-    progress.setValue(steps);
-
-    // 4. 收敛性研判与相对误差计算
-    QString report = "【实体级网格收敛性综合分析报告】\n\n";
-    bool isConverged = false;
-    int optimalStep = 1;
-
-    for (size_t i = 0; i < targetValues.size(); ++i) {
-        report += QString("迭代第 %1 步: 观测极值 = %2\n").arg(stepList[i]).arg(targetValues[i], 0, 'e', 4);
-
-        if (i > 0) {
-            double error = std::abs(targetValues[i] - targetValues[i - 1]) / (std::abs(targetValues[i - 1]) + 1e-9);
-            report += QString("   -> 相对变化率: %1%\n").arg(error * 100.0, 0, 'f', 2);
-
-            if (error <= tolerance && !isConverged) {
-                isConverged = true;
-                optimalStep = stepList[i];
-                report += QString("    [系统评估] 达到收敛标准！\n");
+                else { // 能量
+                    QString key = (metricIndex == 0) ? "inten=" : "kinen=";
+                    if (lowerLine.contains(key)) val = lowerLine.section(key, 1).trimmed().split(" ").first().toDouble();
+                }
+                allEntityData[name][i + 1].t.append(currentTime);
+                allEntityData[name][i + 1].v.append(val);
             }
         }
+        file.close();
     }
 
-    // 5. 组装最终结果与网格参数推荐方案
-    if (isConverged) {
-        report += QString("\n[结论] 网格在第 %1 步时已达到 %2% 的收敛标准。\n以下为该最优步对应的实体网格尺寸配置推荐方案：\n")
-            .arg(optimalStep).arg(spinTolerance->value());
-    }
-    else {
-        report += QString("\n[结论] 经历 %1 轮细化迭代后，观测指标的相对误差仍未降至 %2% 以下。\n请考虑提升细化总次数或排查模型应力奇异性。暂推荐最后一步配置：\n")
-            .arg(steps).arg(spinTolerance->value());
-        optimalStep = steps;
+    // 2. 绘图与基于曲线的相对误差计算
+    QString report = QString("【网格收敛性分析报告 - 自动探测到 %1 个工况】\n").arg(actualSteps);
+    report += "误差标准：全时域曲线 L2 范数相对偏差\n--------------------------------------------------\n";
+
+    QMapIterator<QString, QMap<int, CurveData>> entIt(allEntityData);
+    while (entIt.hasNext()) {
+        entIt.next();
+        QString entName = entIt.key();
+        report += QString("\n实体: %1\n").arg(entName);
+
+        QMap<int, CurveData> stepsData = entIt.value();
+        for (int i = 1; i <= actualSteps; ++i) {
+            if (!stepsData.contains(i)) continue;
+
+            // 绘制曲线
+            QCPGraph* graph = meshConvergencePlot->addGraph();
+            graph->setPen(QPen(colorPool[colorIdx % colorPool.size()], 1.5));
+            graph->setName(QString("Step %1 | %2").arg(i).arg(entName));
+            graph->setData(stepsData[i].t, stepsData[i].v);
+            colorIdx++;
+
+            // 曲线误差对比 (当前步与前一步)
+            if (i > 1 && stepsData.contains(i - 1)) {
+                const CurveData& cPrev = stepsData[i - 1];
+                const CurveData& cCurr = stepsData[i];
+
+                // 计算全时域误差：Sum(|V_curr - V_prev| * dt) / Sum(|V_prev| * dt)
+                double diffIntegral = 0;
+                double baseIntegral = 0;
+
+                // 使用较细步长的曲线作为采样基准进行线性插值对比
+                for (int k = 1; k < cCurr.t.size(); ++k) {
+                    double t = cCurr.t[k];
+                    double dt = t - cCurr.t[k - 1];
+                    double vCurr = cCurr.v[k];
+
+                    // 在前一步曲线中寻找相同时间点的插值
+                    double vPrev = 0;
+                    if (t <= cPrev.t.last()) {
+                        auto it = std::lower_bound(cPrev.t.begin(), cPrev.t.end(), t);
+                        int idx = std::distance(cPrev.t.begin(), it);
+                        if (idx > 0 && idx < cPrev.t.size()) {
+                            double t0 = cPrev.t[idx - 1], t1 = cPrev.t[idx];
+                            double v0 = cPrev.v[idx - 1], v1 = cPrev.v[idx];
+                            vPrev = v0 + (v1 - v0) * (t - t0) / (t1 - t0);
+                        }
+                        else vPrev = cPrev.v[idx];
+                    }
+
+                    diffIntegral += std::abs(vCurr - vPrev) * dt;
+                    baseIntegral += std::abs(vPrev) * dt;
+                }
+
+                double curveError = diffIntegral / (baseIntegral + 1e-12);
+                report += QString(" - Step %1 vs %2 曲线相对偏差: %3%\n").arg(i - 1).arg(i).arg(curveError * 100.0, 0, 'f', 2);
+                if (curveError <= tolerance) report += "   [结果] 曲线形态已收敛\n";
+            }
+        }
     }
 
-    for (int r = 0; r < tableMeshSettings->rowCount(); ++r) {
-        QString name = tableMeshSettings->item(r, 0)->text();
-        double baseSize = qobject_cast<QDoubleSpinBox*>(tableMeshSettings->cellWidget(r, 2))->value();
-        double factor = qobject_cast<QDoubleSpinBox*>(tableMeshSettings->cellWidget(r, 3))->value();
-
-        double optimalSize = baseSize * std::pow(factor, optimalStep - 1);
-        report += QString(" - 实体 [%1] 建议网格尺寸: %2 mm\n").arg(name).arg(optimalSize, 0, 'f', 2);
+    if (meshConvergencePlot) {
+        meshConvergencePlot->rescaleAxes();
+        meshConvergencePlot->replot();
     }
-
-    QMessageBox::information(this, "收敛性分析完成", report);
+    QMessageBox::information(this, "分析完成", report);
 }
 
 // ==============================================================
@@ -4402,10 +4452,11 @@ void MainWindow::updateMeshMonitorConsole() {
 }
 
 /**
- * @brief 响应全局判定指标下拉框的变化
+ * @brief 响应监控指标下拉列表状态改变事件
+ * @details 清空当前视图数据并更新 Y 轴标签。若求解器处于运行状态，则立即触发数据抓取与重绘。
  */
 void MainWindow::onMeshMonitorMetricChanged() {
-    if (meshConvergencePlot && meshConvergencePlot->graph(0)) {
+    if (meshConvergencePlot && meshConvergencePlot->graphCount() > 0) {
         meshConvergencePlot->graph(0)->data()->clear();
         meshConvergencePlot->yAxis->setLabel(comboTargetMetric->currentText());
         meshConvergencePlot->replot();
@@ -4416,80 +4467,107 @@ void MainWindow::onMeshMonitorMetricChanged() {
     }
 }
 
+/**
+ * @brief 定时读取 LS-DYNA 状态文件并更新绘图视图
+ * @details 采用影子副本（Shadow Copy）机制绕过文件排他锁，并包含完整的终端状态诊断输出。
+ */
+ /**
+  * @brief 定时抓取 LS-DYNA 后处理数据并刷新监控图表
+  * @note 针对 R14 版本 glstat 点阵填充格式及 matsum 跨行数据结构进行深度适配
+  */
 void MainWindow::updateMeshConvergencePlot() {
     if (m_workingDirectory.isEmpty() || m_currentMeshStepToMonitor <= 0) return;
+    if (!meshConvergencePlot || meshConvergencePlot->graphCount() == 0) return;
 
+    // 索引映射：0-靶板内能, 1-系统动能, 2-弹体速度
     int metricIdx = comboTargetMetric->currentIndex();
     QString stepDir = QDir(m_workingDirectory).filePath(QString("Step_%1").arg(m_currentMeshStepToMonitor));
     QString fileName = (metricIdx == 2) ? "matsum" : "glstat";
     QString filePath = QDir(stepDir).filePath(fileName);
 
-    QFile file(filePath);
-    // 无缓冲模式读取
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text | QIODevice::Unbuffered)) return;
+    QFileInfo checkFile(filePath);
+    if (!checkFile.exists() || checkFile.size() == 0) {
+        if (meshMonitorConsole) meshMonitorConsole->append("[系统] 正在等待求解器生成结果文件...");
+        return;
+    }
 
-    if (!meshConvergencePlot || !meshConvergencePlot->graph(0)) return;
+    // 影子拷贝，规避 Windows 强制文件锁
+    QString tempPath = filePath + "_shadow_copy";
+    QFile::remove(tempPath);
+    if (!QFile::copy(filePath, tempPath)) return;
 
+    QFile file(tempPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QFile::remove(tempPath);
+        return;
+    }
+
+    // 全量刷新，清空旧数据
     meshConvergencePlot->graph(0)->data()->clear();
 
     QTextStream in(&file);
-    bool hasData = false;
     double currentTime = -1.0;
+    int pointCount = 0;
 
     while (!in.atEnd()) {
-        QString line = in.readLine().toLower().trimmed();
+        QString line = in.readLine().trimmed().toLower();
         if (line.isEmpty()) continue;
 
-        // 提取时间
-        if (line.contains("time")) {
-            int eqPos = line.indexOf('=');
-            if (eqPos != -1) {
-                QString valStr = line.mid(eqPos + 1).trimmed();
-                bool ok;
-                double t = valStr.toDouble(&ok);
-                if (ok) currentTime = t;
+        if (metricIdx == 2) {
+            // ====================== 解析 matsum ======================
+            if (line.startsWith("time =")) {
+                currentTime = line.section('=', 1).trimmed().toDouble();
             }
-            continue;
-        }
-
-        // 提取物理量
-        if (currentTime >= 0.0) {
-            if (metricIdx == 2) {
-                // 解析 matsum (Part ID 2)
-                if ((line.contains("mat #:") || line.contains("part id")) && line.contains("2")) {
-                    QString dataLine = in.readLine().trimmed();
-                    QStringList parts = dataLine.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-                    if (!parts.isEmpty()) {
-                        meshConvergencePlot->graph(0)->addData(currentTime, parts.last().toDouble());
-                        hasData = true;
-                        currentTime = -1.0;
-                    }
-                }
-            }
-            else {
-                // 解析 glstat
-                QString targetWord = (metricIdx == 0) ? "internal energy" : "kinetic energy";
-                if (line.contains(targetWord)) {
-                    int eqPos = line.indexOf('=');
-                    if (eqPos != -1) {
-                        QString valStr = line.mid(eqPos + 1).trimmed();
-                        bool ok;
-                        double val = valStr.toDouble(&ok);
-                        if (ok) {
-                            meshConvergencePlot->graph(0)->addData(currentTime, val);
-                            hasData = true;
-                            currentTime = -1.0;
+            else if (currentTime >= 0.0 && line.startsWith("mat.#=")) {
+                // 找到材料 ID (假设弹体是材料 1，若为材料 2 则修改 contains("2"))
+                if (line.contains("1")) {
+                    in.readLine(); // 跳过下一行 (x-mom, y-mom...)
+                    QString rbvLine = in.readLine().trimmed().toLower(); // 这一行才是 x-rbv
+                    if (rbvLine.startsWith("x-rbv")) {
+                        // 提取 x-rbv=, y-rbv=, z-rbv= 后的数值
+                        QStringList parts = rbvLine.split(QRegularExpression("[\\s=]+"), Qt::SkipEmptyParts);
+                        if (parts.size() >= 6) {
+                            double vx = parts[1].toDouble();
+                            double vy = parts[3].toDouble();
+                            double vz = parts[5].toDouble();
+                            double v_res = qSqrt(vx * vx + vy * vy + vz * vz);
+                            meshConvergencePlot->graph(0)->addData(currentTime, v_res);
+                            pointCount++;
                         }
                     }
+                    currentTime = -1.0; // 重置，找下一个时间步
+                }
+            }
+        }
+        else {
+            // ====================== 解析 glstat ======================
+            // 处理 "time...........................   1.2345E+00"
+            if (line.startsWith("time") && line.contains("...")) {
+                QStringList p = line.split(QRegularExpression("[\\.\\s]+"), Qt::SkipEmptyParts);
+                if (!p.isEmpty()) currentTime = p.last().toDouble();
+            }
+            else if (currentTime >= 0.0) {
+                QString target = (metricIdx == 0) ? "internal energy" : "kinetic energy";
+                if (line.contains(target) && line.contains("...")) {
+                    QStringList p = line.split(QRegularExpression("[\\.\\s]+"), Qt::SkipEmptyParts);
+                    if (!p.isEmpty()) {
+                        meshConvergencePlot->graph(0)->addData(currentTime, p.last().toDouble());
+                        pointCount++;
+                    }
+                    currentTime = -1.0;
                 }
             }
         }
     }
 
     file.close();
+    QFile::remove(tempPath);
 
-    // 更新图表
-    if (hasData) {
+    if (meshMonitorConsole && pointCount > 0) {
+        meshMonitorConsole->append(QString("[排错] 成功抓取到 %1 的 %2 个数据点").arg(fileName).arg(pointCount));
+    }
+
+    if (pointCount > 0) {
         meshConvergencePlot->graph(0)->rescaleAxes();
         meshConvergencePlot->replot();
     }

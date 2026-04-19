@@ -8,19 +8,22 @@
 struct GlobalControlCard : public KeywordCard {
     double endtim; // 结束时间
     double tssfac; // 时间步缩放因子
-    double dt;     // D3PLOT 和 ASCII 数据库输出间隔
+    double dt;     // D3PLOT 数据库输出间隔
 
     GlobalControlCard() = default;
 
-    // 🌟 构造函数：只接收 UI 上需要填写的 3 个变量
     GlobalControlCard(double end_time, double ts_scale, double plot_freq) {
         endtim = end_time;
         tssfac = ts_scale;
         dt = plot_freq;
     }
 
-    // 🌟 核心多态方法：把 control_mate.k 里的所有默认控制参数一次性打包！
     std::string to_string() const override {
+        double ascii_dt = endtim / 1000.0;
+        if (ascii_dt < 0.005) {
+            ascii_dt = 0.005; // 限制最小步长防越界
+        }
+
         char buf[4096];
         snprintf(buf, sizeof(buf),
             "*CONTROL_BULK_VISCOSITY\n"
@@ -66,10 +69,10 @@ struct GlobalControlCard : public KeywordCard {
             "*DATABASE_MATSUM\n%10.4E         0         0         0         0         0\n"
             "*DATABASE_RCFORC\n%10.4E         0         0         0         0         0\n"
             "*DATABASE_SLEOUT\n%10.4E         0         0         0         0         0\n",
-            endtim, tssfac, dt, dt, dt, dt, dt
+            endtim, tssfac, dt, ascii_dt, ascii_dt, ascii_dt, ascii_dt
         );
         return std::string(buf);
     }
 };
 
-#endif // CONTROLCARDS_H#pragma once
+#endif // CONTROLCARDS_H

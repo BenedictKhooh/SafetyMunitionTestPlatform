@@ -1,40 +1,30 @@
 #include "BulletGenerator.h"
 
 QString BulletGenerator::buildGeoScript() const {
-    // 1. 将 C++ 变量安全地注入为 Gmsh 的全局参数
-    QString paramsHeader = QString(
-        "SetFactory(\"Built-in\");\n\n"
-        "// === 1. 参数注入区 (由 BulletGenerator 自动生成, 单位: cm) ===\n"
-        "R_out      = %1;\n"
-        "T_jacket   = %2;\n"
-        "L_cyl      = %3;\n"
-        "L_nose     = %4;\n"
-        "D_tip      = %5;\n"
-        "ms_xy      = %6;\n"
-        "ms_z_cyl   = %7;\n"
-        "ms_z_nose  = %8;\n"
-        "prog_nose  = %9;\n"
-        "CX         = %10;\n"
-        "CY         = %11;\n"
-        "CZ         = %12;\n\n"
-        "// 固定的 4+8 最佳拓扑比例\n"
-        "ratio_core = 0.60;\n\n"
-    ).arg(m_caliber / 2.0)
-        .arg(m_jacketThickness)
-        .arg(m_cylinderLength)
-        .arg(m_noseLength)
-        .arg(m_tipDiameter)
-        .arg(m_meshSizeXY)
-        .arg(m_meshSizeZCyl)
-        .arg(m_meshSizeZNose)
-        .arg(m_progNose)
-        .arg(m_cx).arg(m_cy).arg(m_cz);
+    // 注意：这里使用 QString(R"( ... )"); 来完美闭合并包含多行字符串
+    QString script = QString(R"(
+SetFactory("Built-in");
 
-    // 2. 纯硬编码无错拓扑主体 (完全使用 injected 参数，无缝衔接空间偏移)
-    QString scriptBody = R"(
+// === 1. Parameters Injection (Units: cm) ===
+R_out      = %1;
+T_jacket   = %2;
+L_cyl      = %3;
+L_nose     = %4;
+D_tip      = %5;
+ms_xy      = %6;
+ms_z_cyl   = %7;
+ms_z_nose  = %8;
+CX         = %9;
+CY         = %10;
+CZ         = %11;
+
+// Fixed 4+8 topology core ratio and Z-progression
+ratio_core = 0.60;
+prog_nose  = 0.90;
+
 R_in = R_out - T_jacket; 
 
-// --- 2. 卵形切线计算与渐变切片 ---
+// --- 2. Ogive Calculation & Z Slices ---
 R_ogive = (R_out^2 + L_nose^2) / (2 * R_out);
 Z_trunc = Sqrt(R_ogive^2 - (D_tip/2 - R_out + R_ogive)^2);
 
@@ -67,7 +57,7 @@ For i In {1 : n_nose}
     idx++;
 EndFor
 
-// --- 3. 截面节点智能分配 (保证拓扑完美对称) ---
+// --- 3. Node Distribution (Symmetric Topology) ---
 nC = 2 * Max(1, Round(((Pi * R_in / 2.0) * ratio_core / ms_xy) / 2)); 
 nR_in = Max(1, Round((R_in * (1.0 - ratio_core)) / ms_xy)); 
 nR_jacket = Max(1, Round(T_jacket / ms_xy)); 
@@ -76,14 +66,13 @@ nC_nodes = nC + 1;
 nR_in_nodes = nR_in + 1;
 nR_jacket_nodes = nR_jacket + 1;
 
-// --- 4. 逐层生成 20-Block 全对称拓扑 ---
+// --- 4. 20-Block 2D Topology Generation ---
 For k In {0 : idx-1}
     L0 = k * 100000;
     z = Z_slice[k];
     Ri = Ri_slice[k]; Ro = Ro_slice[k];
     L = Ri * ratio_core; 
     
-    // 注入空间偏移量 CX, CY, CZ
     Point(L0+0) = {CX + 0, CY + 0, CZ + z}; 
     For i In {1:8}
         a = (2*i - 1) * Pi / 8; 
@@ -92,11 +81,8 @@ For k In {0 : idx-1}
         Point(L0+20+i) = {CX + Ro*Cos(a), CY + Ro*Sin(a), CZ + z}; 
     EndFor
 
-    // 核心十字分割 (构成 4 个风筝形四边形)
-    Line(L0+101) = {L0+0, L0+1};
-    Line(L0+103) = {L0+0, L0+3};
-    Line(L0+105) = {L0+0, L0+5};
-    Line(L0+107) = {L0+0, L0+7};
+    Line(L0+101) = {L0+0, L0+1}; Line(L0+103) = {L0+0, L0+3};
+    Line(L0+105) = {L0+0, L0+5}; Line(L0+107) = {L0+0, L0+7};
 
     For i In {1:8}
         ni = (i == 8) ? 1 : i + 1;
@@ -107,7 +93,6 @@ For k In {0 : idx-1}
         Circle(L0+150+i) = {L0+20+i, L0+0, L0+20+ni};   
     EndFor
 
-    // 面装配 (全部严格遵守 4 边约束，杜绝 6 borders 报错)
     Curve Loop(L0+201) = {L0+101, L0+111, L0+112, -(L0+103)}; Plane Surface(L0+201)={L0+201};
     Curve Loop(L0+203) = {L0+103, L0+113, L0+114, -(L0+105)}; Plane Surface(L0+203)={L0+203};
     Curve Loop(L0+205) = {L0+105, L0+115, L0+116, -(L0+107)}; Plane Surface(L0+205)={L0+205};
@@ -119,7 +104,6 @@ For k In {0 : idx-1}
         Curve Loop(L0+220+i) = {L0+130+i, L0+140+ni, -(L0+150+i), -(L0+140+i)}; Plane Surface(L0+220+i)={L0+220+i};
     EndFor
 
-    // 网格映射约束
     Transfinite Surface{L0+201} = {L0+0, L0+1, L0+2, L0+3};
     Transfinite Surface{L0+203} = {L0+0, L0+3, L0+4, L0+5};
     Transfinite Surface{L0+205} = {L0+0, L0+5, L0+6, L0+7};
@@ -137,7 +121,7 @@ For k In {0 : idx-1}
     EndFor
 EndFor
 
-// --- 5. 纵向严密体积封装 ---
+// --- 5. 3D Volume Extrusion ---
 core_vols[] = {}; jacket_vols[] = {};
 
 For k In {0 : idx-2}
@@ -179,12 +163,12 @@ For k In {0 : idx-2}
     EndFor
 EndFor
 
-// --- 6. 物理分区与输出 ---
+// --- 6. Physical Groups ---
 Transfinite Surface "*"; Recombine Surface "*";
 Transfinite Volume "*";  Recombine Volume "*";
 
-Physical Volume("Bullet_Core", 1) = {core_vols[]};
-Physical Volume("Bullet_Jacket", 2) = {jacket_vols[]};
+Physical Volume(1) = {core_vols[]};
+Physical Volume(2) = {jacket_vols[]};
 
 Color {220, 50, 50} { Volume{core_vols[]}; }     
 Color {50, 150, 220} { Volume{jacket_vols[]}; }  
@@ -194,7 +178,17 @@ Mesh.SurfaceEdges = 1;
 Mesh.VolumeEdges  = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh.SaveAll = 0;
-)";
-
-    return paramsHeader + scriptBody;
+)");
+    // 填入所有的参数
+    return script.arg(m_caliber / 2.0)
+        .arg(m_jacketThickness)
+        .arg(m_cylinderLength)
+        .arg(m_noseLength)
+        .arg(m_tipDiameter)
+        .arg(m_meshSizeXY)
+        .arg(m_meshSizeZCyl)
+        .arg(m_meshSizeZNose)
+        .arg(m_cx)
+        .arg(m_cy)
+        .arg(m_cz);
 }

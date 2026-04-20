@@ -1621,8 +1621,7 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui)
             val("noseLength"),
             val("ms"),
             val("cx"), val("cy"), val("cz"),
-            val("tipDiameter"),
-            val("progNose")
+            val("tipDiameter")
         );
         m_meshManager->buildAndLoad(gen, name);
         }
@@ -2959,37 +2958,69 @@ void MainWindow::setupPostProcessUI() {
 }
 
 
-// ==========================================
-// 逻辑实现：求解器控制与日志读取
-// ==========================================
+/**
+ * @brief 启动单次求解计算任务
+ * * 该函数用于配置并异步启动 LS-DYNA 求解器进程。
+ * 核心流程包括：验证输入路径、继承并注入环境变量(解决 DLL 缺失问题)、
+ * 切换工作目录(规避路径空格问题)，以及封装启动参数。
+ */
 void MainWindow::startCalculation() {
     QString kFile = kFilePathEdit->text();
     QString solver = solverPathEdit->text();
 
     if (kFile.isEmpty() || solver.isEmpty()) {
-        solverConsole->append("<b><font color='red'>[错误] 请先选择 .k 文件和求解器路径！</font></b>");
+        solverConsole->append("<b><font color='red'>[错误] 请先选择关键字(.k)文件和求解器可执行文件路径！</font></b>");
         return;
     }
 
-    // 拼接 LS-DYNA 命令行参数： i=xxx.k ncpu=4 memory=100m
-    QStringList arguments;
-    arguments << QString("i=%1").arg(kFile);
-    arguments << QString("ncpu=%1").arg(cpuCoresSpin->value());
-    arguments << "memory=200m"; // 预设内存，可根据需求提取为UI输入
-
-    // 设置工作目录为 .k 文件所在的目录，这样 d3plot 就会生成在那里
     QFileInfo kFileInfo(kFile);
+
+    // 1. 配置求解器运行所需的系统环境变量
+    // 获取当前系统环境，并将求解器所在目录及用户自定义依赖目录(m_dynaEnvPath)前置追加至 PATH，
+    // 以防止求解器因子进程无法定位 Fortran/MPI 等动态链接库而发生异常退出。
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QString solverDir = QFileInfo(solver).absolutePath();
+
+    QString newPath = QDir::toNativeSeparators(solverDir) + ";";
+    if (!m_dynaEnvPath.isEmpty()) {
+        newPath += QDir::toNativeSeparators(m_dynaEnvPath) + ";";
+    }
+    newPath += env.value("PATH");
+    env.insert("PATH", newPath);
+
+    m_solverProcess->setProcessEnvironment(env);
+
+    // 合并标准输出(stdout)与标准错误(stderr)通道，便于 UI 终端统一截获与监控日志
+    m_solverProcess->setProcessChannelMode(QProcess::MergedChannels);
+
+    // 2. 配置进程工作目录与命令行参数
+    // 将工作目录切换至输入文件所在层级，命令行参数仅传递纯文件名。
+    // 此举可有效规避 LS-DYNA 引擎处理带空格绝对路径时产生的 IO 解析异常。
     m_solverProcess->setWorkingDirectory(kFileInfo.absolutePath());
 
+    QStringList arguments;
+    arguments << QString("I=%1").arg(kFileInfo.fileName());
+    arguments << QString("NCPU=%1").arg(cpuCoresSpin->value());
+    arguments << "MEMORY=200m"; // 预设内存参数，可根据需要调整
+
+    // 3. 更新 UI 监控终端信息
     solverConsole->clear();
-    solverConsole->append(QString("<b><font color='yellow'>[系统] 正在启动求解器...</font></b>"));
-    solverConsole->append(QString("执行命令: %1 %2").arg(solver).arg(arguments.join(" ")));
+    solverConsole->append(QString("<b><font color='yellow'>[系统] 正在初始化求解进程...</font></b>"));
+    solverConsole->append(QString("工作目录: %1").arg(kFileInfo.absolutePath()));
+    solverConsole->append(QString("执行指令: %1 %2").arg(solver).arg(arguments.join(" ")));
     solverConsole->append("--------------------------------------------------");
 
-    // 启动进程
+    // 4. 启动计算进程并执行状态校验
     m_solverProcess->start(solver, arguments);
 
-    // 更新界面状态
+    // 阻塞当前线程最多 3000ms，以验证底层的系统调用是否真实拉起目标进程
+    if (!m_solverProcess->waitForStarted(3000)) {
+        solverConsole->append(QString("<b><font color='red'>[致命错误] 求解进程拉起失败: %1</font></b>")
+            .arg(m_solverProcess->errorString()));
+        return;
+    }
+
+    // 5. 刷新界面相关控件的状态
     btnRunSolver->setEnabled(false);
     btnStopSolver->setEnabled(true);
 }
@@ -3351,8 +3382,7 @@ void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize)
             p["noseLength"],
             newMeshSize,
             p["cx"], p["cy"], p["cz"],
-            p["tipDiameter"],
-            p["progNose"]
+            p["tipDiameter"]
         );
         m_meshManager->buildAndLoad(gen, name);
     }

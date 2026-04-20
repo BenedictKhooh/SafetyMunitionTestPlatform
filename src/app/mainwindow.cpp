@@ -299,7 +299,7 @@ void MainWindow::createDockWidgets() {
 
     // 将三个分类作为不同的 Tab 添加进去
     setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
-        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism","Frustum", "Fragment Simulating Projectile"}, m_fragmentUI);
+        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism","Frustum", "Fragment Simulating Projectile", "Bullet" }, m_fragmentUI);
 
     setupGeneratorTab(tabWidget, tr("壳体 (Shell)"),
         { "CylindricalShell", "OpenCylindricalShell", "HalfCylindricalShell","FrustumShell"}, m_shellUI);
@@ -1240,9 +1240,6 @@ void MainWindow::setupGeneratorTab(QTabWidget* tabWidget, const QString& title, 
     // 初始化时主动触发一次形状刷新，构建默认(如 Cube)的参数输入框
     QString defaultShape = ui.shapeComboBox->currentText();
     handleShapeTypeChanged(ui, defaultShape);
-
-    // ★ 核心修复：在启动时立刻根据默认形状执行一次显隐判定，防止复选框错误暴露 ★
-
     // 判定初始形状是否支持竖直细化
     bool supportsZRefine = (defaultShape == "Cylinder" || defaultShape == "Frustum" ||
         defaultShape == "CylindricalShell" || defaultShape == "FrustumShell" ||
@@ -1404,6 +1401,18 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
     }
+    else if (text == "Bullet") {
+        addNumParamToUI(ui, "Caliber (口径):", "caliber", 0.762, " cm");
+        addNumParamToUI(ui, "Jacket Thick (被甲厚度):", "jacketThickness", 0.06, " cm");
+        addNumParamToUI(ui, "Cyl Length (圆柱段长):", "cylinderLength", 1.2, " cm");
+        addNumParamToUI(ui, "Nose Length (弹头长):", "noseLength", 1.6, " cm");
+        addNumParamToUI(ui, "Tip Dia (尖端平切直径):", "tipDiameter", 0.1, " cm");
+        addNumParamToUI(ui, "Mesh Size (网格尺寸):", "ms", 0.05, " cm");
+        addNumParamToUI(ui, "Z-Progression (Z轴渐变系数):", "progNose", 0.9);
+        addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
+        addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
+        addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");
+        }
 }
 
 /**
@@ -1602,6 +1611,21 @@ void MainWindow::handleGenerateButtonClicked(GeneratorUI& ui)
         gen.setParameters(val("r"), val("hb"), val("hn"), val("rt"), val("ms"), val("cx"), val("cy"), val("cz"));
         m_meshManager->buildAndLoad(gen, name);
     }
+    else if (type == "Bullet") {
+        BulletGenerator gen;
+        // 严格按照封装类 setParameters 的参数顺序传入
+        gen.setParameters(
+            val("caliber"),
+            val("jacketThickness"),
+            val("cylinderLength"),
+            val("noseLength"),
+            val("ms"),
+            val("cx"), val("cy"), val("cz"),
+            val("tipDiameter"),
+            val("progNose")
+        );
+        m_meshManager->buildAndLoad(gen, name);
+        }
 
     // =========================================================================
     // 5. 记录用户操作日志
@@ -3316,6 +3340,20 @@ void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize)
     else if (type == "Fragment Simulating Projectile") {
         FSPGenerator gen;
         gen.setParameters(p["r"], p["hb"], p["hn"], p["rt"], newMeshSize, p["cx"], p["cy"], p["cz"]);
+        m_meshManager->buildAndLoad(gen, name);
+    }
+    else if (type == "Bullet") {
+        BulletGenerator gen;
+        gen.setParameters(
+            p["caliber"],
+            p["jacketThickness"],
+            p["cylinderLength"],
+            p["noseLength"],
+            newMeshSize,
+            p["cx"], p["cy"], p["cz"],
+            p["tipDiameter"],
+            p["progNose"]
+        );
         m_meshManager->buildAndLoad(gen, name);
     }
     else {

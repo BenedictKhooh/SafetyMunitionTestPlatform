@@ -2,37 +2,35 @@
 
 QString BulletGenerator::buildGeoScript() const {
     // 1. 将 C++ 变量安全地注入为 Gmsh 的全局参数
-    // 注意：使用 m_caliber / 2.0 转化为外半径 R_out
     QString paramsHeader = QString(
         "SetFactory(\"Built-in\");\n\n"
-        "// === 1. 参数注入区 (由 C++ BulletGenerator 自动生成) ===\n"
+        "// === 1. 参数注入区 (由 BulletGenerator 自动生成, 单位: cm) ===\n"
         "R_out      = %1;\n"
         "T_jacket   = %2;\n"
         "L_cyl      = %3;\n"
         "L_nose     = %4;\n"
         "D_tip      = %5;\n"
-        "ratio_core = %6;\n"
-        "ms_xy      = %7;\n"
-        "ms_z_cyl   = %8;\n"
-        "ms_z_nose  = %9;\n"
-        "prog_nose  = %10;\n"
-        "CX         = %11;\n"
-        "CY         = %12;\n"
-        "CZ         = %13;\n\n"
+        "ms_xy      = %6;\n"
+        "ms_z_cyl   = %7;\n"
+        "ms_z_nose  = %8;\n"
+        "prog_nose  = %9;\n"
+        "CX         = %10;\n"
+        "CY         = %11;\n"
+        "CZ         = %12;\n\n"
+        "// 固定的 4+8 最佳拓扑比例\n"
+        "ratio_core = 0.60;\n\n"
     ).arg(m_caliber / 2.0)
         .arg(m_jacketThickness)
         .arg(m_cylinderLength)
         .arg(m_noseLength)
         .arg(m_tipDiameter)
-        .arg(m_coreRatio)
         .arg(m_meshSizeXY)
         .arg(m_meshSizeZCyl)
         .arg(m_meshSizeZNose)
         .arg(m_progNose)
         .arg(m_cx).arg(m_cy).arg(m_cz);
 
-    // 2. 核心拓扑生成逻辑 (无需修改内部参数，完全依赖 Header 注入的值)
-    // 已经将 CX, CY, CZ 应用到 Point 的坐标生成中
+    // 2. 纯硬编码无错拓扑主体 (完全使用 injected 参数，无缝衔接空间偏移)
     QString scriptBody = R"(
 R_in = R_out - T_jacket; 
 
@@ -69,7 +67,7 @@ For i In {1 : n_nose}
     idx++;
 EndFor
 
-// --- 3. 截面节点智能分配 ---
+// --- 3. 截面节点智能分配 (保证拓扑完美对称) ---
 nC = 2 * Max(1, Round(((Pi * R_in / 2.0) * ratio_core / ms_xy) / 2)); 
 nR_in = Max(1, Round((R_in * (1.0 - ratio_core)) / ms_xy)); 
 nR_jacket = Max(1, Round(T_jacket / ms_xy)); 
@@ -85,7 +83,7 @@ For k In {0 : idx-1}
     Ri = Ri_slice[k]; Ro = Ro_slice[k];
     L = Ri * ratio_core; 
     
-    // ★ 加入了空间平移偏移量 CX, CY, CZ ★
+    // 注入空间偏移量 CX, CY, CZ
     Point(L0+0) = {CX + 0, CY + 0, CZ + z}; 
     For i In {1:8}
         a = (2*i - 1) * Pi / 8; 
@@ -94,8 +92,11 @@ For k In {0 : idx-1}
         Point(L0+20+i) = {CX + Ro*Cos(a), CY + Ro*Sin(a), CZ + z}; 
     EndFor
 
-    Line(L0+101) = {L0+0, L0+1}; Line(L0+103) = {L0+0, L0+3};
-    Line(L0+105) = {L0+0, L0+5}; Line(L0+107) = {L0+0, L0+7};
+    // 核心十字分割 (构成 4 个风筝形四边形)
+    Line(L0+101) = {L0+0, L0+1};
+    Line(L0+103) = {L0+0, L0+3};
+    Line(L0+105) = {L0+0, L0+5};
+    Line(L0+107) = {L0+0, L0+7};
 
     For i In {1:8}
         ni = (i == 8) ? 1 : i + 1;
@@ -106,6 +107,7 @@ For k In {0 : idx-1}
         Circle(L0+150+i) = {L0+20+i, L0+0, L0+20+ni};   
     EndFor
 
+    // 面装配 (全部严格遵守 4 边约束，杜绝 6 borders 报错)
     Curve Loop(L0+201) = {L0+101, L0+111, L0+112, -(L0+103)}; Plane Surface(L0+201)={L0+201};
     Curve Loop(L0+203) = {L0+103, L0+113, L0+114, -(L0+105)}; Plane Surface(L0+203)={L0+203};
     Curve Loop(L0+205) = {L0+105, L0+115, L0+116, -(L0+107)}; Plane Surface(L0+205)={L0+205};
@@ -117,6 +119,7 @@ For k In {0 : idx-1}
         Curve Loop(L0+220+i) = {L0+130+i, L0+140+ni, -(L0+150+i), -(L0+140+i)}; Plane Surface(L0+220+i)={L0+220+i};
     EndFor
 
+    // 网格映射约束
     Transfinite Surface{L0+201} = {L0+0, L0+1, L0+2, L0+3};
     Transfinite Surface{L0+203} = {L0+0, L0+3, L0+4, L0+5};
     Transfinite Surface{L0+205} = {L0+0, L0+5, L0+6, L0+7};
@@ -127,6 +130,7 @@ For k In {0 : idx-1}
         ni = (i == 8) ? 1 : i + 1;
         Transfinite Surface{L0+210+i} = {L0+i, L0+ni, L0+10+ni, L0+10+i};
         Transfinite Surface{L0+220+i} = {L0+10+i, L0+10+ni, L0+20+ni, L0+20+i};
+        
         Transfinite Curve {L0+110+i, L0+130+i, L0+150+i} = nC_nodes;
         Transfinite Curve {L0+120+i} = nR_in_nodes;
         Transfinite Curve {L0+140+i} = nR_jacket_nodes;
@@ -175,12 +179,15 @@ For k In {0 : idx-2}
     EndFor
 EndFor
 
-// --- 6. 物理分区 ---
+// --- 6. 物理分区与输出 ---
 Transfinite Surface "*"; Recombine Surface "*";
 Transfinite Volume "*";  Recombine Volume "*";
 
 Physical Volume("Bullet_Core", 1) = {core_vols[]};
 Physical Volume("Bullet_Jacket", 2) = {jacket_vols[]};
+
+Color {220, 50, 50} { Volume{core_vols[]}; }     
+Color {50, 150, 220} { Volume{jacket_vols[]}; }  
 
 Mesh.RecombineAll = 1;
 Mesh.SurfaceEdges = 1;

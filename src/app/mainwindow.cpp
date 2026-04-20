@@ -1407,7 +1407,6 @@ void MainWindow::handleShapeTypeChanged(GeneratorUI& ui, const QString& text) {
         addNumParamToUI(ui, "Nose Length (弹头长):", "noseLength", 1.6, " cm");
         addNumParamToUI(ui, "Tip Dia (尖端平切直径):", "tipDiameter", 0.1, " cm");
         addNumParamToUI(ui, "Mesh Size (网格尺寸):", "ms", 0.05, " cm");
-        addNumParamToUI(ui, "Z-Progression (Z轴渐变系数):", "progNose", 0.9);
         addNumParamToUI(ui, "Center X:", "cx", 0.0, " cm");
         addNumParamToUI(ui, "Center Y:", "cy", 0.0, " cm");
         addNumParamToUI(ui, "Center Z:", "cz", 0.0, " cm");

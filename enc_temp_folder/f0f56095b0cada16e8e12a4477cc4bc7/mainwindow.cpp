@@ -2713,8 +2713,10 @@ void MainWindow::setupPostProcessUI() {
 // =========================================================
     QWidget* singleRunWidget = new QWidget();
 
+    // ★ 1. 根布局改为水平布局 (实现左右大分块) ★
     QHBoxLayout* mainHLayout = new QHBoxLayout(singleRunWidget);
 
+    // ★ 2. 创建左侧垂直容器 (用于上下堆叠“提交框”和“控制台”) ★
     QVBoxLayout* leftVLayout = new QVBoxLayout();
 
     // ---------------------------------------------------------
@@ -2765,7 +2767,7 @@ void MainWindow::setupPostProcessUI() {
 
     leftVLayout->addWidget(monitorGroup, 1); // 把控制台塞入左侧垂直布局，系数1表示让它撑满下方所有空间
 
-    
+    // ★ 3. 将组装好的“左半边”整体加入根水平布局 (宽度拉伸占比设为 1) ★
     mainHLayout->addLayout(leftVLayout, 1);
 
     // ---------------------------------------------------------

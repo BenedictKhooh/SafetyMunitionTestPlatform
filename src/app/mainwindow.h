@@ -507,5 +507,15 @@ private:
 
     QPushButton* btnStopMeshBatch;         // 停止按钮
 
+private:
+    QCustomPlot* m_solverPlot;       // 求解监控图表
+    QTimer* m_solverPlotTimer;      // 实时解析 glstat 的定时器
+    int m_lastReadPlotLine = 0;      // 记录已读文件行数
+
+    void setupSolverPlotUI(QBoxLayout* layout); // 初始化图表函数声明
+
+private slots:
+    void updateSolverPlot();         // 核心：实时绘图槽函数
+
 };
 #endif // MAINWINDOW_H

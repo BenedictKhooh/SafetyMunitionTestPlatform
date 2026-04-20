@@ -1,10 +1,15 @@
 ﻿#include "HalfCylindricalShellGenerator.h"
 #include <QtMath>
 
-QString HalfCylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize, double cx, double cy, double cz) const {
+QString HalfCylindricalShellGenerator::buildGeoScript(double radius, double height, double lid, double wall, double meshSize, double cx, double cy, double cz, double msWall) const {
+
+    // 核心修改：利用专属的 msWall 控制壁厚的单元数
+    double actualMsWall = (msWall > 1e-5) ? msWall : meshSize;
 
     int nC = qMax(2, (int)qRound((radius / 1.41421356) / meshSize)) + 1;
-    int nR_wall = qMax(1, (int)qRound(wall / meshSize)) + 1;
+    // ★ 这里的除数变成了 actualMsWall
+    int nR_wall = qMax(1, (int)qRound(wall / actualMsWall)) + 1;
+
     int nH_cap = qMax(1, (int)qRound(lid / meshSize));
     double voidHeight = height - 2.0 * lid;
     int nH_void = qMax(1, (int)qRound(voidHeight / meshSize));
@@ -22,41 +27,41 @@ L_in = R_in / (2 * 1.41421356);
 p_in = R_in / 1.41421356;
 p_out = R_out / 1.41421356;
 
-// 点定义
 Point(1) = {CX + 0, CY + 0, CZ + 0};
-Point(2) = {CX - L_in, CY + 0, CZ + 0}; Point(3) = {CX + L_in, CY + 0, CZ + 0};
-Point(4) = {CX + L_in, CY + L_in, CZ + 0}; Point(5) = {CX - L_in, CY + L_in, CZ + 0};
-Point(6) = {CX - R_in, CY + 0, CZ + 0}; Point(7) = {CX + R_in, CY + 0, CZ + 0};
-Point(8) = {CX + p_in, CY + p_in, CZ + 0}; Point(9) = {CX - p_in, CY + p_in, CZ + 0};
-Point(10) = {CX - R_out, CY + 0, CZ + 0}; Point(11) = {CX + R_out, CY + 0, CZ + 0};
-Point(12) = {CX + p_out, CY + p_out, CZ + 0}; Point(13) = {CX - p_out, CY + p_out, CZ + 0};
+Point(2) = {CX - L_in, CY + 0, CZ + 0};
+Point(3) = {CX + L_in, CY + 0, CZ + 0};
+Point(4) = {CX + L_in, CY + L_in, CZ + 0};
+Point(5) = {CX - L_in, CY + L_in, CZ + 0};
 
-// 线定义
-Line(1)={2,3}; Line(2)={3,4}; Line(3)={4,5}; Line(4)={5,2};
-Line(5)={6,2}; Line(6)={3,7}; Line(7)={4,8}; Line(8)={5,9};
-Circle(9)={7,1,8}; Circle(10)={8,1,9}; Circle(11)={9,1,6};
-Line(12)={7,11}; Line(13)={8,12}; Line(14)={9,13}; Line(15)={6,10};
-Circle(16)={11,1,12}; Circle(17)={12,1,13}; Circle(18)={13,1,10};
+Point(6) = {CX - R_in, CY + 0, CZ + 0};
+Point(7) = {CX + R_in, CY + 0, CZ + 0};
+Point(8) = {CX + p_in, CY + p_in, CZ + 0};
+Point(9) = {CX - p_in, CY + p_in, CZ + 0};
 
-// 面定义
-Curve Loop(101) = {1, 2, 3, 4};        Plane Surface(1) = {101};
-Curve Loop(102) = {6, 9, -7, -2};      Plane Surface(2) = {102};
-Curve Loop(103) = {7, 10, -8, -3};     Plane Surface(3) = {103};
-Curve Loop(104) = {8, 11, 5, -4};      Plane Surface(4) = {104};
-Curve Loop(105) = {12, 16, -13, -9};   Plane Surface(5) = {105};
-Curve Loop(106) = {13, 17, -14, -10};  Plane Surface(6) = {106};
-Curve Loop(107) = {14, 18, -15, -11};  Plane Surface(7) = {107};
+Point(10) = {CX - R_out, CY + 0, CZ + 0};
+Point(11) = {CX + R_out, CY + 0, CZ + 0};
+Point(12) = {CX + p_out, CY + p_out, CZ + 0};
+Point(13) = {CX - p_out, CY + p_out, CZ + 0};
 
-// 结构化约束
-Transfinite Curve {1, 3, 10, 17} = nC;
-Transfinite Curve {2, 4, 9, 11, 16, 18} = nC; 
-Transfinite Curve {5, 6, 7, 8} = nC; 
-Transfinite Curve {12, 13, 14, 15} = nR_wall;
+Line(1) = {2, 3}; Line(2) = {3, 4}; Line(3) = {4, 5}; Line(4) = {5, 2}; 
+Line(5) = {6, 2}; Line(6) = {3, 7}; Line(7) = {4, 8}; Line(8) = {5, 9}; 
+Circle(9)  = {7, 1, 8}; Circle(10) = {8, 1, 9}; Circle(11) = {9, 1, 6};
+Line(12) = {6, 10}; Line(13) = {7, 11}; Line(14) = {8, 12}; Line(15) = {9, 13}; 
+Circle(16) = {11, 1, 12}; Circle(17) = {12, 1, 13}; Circle(18) = {13, 1, 10};
 
-Transfinite Surface {1:7}; 
-Recombine Surface {1:7};
+Curve Loop(101) = {1, 2, 3, 4};           Plane Surface(1) = {101}; 
+Curve Loop(102) = {6, 9, -7, -2};         Plane Surface(2) = {102}; 
+Curve Loop(103) = {7, 10, -8, -3};        Plane Surface(3) = {103};
+Curve Loop(104) = {8, 11, 5, -4};         Plane Surface(4) = {104};
+Curve Loop(105) = {13, 16, -14, -9};      Plane Surface(5) = {105}; 
+Curve Loop(106) = {14, 17, -15, -10};     Plane Surface(6) = {106};
+Curve Loop(107) = {15, 18, -12, -11};     Plane Surface(7) = {107};
 
-// 分步拉伸三层：底盖、中间壳、顶盖
+Transfinite Surface {1:7}; Recombine Surface {1:7};
+Transfinite Curve {1:4, 9:11, 16:18} = nC;
+Transfinite Curve {5:8} = nC; 
+Transfinite Curve {12:15} = nR_wall;
+
 out1_1[] = Extrude {0, 0, H_cap} { Surface{1}; Layers{nH_cap}; Recombine; };
 out1_2[] = Extrude {0, 0, H_cap} { Surface{2}; Layers{nH_cap}; Recombine; };
 out1_3[] = Extrude {0, 0, H_cap} { Surface{3}; Layers{nH_cap}; Recombine; };
@@ -81,21 +86,8 @@ out3_5[] = Extrude {0, 0, H_cap} { Surface{out2_5[0]}; Layers{nH_cap}; Recombine
 out3_6[] = Extrude {0, 0, H_cap} { Surface{out2_6[0]}; Layers{nH_cap}; Recombine; };
 out3_7[] = Extrude {0, 0, H_cap} { Surface{out2_7[0]}; Layers{nH_cap}; Recombine; };
 
-// 挖空装药区域
 Delete { Volume{out2_1[1], out2_2[1], out2_3[1], out2_4[1]}; }
-
-// 🌟 物理粘合剂：消除各层独立拉伸造成的重叠边界，将其变成完美一体的网格！
-Coherence;
-
-// 🌟 动态分配剩余的所有实体到物理组
-Physical Volume("Half_Shell_Solid") = Volume "*";
-
-// 🌟 强制兼容性输出
-Mesh.MshFileVersion = 2.2;
-Mesh.SaveAll = 0; 
+Physical Volume("Solid_Hex") = Volume "*";
 Mesh 3;
-)")
-.arg(radius).arg(wall).arg(height).arg(lid)
-.arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void)
-.arg(cx).arg(cy).arg(cz);
+)").arg(radius).arg(wall).arg(height).arg(lid).arg(nC).arg(nR_wall).arg(nH_cap).arg(nH_void).arg(cx).arg(cy).arg(cz);
 }

@@ -11,6 +11,7 @@ Wall   = %4;
 ms     = %5;
 CX = %6; CY = %7; CZ = %8;
 Z_start = %9; Z_end = %10; ms_local_z = %11;
+ms_wall = %12; // ★ 新增：壁厚局部网格尺寸
 
 R_out  = R_in + Wall;
 H_void = H_tot - 2 * H_cap;
@@ -47,7 +48,9 @@ Rproj_out = R_out / 1.41421356;
 nC_nodes = Max(2, Round(Rproj_in / ms)) + 1;
 nL_nodes = Max(2, Round(L_val / ms)) + 1;
 nR_in_nodes = Max(2, Round((R_in - L_val) / ms)) + 1;
-nR_wall_nodes = Max(2, Round(Wall / ms)) + 1;
+
+// ★ 核心修改：使用 ms_wall 计算壁厚的分段节点数
+nR_wall_nodes = Max(2, Round(Wall / ms_wall)) + 1;
 
 For k In {0 : idx}
     P  = 10000 + k * 1000;
@@ -138,16 +141,13 @@ For k In {0 : idx-1}
     Curve Loop(VS+17) = {HC0+17, VC+13, -(HC1+17), -(VC+12)}; Surface(VS+17)={VS+17};
     Curve Loop(VS+18) = {HC0+18, VC+10, -(HC1+18), -(VC+13)}; Surface(VS+18)={VS+18};
 
-    // 核心判定：是否处于空腔高度区
     is_void = (mid_z > H_cap + 1e-4 && mid_z < H_cap + H_void - 1e-4);
 
-    // 外围侧壁层 (永远保留)
     Surface Loop(VL+5) = {HS0+5, HS1+5, VS+13, VS+16, VS+14, VS+9}; Volume(VL+5)={VL+5};
     Surface Loop(VL+6) = {HS0+6, HS1+6, VS+14, VS+17, VS+15, VS+10}; Volume(VL+6)={VL+6};
     Surface Loop(VL+7) = {HS0+7, HS1+7, VS+15, VS+18, VS+12, VS+11}; Volume(VL+7)={VL+7};
     keep_vols[] += {VL+5, VL+6, VL+7};
 
-    // 端盖层 (仅在两端生成实心部分)
     If (!is_void)
         Surface Loop(VL+1) = {HS0+1, HS1+1, VS+1, VS+2, VS+3, VS+4}; Volume(VL+1)={VL+1};
         Surface Loop(VL+2) = {HS0+2, HS1+2, VS+6, VS+9, VS+7, VS+2}; Volume(VL+2)={VL+2};
@@ -164,7 +164,6 @@ Physical Volume("HalfCylindricalShell_Solid") = {keep_vols[]};
 Mesh.RecombineAll = 1;
 Mesh.SurfaceEdges = 1;
 Mesh.VolumeEdges  = 1;
-
 Mesh.MshFileVersion = 2.2;
 Mesh.SaveAll = 0;
 Mesh 3;
@@ -172,5 +171,5 @@ Mesh 3;
 
     return script.arg(m_rIn).arg(m_height).arg(m_lid).arg(m_wall).arg(m_meshSize)
         .arg(m_cx).arg(m_cy).arg(m_cz)
-        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ);
+        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ).arg(m_msWall);
 }

@@ -1,7 +1,7 @@
 #include "FrustumShellGenerator.h"
 
 QString FrustumShellGenerator::buildGeoScript(double rInBot, double rInTop, double wall, double hCap, double hVoid,
-    double ms, double cx, double cy, double cz) const {
+    double ms, double cx, double cy, double cz, double msWall) const {
     return QString(R"(
 // 强制使用内置几何引擎，稳定 O-Grid 拓扑映射
 SetFactory("Built-in");
@@ -14,164 +14,131 @@ Hv  = %5;
 ms  = %6;
 
 CX = %7; CY = %8; CZ = %9;
+ms_wall = %10; // ★ 新增：壁厚局部网格尺寸
 
 H_total = 2 * Hc + Hv;
-
-// O-Grid 核心尺寸比例
 ratio = 0.707; 
 
 // ============================================================================
 // 2. 自动网格分度算法 (保障 Aspect Ratio ~ 1)
 // ============================================================================
-// 2.1 环向分度 (以外圈平均周长为主，确保最外侧网格不至于太大)
 avg_R_out = (RiB + RiT) / 2.0 + W;
-
-// 【核心修正】：圆周被切割为8份(八边形)，单段弧长应为 2*Pi*R / 8 = Pi*R / 4.0
 arc_len = Pi * avg_R_out / 4.0;
 nC = Max(1, Round(arc_len / ms));
-actual_ms = arc_len / nC; // 反推实际的环向弧长，作为后续网格的基准尺寸
+actual_ms = arc_len / nC; 
 
-// 2.2 径向分度 (以实际弧长 actual_ms 为基准)
-nR_wall = Max(1, Round(W / actual_ms));
-nR_in   = Max(2, Round((RiB * ratio) / actual_ms));
-nR_void = Max(1, Round((RiB * (1 - ratio)) / actual_ms));
+// O-Grid 内部径向分度
+avg_R_in = (RiB + RiT) / 2.0;
+avg_L_in = avg_R_in * ratio;
+nR_in = Max(1, Round((avg_R_in - avg_L_in) / actual_ms));
 
-// 2.3 垂向分度 【核心修复：基于斜边(母线)长度，防止大锥度拉伸网格】
-// 计算端盖段的径向变化量与真实斜边长
-delta_R_cap = Fabs(RiT - RiB) * (Hc / H_total);
-L_slant_cap = Sqrt(Hc * Hc + delta_R_cap * delta_R_cap);
-nH_cap  = Max(1, Round(L_slant_cap / actual_ms));
+// ★ 核心修改：使用专属的 ms_wall 控制壁厚的分层数量 ★
+nR_wall = Max(1, Round(W / ms_wall));
 
-// 计算空腔段的径向变化量与真实斜边长
-delta_R_void = Fabs(RiT - RiB) * (Hv / H_total);
-L_slant_void = Sqrt(Hv * Hv + delta_R_void * delta_R_void);
-nH_void = Max(1, Round(L_slant_void / actual_ms));
-
-// 转换为底层需要的节点数 (单元数 + 1)
 nC_nodes      = nC + 1;
 nR_in_nodes   = nR_in + 1;
 nR_wall_nodes = nR_wall + 1;
-nR_void_nodes = nR_void + 1;
+
+// 垂直分段
+nH_cap  = Max(1, Round(Hc / ms));
+nH_void = Max(1, Round(Hv / ms));
 nH_cap_nodes  = nH_cap + 1;
 nH_void_nodes = nH_void + 1;
 
-// Z轴高度分层与垂直网格层数数组
-Z_arr[0] = CZ;
-Z_arr[1] = CZ + Hc;
-Z_arr[2] = CZ + Hc + Hv;
-Z_arr[3] = CZ + H_total;
+// ============================================================================
+// 3. 构建 4 层切面，基于高度的动态极坐标生成
+// ============================================================================
+Z[] = {CZ, CZ + Hc, CZ + Hc + Hv, CZ + H_total};
 
-nLayers_arr[0] = nH_cap_nodes;
-nLayers_arr[1] = nH_void_nodes;
-nLayers_arr[2] = nH_cap_nodes;
+For k In {0:3}
+  Ri = RiB + (RiT - RiB) * (Z[k] - CZ) / H_total;
+  Ro = Ri + W;
+  L  = Ri * ratio;
+  
+  pB = k * 100;
+  
+  Point(pB + 0) = {CX, CY, Z[k]};
+  
+  For i In {1:8}
+    a = (2*i - 1) * Pi / 8;
+    Point(pB + i)      = {CX + L * Cos(a), CY + L * Sin(a), Z[k]};
+    Point(pB + 10 + i) = {CX + Ri * Cos(a), CY + Ri * Sin(a), Z[k]};
+    Point(pB + 20 + i) = {CX + Ro * Cos(a), CY + Ro * Sin(a), Z[k]};
+  EndFor
+  
+  Line(pB + 31) = {pB+0, pB+1}; Line(pB + 33) = {pB+0, pB+3};
+  Line(pB + 35) = {pB+0, pB+5}; Line(pB + 37) = {pB+0, pB+7};
+  
+  For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    Line(pB + 40 + i) = {pB+i, pB+ni};
+    Line(pB + 50 + i) = {pB+i, pB+10+i};
+    Circle(pB + 60 + i) = {pB+10+i, pB+0, pB+10+ni};
+    Line(pB + 70 + i) = {pB+10+i, pB+20+i};
+    Circle(pB + 80 + i) = {pB+20+i, pB+0, pB+20+ni};
+  EndFor
+  
+  sB = k * 100;
+  Curve Loop(sB + 1) = {pB+31, pB+41, pB+42, -(pB+33)}; Plane Surface(sB + 1) = {sB+1};
+  Curve Loop(sB + 2) = {pB+33, pB+43, pB+44, -(pB+35)}; Plane Surface(sB + 2) = {sB+2};
+  Curve Loop(sB + 3) = {pB+35, pB+45, pB+46, -(pB+37)}; Plane Surface(sB + 3) = {sB+3};
+  Curve Loop(sB + 4) = {pB+37, pB+47, pB+48, -(pB+31)}; Plane Surface(sB + 4) = {sB+4};
+  
+  For i In {1:8}
+    ni = (i==8) ? 1 : i+1;
+    Curve Loop(sB + 10 + i) = {pB+50+i, pB+60+i, -(pB+50+ni), -(pB+40+i)}; Plane Surface(sB + 10 + i) = {sB+10+i};
+    Curve Loop(sB + 20 + i) = {pB+70+i, pB+80+i, -(pB+70+ni), -(pB+60+i)}; Plane Surface(sB + 20 + i) = {sB+20+i};
+  EndFor
+  
+  Transfinite Curve {pB+31, pB+33, pB+35, pB+37} = nC_nodes;
+  For i In {1:8}
+    Transfinite Curve {pB+40+i, pB+60+i, pB+80+i} = nC_nodes;
+    Transfinite Curve {pB+50+i} = nR_in_nodes;
+    // ★ 这里自动继承了上方 ms_wall 算出的壁厚节点数 ★
+    Transfinite Curve {pB+70+i} = nR_wall_nodes;
+  EndFor
+EndFor
 
-// 存储最终实体
+// ============================================================================
+// 4. 垂向缝合体积
+// ============================================================================
 vols_solid[] = {};
 
-// ============================================================================
-// 3. 宏定义：生成单层截面的八边形点、线、面
-// ============================================================================
-Macro BuildLevel
-    pK = 1000 + K * 100;
-    lK = 2000 + K * 100;
-    sK = 3000 + K * 100;
+For k In {0:2}
+    pB = k * 100; pBN = (k+1) * 100;
+    sK = k * 100; sKN = (k+1) * 100;
+    vsL = 1000 + k * 100;
+    volL = 2000 + k * 100;
     
-    // 当前高度对应的半径
-    ri = RiB + (RiT - RiB) * ((Z_arr[K] - CZ) / H_total);
-    ro = ri + W;
-    li = ri * ratio; 
+    If (k == 1)
+        nH_nodes = nH_void_nodes;
+    Else
+        nH_nodes = nH_cap_nodes;
+    EndIf
     
-    Point(pK + 0) = {CX, CY, Z_arr[K]}; 
+    Line(vsL + 0) = {pB+0, pBN+0}; Transfinite Curve {vsL + 0} = nH_nodes;
+    For i In {1:8}
+        Line(vsL + i)      = {pB+i, pBN+i};            Transfinite Curve {vsL + i}      = nH_nodes;
+        Line(vsL + 10 + i) = {pB+10+i, pBN+10+i};      Transfinite Curve {vsL + 10 + i} = nH_nodes;
+        Line(vsL + 20 + i) = {pB+20+i, pBN+20+i};      Transfinite Curve {vsL + 20 + i} = nH_nodes;
+    EndFor
+    
+    Curve Loop(vsL + 1) = {pB+31, vsL+1, -(pBN+31), -(vsL+0)}; Surface(vsL + 1) = {vsL+1};
+    Curve Loop(vsL + 3) = {pB+33, vsL+3, -(pBN+33), -(vsL+0)}; Surface(vsL + 3) = {vsL+3};
+    Curve Loop(vsL + 5) = {pB+35, vsL+5, -(pBN+35), -(vsL+0)}; Surface(vsL + 5) = {vsL+5};
+    Curve Loop(vsL + 7) = {pB+37, vsL+7, -(pBN+37), -(vsL+0)}; Surface(vsL + 7) = {vsL+7};
     
     For i In {1:8}
-        a = (2*i - 1) * Pi / 8;
-        Point(pK + i) = {CX + li * Cos(a), CY + li * Sin(a), Z_arr[K]};           
-        Point(pK + 10 + i) = {CX + ri * Cos(a), CY + ri * Sin(a), Z_arr[K]};      
-        Point(pK + 20 + i) = {CX + ro * Cos(a), CY + ro * Sin(a), Z_arr[K]};      
-    EndFor
-
-    Line(lK + 1) = {pK + 0, pK + 1}; Line(lK + 3) = {pK + 0, pK + 3};
-    Line(lK + 5) = {pK + 0, pK + 5}; Line(lK + 7) = {pK + 0, pK + 7};
-
-    For i In {1:8}
         ni = (i==8) ? 1 : i+1;
-        Line(lK + 10 + i)   = {pK + i, pK + ni};                       
-        Circle(lK + 20 + i) = {pK + 10 + i, pK + 0, pK + 10 + ni};   
-        Circle(lK + 30 + i) = {pK + 20 + i, pK + 0, pK + 20 + ni};   
-        Line(lK + 40 + i)   = {pK + i, pK + 10 + i};                   
-        Line(lK + 50 + i)   = {pK + 10 + i, pK + 20 + i};              
+        Curve Loop(vsL+10+i) = {pB+40+i, vsL+ni, -(pBN+40+i), -(vsL+i)};       Surface(vsL+10+i) = {vsL+10+i};
+        Curve Loop(vsL+30+i) = {pB+50+i, vsL+10+i, -(pBN+50+i), -(vsL+i)};     Surface(vsL+30+i) = {vsL+30+i};
+        Curve Loop(vsL+40+i) = {pB+60+i, vsL+10+ni, -(pBN+60+i), -(vsL+10+i)}; Surface(vsL+40+i) = {vsL+40+i};
+        Curve Loop(vsL+50+i) = {pB+70+i, vsL+20+i, -(pBN+70+i), -(vsL+10+i)};  Surface(vsL+50+i) = {vsL+50+i};
+        Curve Loop(vsL+60+i) = {pB+80+i, vsL+20+ni, -(pBN+80+i), -(vsL+20+i)}; Surface(vsL+60+i) = {vsL+60+i};
     EndFor
-
-    Curve Loop(sK + 1) = {lK+1, lK+11, lK+12, -(lK+3)}; Plane Surface(sK + 1) = {sK + 1};
-    Curve Loop(sK + 2) = {lK+3, lK+13, lK+14, -(lK+5)}; Plane Surface(sK + 2) = {sK + 2};
-    Curve Loop(sK + 3) = {lK+5, lK+15, lK+16, -(lK+7)}; Plane Surface(sK + 3) = {sK + 3};
-    Curve Loop(sK + 4) = {lK+7, lK+17, lK+18, -(lK+1)}; Plane Surface(sK + 4) = {sK + 4};
-
-    For i In {1:8}
-        ni = (i==8) ? 1 : i+1;
-        Curve Loop(sK + 10 + i) = {lK+40+i, lK+20+i, -(lK+40+ni), -(lK+10+i)}; Plane Surface(sK + 10 + i) = {sK + 10 + i};
-        Curve Loop(sK + 20 + i) = {lK+50+i, lK+30+i, -(lK+50+ni), -(lK+20+i)}; Plane Surface(sK + 20 + i) = {sK + 20 + i};
-    EndFor
-
-    Transfinite Curve {lK+1, lK+3, lK+5, lK+7} = nC_nodes;
-    Transfinite Curve {lK+11:lK+18, lK+21:lK+28, lK+31:lK+38} = nC_nodes;
-    Transfinite Curve {lK+41:lK+48} = nR_void_nodes; 
-    Transfinite Curve {lK+51:lK+58} = nR_wall_nodes; 
-Return
-
-// ============================================================================
-// 4. 宏定义：层间拉伸与体生成
-// ============================================================================
-Macro BuildLayer
-    vL = 4000 + L * 100;
-    vsL= 5000 + L * 100;
-    volL=6000 + L * 100;
-    pK = 1000 + L * 100;
-    pKN= 1000 + (L+1) * 100;
-    lK = 2000 + L * 100;
-    lKN= 2000 + (L+1) * 100;
-    sK = 3000 + L * 100;
-    sKN= 3000 + (L+1) * 100;
-    nl = nLayers_arr[L];
-
-    For i In {1:8}
-        Line(vL + 20 + i) = {pK + 20 + i, pKN + 20 + i}; 
-        Line(vL + 10 + i) = {pK + 10 + i, pKN + 10 + i}; 
-    EndFor
-    Transfinite Curve {vL+21:vL+28, vL+11:vL+18} = nl;
-
-    For i In {1:8}
-        ni = (i==8) ? 1 : i+1;
-        Curve Loop(vsL+30+i) = {lK+30+i, vL+20+ni, -(lKN+30+i), -(vL+20+i)}; Surface(vsL+30+i) = {vsL+30+i};
-        Curve Loop(vsL+20+i) = {lK+20+i, vL+10+ni, -(lKN+20+i), -(vL+10+i)}; Surface(vsL+20+i) = {vsL+20+i};
-        Curve Loop(vsL+50+i) = {lK+50+i, vL+20+i, -(lKN+50+i), -(vL+10+i)}; Surface(vsL+50+i) = {vsL+50+i};
-    EndFor
-
-    For i In {1:8}
-        ni = (i==8) ? 1 : i+1;
-        Surface Loop(volL+20+i) = {sK+20+i, sKN+20+i, vsL+50+i, vsL+30+i, vsL+50+ni, vsL+20+i};
-        Volume(volL+20+i) = {volL+20+i};
-        vols_solid[#vols_solid[]] = volL+20+i; 
-    EndFor
-
-    If (L == 0 || L == 2)
-        Line(vL + 0) = {pK + 0, pKN + 0}; 
-        For i In {1:8}
-            Line(vL + i) = {pK + i, pKN + i}; 
-        EndFor
-        Transfinite Curve {vL+0, vL+1:vL+8} = nl;
-
-        Curve Loop(vsL+1) = {lK+1, vL+1, -(lKN+1), -(vL+0)}; Surface(vsL+1) = {vsL+1};
-        Curve Loop(vsL+3) = {lK+3, vL+3, -(lKN+3), -(vL+0)}; Surface(vsL+3) = {vsL+3};
-        Curve Loop(vsL+5) = {lK+5, vL+5, -(lKN+5), -(vL+0)}; Surface(vsL+5) = {vsL+5};
-        Curve Loop(vsL+7) = {lK+7, vL+7, -(lKN+7), -(vL+0)}; Surface(vsL+7) = {vsL+7};
-
-        For i In {1:8}
-            ni = (i==8) ? 1 : i+1;
-            Curve Loop(vsL+10+i) = {lK+10+i, vL+ni, -(lKN+10+i), -(vL+i)}; Surface(vsL+10+i) = {vsL+10+i};
-            Curve Loop(vsL+40+i) = {lK+40+i, vL+10+i, -(lKN+40+i), -(vL+i)}; Surface(vsL+40+i) = {vsL+40+i};
-        EndFor
-
+    
+    // 如果是上下端盖层 (k=0 或 k=2)，生成核心实体
+    If (k == 0 || k == 2)
         Surface Loop(volL+1) = {sK+1, sKN+1, vsL+1, vsL+11, vsL+12, vsL+3}; Volume(volL+1) = {volL+1};
         Surface Loop(volL+2) = {sK+2, sKN+2, vsL+3, vsL+13, vsL+14, vsL+5}; Volume(volL+2) = {volL+2};
         Surface Loop(volL+3) = {sK+3, sKN+3, vsL+5, vsL+15, vsL+16, vsL+7}; Volume(volL+3) = {volL+3};
@@ -187,31 +154,26 @@ Macro BuildLayer
             vols_solid[#vols_solid[]] = volL+10+i;
         EndFor
     EndIf
-Return
-
-// ============================================================================
-// 5. 执行状态机生成
-// ============================================================================
-For K In {0:3}
-    Call BuildLevel;
+    
+    // 外壳壁实体任何层都生成
+    For i In {1:8}
+        ni = (i==8) ? 1 : i+1;
+        Surface Loop(volL+20+i) = {sK+20+i, sKN+20+i, vsL+60+i, vsL+50+i, vsL+60+ni, vsL+50+ni};
+        Volume(volL+20+i) = {volL+20+i};
+        vols_solid[#vols_solid[]] = volL+20+i;
+    EndFor
 EndFor
 
-For L In {0:2}
-    Call BuildLayer;
-EndFor
-
-// 全局强制结构化重组约束
+// ============================================================================
+// 5. 激活映射与清理
+// ============================================================================
 Transfinite Surface "*"; Recombine Surface "*";
-Transfinite Volume "*";  Recombine Volume "*";
-
-// 限定导出域：仅输出带有实体网格的结构
-Physical Volume("Frustum_Shell_With_Caps") = {vols_solid[]};
+Transfinite Volume "*"; Recombine Volume "*";
+Physical Volume("Shell_Solid") = {vols_solid[]};
 
 Mesh.RecombineAll = 1;
-Mesh.SaveAll = 0;   
-Mesh.ElementOrder = 1;
-Mesh.MshFileVersion = 2.2;
+Mesh.SurfaceEdges = 1;
+Mesh.VolumeEdges = 1;
 Mesh 3;
-    )").arg(rInBot).arg(rInTop).arg(wall).arg(hCap).arg(hVoid)
-        .arg(ms).arg(cx).arg(cy).arg(cz);
+)").arg(rInBot).arg(rInTop).arg(wall).arg(hCap).arg(hVoid).arg(ms).arg(cx).arg(cy).arg(cz).arg(msWall);
 }

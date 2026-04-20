@@ -359,6 +359,7 @@
     <ClCompile Include="src\core\common\EntityRepository.cpp" />
     <ClCompile Include="src\core\common\EOS\EOS.h" />
     <ClCompile Include="src\core\common\MeshManager.cpp" />
+    <ClCompile Include="src\core\generation\BulletGenerator.cpp" />
     <ClCompile Include="src\core\generation\CubeGenerator.cpp" />
     <ClCompile Include="src\core\generation\CylinderGenerator.cpp" />
     <ClCompile Include="src\core\generation\CylindricalShellGenerator.cpp" />
@@ -401,6 +402,7 @@
     <ClInclude Include="src\core\common\STL_reader.h" />
     <QtMoc Include="src\app\commandline.h" />
     <ClInclude Include="src\core\common\common_types.h" />
+    <ClInclude Include="src\core\generation\BulletGenerator.h" />
     <ClInclude Include="src\core\generation\CubeGenerator.h" />
     <ClInclude Include="src\core\generation\CylinderGenerator.h" />
     <QtMoc Include="src\app\glwidget.h" />

@@ -10,7 +10,7 @@ public:
 
     void setParameters(double rIn, double wallThickness, double hCap, double hVoid, double meshSize,
         double cx, double cy, double cz,
-        double zStart = 0.0, double zEnd = 0.0, double msLocalZ = 0.0) {
+        double zStart = 0.0, double zEnd = 0.0, double msLocalZ = 0.0, double msWall = 0.0) {
         m_rIn = rIn;
         m_wallThickness = wallThickness;
         m_hCap = hCap;
@@ -20,6 +20,7 @@ public:
         m_zStart = zStart;
         m_zEnd = zEnd;
         m_msLocalZ = msLocalZ;
+        m_msWall = (msWall > 1e-5) ? msWall : meshSize; // ÐÂÔö£º±ÚºñÍø¸ñ³ß´ç
     }
 
     QString generateGeoScript() const override;
@@ -28,7 +29,7 @@ public:
 private:
     double m_rIn = 0.0, m_wallThickness = 0.0, m_hCap = 0.0, m_hVoid = 0.0, m_meshSize = 0.0;
     double m_cx = 0.0, m_cy = 0.0, m_cz = 0.0;
-    double m_zStart = 0.0, m_zEnd = 0.0, m_msLocalZ = 0.0;
+    double m_zStart = 0.0, m_zEnd = 0.0, m_msLocalZ = 0.0, m_msWall = 0.0;
 };
 
 #endif // REFINEDCYLINDRICALSHELLGENERATOR_H

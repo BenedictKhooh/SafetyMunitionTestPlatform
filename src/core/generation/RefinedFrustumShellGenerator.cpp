@@ -2,10 +2,8 @@
 
 QString RefinedFrustumShellGenerator::generateGeoScript() const {
     QString script = R"(
-// 强制使用内置几何引擎，确保 Transfinite 拓扑映射绝对稳定
 SetFactory("Built-in");
 
-// 注入参数
 R_in_bot = %1;
 R_in_top = %2;
 Wall     = %3;
@@ -21,8 +19,8 @@ CZ       = %9;
 Z_start    = %10;
 Z_end      = %11;
 ms_local_z = %12;
+ms_wall    = %13; // ★ 新增：壁厚局部网格尺寸
 
-// 防呆逻辑
 If (ms_local_z <= 1e-5)
     ms_local_z = ms_z;
 EndIf
@@ -31,46 +29,41 @@ Z_start = (Z_start < 0) ? 0 : Z_start;
 Z_end   = (Z_end > H_total) ? H_total : Z_end;
 Z_start = (Z_start > Z_end) ? Z_end : Z_start;
 
-// 高度切片收集与排序
 Z_pts[] = {0, H_cap, H_cap + H_void, H_total, Z_start, Z_end};
 For i In {0 : 4}
     For j In {0 : 4 - i}
         If (Z_pts[j] > Z_pts[j+1])
-            tmp = Z_pts[j]; 
-            Z_pts[j] = Z_pts[j+1]; Z_pts[j+1] = tmp;
+            tmp = Z_pts[j]; Z_pts[j] = Z_pts[j+1]; Z_pts[j+1] = tmp;
         EndIf
     EndFor
 EndFor
 
-// 去重得到唯一高度层
 Z_unique[] = {Z_pts[0]};
 idx = 0;
 For i In {1 : 5}
     If (Z_pts[i] - Z_unique[idx] > 1e-5)
-        idx++;
-        Z_unique[idx] = Z_pts[i];
+        idx++; Z_unique[idx] = Z_pts[i];
     EndIf
 EndFor
 
-// 动态计算网格分度 [cite: 5, 6]
 ratio = 0.55;
 arc_len = Pi * R_in_bot / 4.0;
 nC = Max(1, Round(arc_len / ms_z));
 nR_in = Max(1, Round((R_in_bot - R_in_bot * ratio) / ms_z));
-nR_wall = Max(1, Round(Wall / ms_z));
+
+// ★ 核心修改：使用 ms_wall 计算壁厚的分段数
+nR_wall = Max(1, Round(Wall / ms_wall));
 
 nC_nodes      = nC + 1;
 nR_in_nodes   = nR_in + 1;
 nR_wall_nodes = nR_wall + 1;
 
-// 逐层生成水平切面拓扑
 For k In {0 : idx}
     P  = 10000 + k * 1000;
     HC = 20000 + k * 1000;
     HS = 30000 + k * 1000;
     
     z = Z_unique[k];
-    // 动态线性插值计算圆台半径
     Ri = R_in_bot + (R_in_top - R_in_bot) * (z / H_total);
     Ro = Ri + Wall;
     Lk = Ri * ratio;
@@ -112,7 +105,6 @@ For k In {0 : idx}
     EndFor
 EndFor
 
-// 逐层体积缝合与局部特征保留
 keep_vols[] = {};
 For k In {0 : idx-1}
     P0 = 10000 + k * 1000;     P1 = 10000 + (k+1) * 1000;
@@ -157,7 +149,6 @@ For k In {0 : idx-1}
 
     is_void = (mid_z > H_cap + 1e-4 && mid_z < H_cap + H_void - 1e-4);
     
-    // 生成外层壳体
     For i In {1:8}
         ni = (i==8) ? 1 : i+1;
         Surface Loop(VL+220+i) = {HS0+120+i, HS1+120+i, VS+140+i, VS+150+i, VS+140+ni, VS+130+i};
@@ -165,7 +156,6 @@ For k In {0 : idx-1}
         keep_vols[] += {VL+220+i};
     EndFor
 
-    // 生成上下端盖 (仅当不在中间空腔时)
     If (!is_void)
         Surface Loop(VL+201) = {HS0+101, HS1+101, VS+101, VS+111, VS+112, VS+102}; Volume(VL+201) = {VL+201};
         Surface Loop(VL+202) = {HS0+102, HS1+102, VS+102, VS+113, VS+114, VS+103}; Volume(VL+202) = {VL+202};
@@ -181,7 +171,6 @@ For k In {0 : idx-1}
     EndIf
 EndFor
 
-// 输出格式锁定
 Transfinite Surface "*"; Recombine Surface "*";
 Transfinite Volume "*";  Recombine Volume "*";
 Physical Volume("Frustum_Shell_Solid") = {keep_vols[]};
@@ -189,16 +178,13 @@ Physical Volume("Frustum_Shell_Solid") = {keep_vols[]};
 Mesh.RecombineAll = 1;
 Mesh.SurfaceEdges = 1;
 Mesh.VolumeEdges = 1;
-
-// 锁定导出格式 (仅导出 Physical 实体，Element Type = 5)
 Mesh.MshFileVersion = 2.2;
 Mesh.SaveAll = 0; 
-
 Mesh 3;
 )";
 
     return script.arg(m_rBaseIn).arg(m_rTopIn).arg(m_wallThickness)
         .arg(m_hCap).arg(m_hVoid).arg(m_meshSize)
         .arg(m_cx).arg(m_cy).arg(m_cz)
-        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ);
+        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ).arg(m_msWall);
 }

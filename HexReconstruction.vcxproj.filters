@@ -127,6 +127,9 @@
     <ClCompile Include="src\core\generation\RefinedOpenCylindricalShellGenerator.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\generation\BulletGenerator.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\algorithm\Algorithm.h">
@@ -247,6 +250,9 @@
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\generation\RefinedOpenCylindricalShellGenerator.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\generation\BulletGenerator.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
   </ItemGroup>

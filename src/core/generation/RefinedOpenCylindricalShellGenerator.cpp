@@ -11,6 +11,7 @@ H_wall = %4;
 ms     = %5;
 CX = %6; CY = %7; CZ = %8; 
 Z_start = %9; Z_end = %10; ms_local_z = %11;
+ms_wall = %12; // ★ 新增：壁厚局部网格尺寸
 
 R_out = R_in + Wall;
 H_tot = H_base + H_wall;
@@ -23,7 +24,6 @@ Z_start = (Z_start < 0) ? 0 : Z_start;
 Z_end   = (Z_end > H_tot) ? H_tot : Z_end;
 Z_start = (Z_start > Z_end) ? Z_end : Z_start;
 
-// 高度切片 (没有顶盖)
 Z_pts[] = {0, H_base, H_tot, Z_start, Z_end};
 For i In {0 : 3}
     For j In {0 : 3 - i}
@@ -43,7 +43,9 @@ EndFor
 ratio = 0.55; 
 nC_nodes = Max(2, Round((Pi * R_in / 4.0) / ms)) + 1;
 nR_in_nodes = Max(2, Round((R_in - R_in * ratio) / ms)) + 1;
-nR_wall_nodes = Max(2, Round(Wall / ms)) + 1;
+
+// ★ 核心修改：使用 ms_wall 计算壁厚的分段节点数
+nR_wall_nodes = Max(2, Round(Wall / ms_wall)) + 1;
 
 For k In {0 : idx}
     P  = 10000 + k * 1000;
@@ -131,10 +133,8 @@ For k In {0 : idx-1}
         Curve Loop(VS+150+i) = {HC0+80+i, VC+20+ni, -(HC1+80+i), -(VC+20+i)}; Surface(VS+150+i) = {VS+150+i};
     EndFor
 
-    // ★ 判定：超过底盖厚度就是空心的！(开壳特征) ★
     is_void = (mid_z > H_base + 1e-4);
 
-    // 外围侧壁(永远生成)
     For i In {1:8}
         ni = (i==8) ? 1 : i+1;
         Surface Loop(VL+220+i) = {HS0+120+i, HS1+120+i, VS+140+i, VS+150+i, VS+140+ni, VS+130+i};
@@ -142,7 +142,6 @@ For k In {0 : idx-1}
         keep_vols[] += {VL+220+i};
     EndFor
 
-    // 内部核心(仅在底部生成)
     If (!is_void)
         Surface Loop(VL+201) = {HS0+101, HS1+101, VS+101, VS+111, VS+112, VS+102}; Volume(VL+201) = {VL+201};
         Surface Loop(VL+202) = {HS0+102, HS1+102, VS+102, VS+113, VS+114, VS+103}; Volume(VL+202) = {VL+202};
@@ -166,7 +165,6 @@ Physical Volume("OpenCylindricalShell_Solid") = {keep_vols[]};
 Mesh.RecombineAll = 1;
 Mesh.SurfaceEdges = 1;
 Mesh.VolumeEdges  = 1;
-
 Mesh.MshFileVersion = 2.2;
 Mesh.SaveAll = 0;
 Mesh 3;
@@ -174,5 +172,5 @@ Mesh 3;
 
     return script.arg(m_radius).arg(m_wall).arg(m_hBase).arg(m_hWall).arg(m_meshSize)
         .arg(m_cx).arg(m_cy).arg(m_cz)
-        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ);
+        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ).arg(m_msWall);
 }

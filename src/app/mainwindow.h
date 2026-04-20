@@ -144,6 +144,10 @@ private:
         QDoubleSpinBox* spinZStart;
         QDoubleSpinBox* spinZEnd;
         QDoubleSpinBox* spinMsLocalZ;
+
+        QCheckBox* chkWallRefinement;
+        QWidget* wallRefineContainer;
+        QDoubleSpinBox* spinMsWall;
     };
 
     // 声明三个独立窗口的 UI 管理器

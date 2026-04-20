@@ -15,6 +15,7 @@ CX = %6; CY = %7; CZ = %8;
 Z_start = %9;
 Z_end   = %10;
 ms_local_z = %11;
+ms_wall = %12; // ★ 新增：壁厚局部网格尺寸
 
 If (ms_local_z <= 1e-5)
     ms_local_z = ms_z;
@@ -44,7 +45,9 @@ ratio = 0.5;
 arc_len = Pi * R_in / 4.0;
 nC = Max(1, Round(arc_len / ms_z));
 nR_in = Max(1, Round((R_in - R_in * ratio) / ms_z));
-nR_wall = Max(1, Round(Wall / ms_z));
+
+// ★ 核心修改：使用 ms_wall 计算壁厚的分段数
+nR_wall = Max(1, Round(Wall / ms_wall));
 
 nC_nodes = nC + 1;
 nR_in_nodes = nR_in + 1;
@@ -165,13 +168,15 @@ Transfinite Surface "*"; Recombine Surface "*";
 Transfinite Volume "*";  Recombine Volume "*";
 Physical Volume("Shell_Solid") = {keep_vols[]};
 
+Mesh.RecombineAll = 1;
+Mesh.SurfaceEdges = 1;
+Mesh.VolumeEdges = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh.SaveAll = 0; 
-Mesh.RecombineAll = 1;
 Mesh 3;
 )";
 
     return script.arg(m_rIn).arg(m_wallThickness).arg(m_hCap).arg(m_hVoid).arg(m_meshSize)
         .arg(m_cx).arg(m_cy).arg(m_cz)
-        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ);
+        .arg(m_zStart).arg(m_zEnd).arg(m_msLocalZ).arg(m_msWall);
 }

@@ -2913,7 +2913,7 @@ void MainWindow::setupPostProcessUI() {
     btnGenerateThreshold = new QPushButton("生成基础模型");
     btnSubmitThreshold = new QPushButton("提交并启动");
     btnTerminateProcess = new QPushButton("终止进程");
-    btnSkipStep = new QPushButton("手动干预/跳过");
+    btnSkipStep = new QPushButton("跳过当前计算工况");
 
     btnGenerateThreshold->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
     btnSubmitThreshold->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
@@ -2928,7 +2928,7 @@ void MainWindow::setupPostProcessUI() {
     velContainerLayout->addLayout(thresholdBtnLayout);
 
     // B.4 专属集成式控制台 (Console)
-    QLabel* consoleLabel = new QLabel("当前寻优工况实时监控 (cm/μs 模式):");
+    QLabel* consoleLabel = new QLabel("当前寻优工况实时监控:");
     consoleLabel->setStyleSheet("font-weight: bold; color: #555; margin-top: 10px;");
     velContainerLayout->addWidget(consoleLabel);
 

@@ -1,441 +1,391 @@
 ﻿/**
  * @file PostProcessWidget.cpp
- * @brief 基于纯 Qt API 重构的 LS-DYNA 结果解析器
- * @details 彻底免疫中文路径打不开、C++ Locale 小数点识别错乱等系统级 Bug。
+ * @brief LS-DYNA 后处理自动化分析与网格化可视化组件实现
+ * @author
+ * @date 2024
  */
 
 #include "PostProcessWidget.h"
-#include "qcustomplot.h"
-#include <QHBoxLayout>
 #include <QVBoxLayout>
-#include <QListWidget>
+#include <QHBoxLayout>
 #include <QPushButton>
 #include <QFileDialog>
-#include <QMessageBox>
-#include <QSplitter>
-#include <QFile>
+#include <QDir>
 #include <QTextStream>
-#include <QRegularExpression>
+#include <QLabel>
+#include <QDebug>
 #include <cmath>
+#include <QRegExp>
 
-namespace {
-    /**
-     * @brief [黑科技] 强健的 Qt 数值提取器
-     * @details 无视 LS-DYNA 列宽粘连 (如 "-1.31E-01-1.43E-03")，无视 "***" 乱码。
-     */
-    inline QVector<double> extractNumbersRobust(const QString& line) {
-        QVector<double> numbers;
-        // 匹配科学计数法、常规浮点数、整数，或连续星号(溢出)
-        static QRegularExpression re("([-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?|\\*{3,})");
-        QRegularExpressionMatchIterator i = re.globalMatch(line);
-
-        while (i.hasNext()) {
-            QRegularExpressionMatch match = i.next();
-            QString matchStr = match.captured(1);
-            if (matchStr.contains("***")) {
-                numbers.push_back(0.0);
-            }
-            else {
-                // Qt的 toDouble 默认绑定 C-Locale，永不因系统语言设置报错
-                numbers.push_back(matchStr.toDouble());
-            }
-        }
-        return numbers;
-    }
-}
-
+ /**
+  * @brief 构造函数：初始化色盘并构建界面
+  * @param parent 父窗口指针
+  */
 PostProcessWidget::PostProcessWidget(QWidget* parent) : QWidget(parent) {
+    // 初始化专业工程绘图色盘 (MATLAB 标准配色)
+    m_colorPalette << QColor(0, 114, 189) << QColor(217, 83, 25)
+        << QColor(237, 177, 32) << QColor(126, 47, 142)
+        << QColor(119, 172, 48) << QColor(77, 190, 238);
     setupUI();
-
-    connect(m_btnLoadData, &QPushButton::clicked, this, &PostProcessWidget::handleLoadData);
-    connect(m_sensorList, &QListWidget::itemSelectionChanged, this, &PostProcessWidget::handleSensorSelectionChanged);
-    connect(m_btnClearPlot, &QPushButton::clicked, m_plotWidget, [this]() {
-        m_plotWidget->clearGraphs();
-        m_plotWidget->replot();
-        });
-}
-
-void PostProcessWidget::setupUI() {
-    QWidget* leftPanel = new QWidget(this);
-    QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
-    leftLayout->setContentsMargins(0, 0, 0, 0);
-
-    m_comboFileType = new QComboBox(this);
-    m_comboFileType->addItems({
-        "GLSTAT (全局系统能量)",
-        "NODOUT (节点运动历程)",
-        "ELOUT (单元应力历程)",
-        "RCFORC (接触面反力)",
-        "SLEOUT (接触面能量)",
-        "MATSUM (部件能量)",
-        "SECFORC (截面内力)",
-        "SPCFORC (约束反力)"
-        });
-
-    m_btnLoadData = new QPushButton("载入数据文件", this);
-    m_btnClearPlot = new QPushButton("清空渲染图表", this);
-
-    m_sensorList = new QListWidget(this);
-    m_sensorList->setSelectionMode(QAbstractItemView::ExtendedSelection);
-
-    leftLayout->addWidget(m_comboFileType);
-    leftLayout->addWidget(m_btnLoadData);
-    leftLayout->addWidget(m_btnClearPlot);
-    leftLayout->addWidget(m_sensorList);
-
-    m_plotWidget = new QCustomPlot(this);
-    m_plotWidget->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
-
-    QSplitter* splitter = new QSplitter(Qt::Horizontal, this);
-    splitter->addWidget(leftPanel);
-    splitter->addWidget(m_plotWidget);
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 4);
-
-    QVBoxLayout* mainLayout = new QVBoxLayout(this);
-    mainLayout->addWidget(splitter);
-}
-
-void PostProcessWidget::handleLoadData() {
-    QString fileName = QFileDialog::getOpenFileName(this, "载入 LS-DYNA 后处理文件", "", "All Files (*)");
-    if (fileName.isEmpty()) return;
-
-    m_simulationData.clear();
-    m_sensorList->clear();
-    m_plotWidget->clearGraphs();
-
-    bool success = false;
-    QString type = m_comboFileType->currentText();
-
-    if (type.contains("GLSTAT"))      success = parseGlstat(fileName);
-    else if (type.contains("NODOUT")) success = parseNodout(fileName);
-    else if (type.contains("ELOUT"))  success = parseElout(fileName);
-    else if (type.contains("RCFORC")) success = parseRcforc(fileName);
-    else if (type.contains("SLEOUT")) success = parseSleout(fileName);
-    else if (type.contains("MATSUM")) success = parseMatsum(fileName);
-    else if (type.contains("SECFORC"))success = parseSecforc(fileName);
-    else if (type.contains("SPCFORC"))success = parseSpcforc(fileName);
-
-    if (success) {
-        for (auto it = m_simulationData.begin(); it != m_simulationData.end(); ++it) {
-            m_sensorList->addItem(it.key());
-        }
-        QMessageBox::information(this, "解析成功", QString("成功载入时程序列数: %1").arg(m_simulationData.size()));
-    }
-    else {
-        QMessageBox::warning(this, "解析异常", "读取失败。请检查文件类型是否匹配，或文件是否已被损坏。");
-    }
-}
-
-// =====================================================================
-// 专属解析引擎 (基于 Qt QFile 彻底解决路径/换行符乱码问题)
-// =====================================================================
-
-bool PostProcessWidget::parseGlstat(const QString& filePath) {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
-
-    QTextStream in(&file);
-    double currentTime = 0.0;
-    bool found = false;
-
-    while (!in.atEnd()) {
-        QString line = in.readLine();
-        QString lowerLine = line.toLower();
-
-        QVector<double> nums = extractNumbersRobust(line);
-        if (nums.isEmpty()) continue;
-
-        if (lowerLine.contains("time") && !lowerLine.contains("step") && !lowerLine.contains("zone")) {
-            currentTime = nums[0];
-        }
-        else if (lowerLine.contains("kinetic energy") && !lowerLine.contains("eroded")) {
-            m_simulationData["Global Kinetic Energy"].time.append(currentTime);
-            m_simulationData["Global Kinetic Energy"].value.append(nums[0]);
-            found = true;
-        }
-        else if (lowerLine.contains("internal energy") && !lowerLine.contains("eroded")) {
-            m_simulationData["Global Internal Energy"].time.append(currentTime);
-            m_simulationData["Global Internal Energy"].value.append(nums[0]);
-            found = true;
-        }
-    }
-    return found;
 }
 
 /**
- * @brief 解析部件/材料能量文件 (MATSUM)
- * @details 针对 LS-DYNA 紧凑缩写格式 (mat.#=, inten=, kinen=) 进行了精准适配。
- * @param filePath 文件绝对路径
- * @return 提取到有效数据返回 true，否则返回 false
+ * @brief 构建 UI 界面，采用 2x2 网格化布局实现全景监控
  */
-bool PostProcessWidget::parseMatsum(const QString& filePath) {
-    QFile file(filePath);
+void PostProcessWidget::setupUI() {
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+
+    // 1. 顶部自动化工具栏
+    QHBoxLayout* toolBar = new QHBoxLayout();
+    QPushButton* btnManualLoad = new QPushButton("手动扫描工作目录");
+    btnManualLoad->setMinimumHeight(35);
+    btnManualLoad->setStyleSheet("font-weight: bold; background-color: #34495E; color: white;");
+
+    toolBar->addWidget(btnManualLoad);
+    toolBar->addStretch();
+    mainLayout->addLayout(toolBar);
+
+    // 2. 核心网格监控区 (2x2 Grid)
+    QWidget* gridContainer = new QWidget();
+    m_gridLayout = new QGridLayout(gridContainer);
+    m_gridLayout->setSpacing(15);
+
+    // 初始化四个核心维度的图表
+    createGridPlot("glstat", "全局系统能量 (GLSTAT)", 0, 0);
+    createGridPlot("matsum", "部件能量分布 (MATSUM)", 0, 1);
+    createGridPlot("nodout", "关键节点运动历程 (NODOUT)", 1, 0);
+    createGridPlot("elout", "单元应力与接触力 (ELOUT/RCFORC)", 1, 1);
+
+    mainLayout->addWidget(gridContainer);
+
+    // 3. 信号槽绑定
+    connect(btnManualLoad, &QPushButton::clicked, this, &PostProcessWidget::handleManualDirSelect);
+}
+
+/**
+ * @brief 创建并配置单个 QCustomPlot 实例
+ * @param id 图表唯一标识符
+ * @param title 图表标题
+ * @param row 网格所在行
+ * @param col 网格所在列
+ */
+void PostProcessWidget::createGridPlot(const QString& id, const QString& title, int row, int col) {
+    QCustomPlot* plot = new QCustomPlot();
+    plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+
+    // 设置深色风格辅助线
+    plot->xAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
+    plot->yAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
+
+    // 添加标题栏
+    plot->plotLayout()->insertRow(0);
+    QCPTextElement* titleElement = new QCPTextElement(plot, title, QFont("Microsoft YaHei", 10, QFont::Bold));
+    plot->plotLayout()->addElement(0, 0, titleElement);
+
+    plot->xAxis->setLabel("时间 (Time) [us]");
+    plot->legend->setVisible(true);
+    plot->legend->setFont(QFont("Consolas", 8));
+    plot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
+
+    m_plotMap[id] = plot;
+    m_gridLayout->addWidget(plot, row, col);
+}
+
+/**
+ * @brief 响应手动选择文件夹操作
+ */
+void PostProcessWidget::handleManualDirSelect() {
+    QString dir = QFileDialog::getExistingDirectory(this, "选择 LS-DYNA 求解器输出目录");
+    if (!dir.isEmpty()) {
+        autoScanAndPlot(dir);
+    }
+}
+
+/**
+ * @brief 清空仪表盘所有图表
+ */
+void PostProcessWidget::clearDashboard() {
+    for (QCustomPlot* p : m_plotMap.values()) {
+        p->clearGraphs();
+        p->replot();
+    }
+}
+
+/**
+ * @brief 执行自动化扫描：自动寻找目录下的文件并分流解析
+ * @param workingDir 目标工作目录路径
+ */
+void PostProcessWidget::autoScanAndPlot(const QString& workingDir) {
+    if (workingDir.isEmpty()) return;
+
+    clearDashboard();
+    m_currentWorkDir = workingDir;
+    QDir dir(workingDir);
+
+    // 任务队列：定义文件名与对应的解析器映射
+    QMap<QString, QString> taskQueue;
+    taskQueue["glstat"] = "glstat";
+    taskQueue["matsum"] = "matsum";
+    taskQueue["nodout"] = "nodout";
+    taskQueue["elout"] = "elout";
+    taskQueue["rcforc"] = "rcforc";
+
+    // 遍历匹配存在的文件并调用对应的解析器
+    for (auto it = taskQueue.begin(); it != taskQueue.end(); ++it) {
+        QString filePath = dir.absoluteFilePath(it.key());
+        if (dir.exists(it.key())) {
+            QString type = it.value();
+            if (type == "glstat") processGlstat(filePath);
+            else if (type == "matsum") processMatsum(filePath);
+            else if (type == "nodout") processNodout(filePath);
+            else if (type == "elout")  processElout(filePath);
+            else if (type == "rcforc") processRcforc(filePath);
+        }
+    }
+
+    // 统一自适应视口并重绘
+    for (QCustomPlot* p : m_plotMap.values()) {
+        p->rescaleAxes();
+        p->replot();
+    }
+}
+
+// ============================================================================
+// 后处理文件解析引擎具体实现 (基于有限状态机与正则分割)
+// ============================================================================
+
+/**
+ * @brief 解析 GLSTAT 文件 (提取全局动能、内能)
+ */
+bool PostProcessWidget::processGlstat(const QString& path) {
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    QTextStream in(&file);
+    QVector<double> time, ke, ie;
     double currentTime = 0.0;
-    bool found = false;
+    QTextStream in(&file);
 
     while (!in.atEnd()) {
-        QString line = in.readLine();
-        QString lowerLine = line.toLower();
-
-        // 使用数值提取器剥离所有文字和符号
-        QVector<double> nums = extractNumbersRobust(line);
-        if (nums.isEmpty()) continue;
-
-        // 1. 匹配时间戳行 (例如 "time =   0.0000E+00")
-        if (lowerLine.contains("time") && lowerLine.contains("=") && !lowerLine.contains("step")) {
-            currentTime = nums[0];
+        QString line = in.readLine().trimmed();
+        if (line.startsWith("time", Qt::CaseInsensitive)) {
+            currentTime = line.split(QRegExp("\\s+"), QString::SkipEmptyParts).last().toDouble();
         }
-        // 2. 匹配材料能量行 (例如 "mat.#=    1             inten=   3.4176E+01     kinen=   0.0000E+00 ...")
-        else if (lowerLine.contains("mat.#=")) {
-            // 确保至少提取到了 ID、内能(inten)、动能(kinen) 三个核心数据
-            if (nums.size() >= 3) {
-                int matId = qRound(nums[0]);
-                double internalEnergy = nums[1];
-                double kineticEnergy = nums[2];
-
-                // 记录当前 Part 的内能
-                QString intKey = QString("Part %1 - Internal Energy").arg(matId);
-                m_simulationData[intKey].time.append(currentTime);
-                m_simulationData[intKey].value.append(internalEnergy);
-
-                // 记录当前 Part 的动能
-                QString kinKey = QString("Part %1 - Kinetic Energy").arg(matId);
-                m_simulationData[kinKey].time.append(currentTime);
-                m_simulationData[kinKey].value.append(kineticEnergy);
-
-                found = true;
-            }
+        else if (line.startsWith("kinetic energy", Qt::CaseInsensitive)) {
+            time.append(currentTime);
+            ke.append(line.split(QRegExp("\\s+"), QString::SkipEmptyParts).last().toDouble());
+        }
+        else if (line.startsWith("internal energy", Qt::CaseInsensitive)) {
+            ie.append(line.split(QRegExp("\\s+"), QString::SkipEmptyParts).last().toDouble());
         }
     }
-    return found;
+    file.close();
+
+    QCustomPlot* p = m_plotMap["glstat"];
+    if (!p || time.isEmpty()) return false;
+    p->yAxis->setLabel("系统能量 [10^5 J]");
+
+    p->addGraph(); p->graph()->setData(time, ke); p->graph()->setName("全局动能 (KE)");
+    p->graph()->setPen(QPen(m_colorPalette[0 % m_colorPalette.size()], 2));
+
+    p->addGraph(); p->graph()->setData(time, ie); p->graph()->setName("全局内能 (IE)");
+    p->graph()->setPen(QPen(m_colorPalette[1 % m_colorPalette.size()], 2));
+
+    return true;
 }
-bool PostProcessWidget::parseNodout(const QString& filePath) {
-    QFile file(filePath);
+
+/**
+ * @brief 解析 MATSUM 文件 (提取各个 Part 的内能与动能)
+ */
+bool PostProcessWidget::processMatsum(const QString& path) {
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    QTextStream in(&file);
-    // 匹配 ( at time 0.0000000E+00 )
-    static QRegularExpression timeRegex("\\(\\s*at time\\s+([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)\\s*\\)");
-
+    QMap<int, QVector<double>> timeMap, ieMap, keMap;
     double currentTime = 0.0;
-    bool found = false;
-
-    while (!in.atEnd()) {
-        QString line = in.readLine();
-        QString lowerLine = line.toLower();
-
-        QRegularExpressionMatch match = timeRegex.match(line);
-        if (match.hasMatch()) {
-            currentTime = match.captured(1).toDouble();
-        }
-        else {
-            QVector<double> nums = extractNumbersRobust(line);
-            if (nums.size() >= 4 && !lowerLine.contains("nodal") && !lowerLine.contains("disp")) {
-                int id = qRound(nums[0]);
-                if (id > 0 && qAbs(nums[0] - id) < 1e-6) {
-                    double dx = nums[1], dy = nums[2], dz = nums[3];
-                    double mag = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-                    m_simulationData[QString("Node %1 - Disp Z").arg(id)].time.append(currentTime);
-                    m_simulationData[QString("Node %1 - Disp Z").arg(id)].value.append(dz);
-
-                    m_simulationData[QString("Node %1 - Disp Mag").arg(id)].time.append(currentTime);
-                    m_simulationData[QString("Node %1 - Disp Mag").arg(id)].value.append(mag);
-                    found = true;
-                }
-            }
-        }
-    }
-    return found;
-}
-
-bool PostProcessWidget::parseElout(const QString& filePath) {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
-
     QTextStream in(&file);
-    static QRegularExpression timeRegex("\\(\\s*at time\\s+([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)\\s*\\)");
-    static QRegularExpression idRegex("^\\s*(\\d+)-\\s*\\d+");
-
-    double currentTime = 0.0;
-    int currentElemId = -1;
-    bool found = false;
 
     while (!in.atEnd()) {
-        QString line = in.readLine();
-        QString lowerLine = line.toLower();
-
-        QRegularExpressionMatch timeMatch = timeRegex.match(line);
-        QRegularExpressionMatch idMatch = idRegex.match(line);
-
-        if (timeMatch.hasMatch()) {
-            currentTime = timeMatch.captured(1).toDouble();
+        QString line = in.readLine().trimmed();
+        if (line.startsWith("time =", Qt::CaseInsensitive)) {
+            currentTime = line.split(QRegExp("\\s+|="), QString::SkipEmptyParts).last().toDouble();
         }
-        else if (idMatch.hasMatch()) {
-            currentElemId = idMatch.captured(1).toInt();
-        }
-        else if (currentElemId != -1 && (lowerLine.contains("elastic") || lowerLine.contains("plastic"))) {
-            QVector<double> nums = extractNumbersRobust(line);
-            if (nums.size() >= 9) {
-                double stressX = nums[1];
-                double effStress = nums[8];
-
-                m_simulationData[QString("Element %1 - Eff. Stress").arg(currentElemId)].time.append(currentTime);
-                m_simulationData[QString("Element %1 - Eff. Stress").arg(currentElemId)].value.append(effStress);
-
-                m_simulationData[QString("Element %1 - Stress X").arg(currentElemId)].time.append(currentTime);
-                m_simulationData[QString("Element %1 - Stress X").arg(currentElemId)].value.append(stressX);
-
-                found = true;
-                currentElemId = -1; // 归位
+        else if (line.startsWith("mat.#=", Qt::CaseInsensitive)) {
+            QStringList parts = line.replace("=", " ").split(QRegExp("\\s+"), QString::SkipEmptyParts);
+            if (parts.size() >= 6) {
+                int partId = parts[1].toInt();
+                timeMap[partId].append(currentTime);
+                ieMap[partId].append(parts[3].toDouble()); // inten
+                keMap[partId].append(parts[5].toDouble()); // kinen
             }
         }
     }
-    return found;
-}
+    file.close();
 
-bool PostProcessWidget::parseRcforc(const QString& filePath) {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+    QCustomPlot* p = m_plotMap["matsum"];
+    if (!p || timeMap.isEmpty()) return false;
+    p->yAxis->setLabel("部件能量 [10^5 J]");
 
-    QTextStream in(&file);
-    bool found = false;
+    int colorIdx = 0, count = 0;
+    for (int pid : ieMap.keys()) {
+        if (count++ > 3) break; // 最多绘制 4 个 Part 以防止界面卡顿
 
-    while (!in.atEnd()) {
-        QString line = in.readLine();
-        QString lowerLine = line.toLower();
+        p->addGraph(); p->graph()->setData(timeMap[pid], ieMap[pid]);
+        p->graph()->setName(QString("Part %1 内能").arg(pid));
+        p->graph()->setPen(QPen(m_colorPalette[colorIdx % m_colorPalette.size()], 2));
 
-        if (lowerLine.contains("surfa") || lowerLine.contains("surfb")) {
-            QVector<double> nums = extractNumbersRobust(line);
-            if (nums.size() >= 5) {
-                int id = qRound(nums[0]);
-                double t = nums[1];
-                double fx = nums[2], fy = nums[3], fz = nums[4];
-                double mag = std::sqrt(fx * fx + fy * fy + fz * fz);
-
-                QString side = lowerLine.contains("surfa") ? "Master" : "Slave";
-
-                m_simulationData[QString("Contact %1 - %2 Force Z").arg(id).arg(side)].time.append(t);
-                m_simulationData[QString("Contact %1 - %2 Force Z").arg(id).arg(side)].value.append(fz);
-
-                m_simulationData[QString("Contact %1 - %2 Force Mag").arg(id).arg(side)].time.append(t);
-                m_simulationData[QString("Contact %1 - %2 Force Mag").arg(id).arg(side)].value.append(mag);
-                found = true;
-            }
-        }
-    }
-    return found;
-}
-
-bool PostProcessWidget::parseSleout(const QString& filePath) {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
-
-    QTextStream in(&file);
-    static QRegularExpression timeRegex("time=\\s*([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)");
-
-    double currentTime = 0.0;
-    bool found = false;
-
-    while (!in.atEnd()) {
-        QString line = in.readLine();
-        QString lowerLine = line.toLower();
-
-        QRegularExpressionMatch match = timeRegex.match(line);
-        if (match.hasMatch()) {
-            currentTime = match.captured(1).toDouble();
-        }
-        else {
-            QVector<double> nums = extractNumbersRobust(line);
-            if (nums.size() >= 3 && !lowerLine.contains("summary") && !lowerLine.contains("surfa")) {
-                int id = qRound(nums[0]);
-                if (id > 0 && qAbs(nums[0] - id) < 1e-6) {
-                    double slaveEng = nums[1];
-                    double masterEng = nums[2];
-
-                    m_simulationData[QString("Contact %1 - Slave Energy").arg(id)].time.append(currentTime);
-                    m_simulationData[QString("Contact %1 - Slave Energy").arg(id)].value.append(slaveEng);
-                    found = true;
-                }
-            }
-        }
-    }
-    return found;
-}
-
-bool PostProcessWidget::parseSecforc(const QString& filePath) { return false; }
-bool PostProcessWidget::parseSpcforc(const QString& filePath) { return false; }
-
-// =====================================================================
-// 图表渲染管线与坐标轴映射域
-// =====================================================================
-
-void PostProcessWidget::handleSensorSelectionChanged() {
-    m_plotWidget->clearGraphs();
-
-    QList<QListWidgetItem*> selectedItems = m_sensorList->selectedItems();
-    if (selectedItems.isEmpty()) {
-        m_plotWidget->replot();
-        return;
-    }
-
-    QList<QColor> palette = {
-        QColor(0, 114, 189), QColor(217, 83, 25), QColor(237, 177, 32),
-        QColor(126, 47, 142), QColor(119, 172, 48), QColor(77, 190, 238)
-    };
-    int colorIdx = 0;
-    QStringList yAxisCategorySet;
-
-    for (QListWidgetItem* item : selectedItems) {
-        QString sensorName = item->text();
-        if (!m_simulationData.contains(sensorName)) continue;
-
-        SensorData data = m_simulationData[sensorName];
-        QCPGraph* graph = m_plotWidget->addGraph();
-        graph->setData(data.time, data.value);
-
-        QString unitStr = "";
-        QString axisCategory = "";
-
-        if (sensorName.contains("Energy", Qt::CaseInsensitive)) {
-            unitStr = "[10^5 J]";
-            axisCategory = QString("Energy %1").arg(unitStr);
-        }
-        else if (sensorName.contains("Disp", Qt::CaseInsensitive)) {
-            unitStr = "[cm]";
-            axisCategory = QString("Displacement %1").arg(unitStr);
-        }
-        else if (sensorName.contains("Stress", Qt::CaseInsensitive)) {
-            unitStr = "[Mbar]";
-            axisCategory = QString("Stress %1").arg(unitStr);
-        }
-        else if (sensorName.contains("Force", Qt::CaseInsensitive)) {
-            unitStr = "[10^7 Dyne]";
-            axisCategory = QString("Force %1").arg(unitStr);
-        }
-
-        if (!axisCategory.isEmpty() && !yAxisCategorySet.contains(axisCategory)) {
-            yAxisCategorySet << axisCategory;
-        }
-
-        graph->setName(QString("%1 %2").arg(sensorName).arg(unitStr));
-
-        QPen pen;
-        pen.setColor(palette[colorIdx % palette.size()]);
-        pen.setWidth(2);
-        graph->setPen(pen);
+        p->addGraph(); p->graph()->setData(timeMap[pid], keMap[pid]);
+        p->graph()->setName(QString("Part %1 动能").arg(pid));
+        p->graph()->setPen(QPen(m_colorPalette[colorIdx % m_colorPalette.size()], 2, Qt::DashLine));
         colorIdx++;
     }
+    return true;
+}
 
-    m_plotWidget->xAxis->setLabel("Time [μs]");
-    if (yAxisCategorySet.isEmpty()) m_plotWidget->yAxis->setLabel("Value");
-    else m_plotWidget->yAxis->setLabel(yAxisCategorySet.join("  |  "));
+/**
+ * @brief 解析 NODOUT 文件 (提取关键节点的运动速度)
+ */
+bool PostProcessWidget::processNodout(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
-    m_plotWidget->legend->setVisible(true);
-    m_plotWidget->rescaleAxes();
-    m_plotWidget->replot();
+    QMap<int, QVector<double>> timeMap, velMap;
+    double currentTime = 0.0;
+    bool isDataBlock = false;
+    QTextStream in(&file);
+
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+
+        if (line.contains("n o d a l") && line.contains("at time")) {
+            QString timeStr = line.section("time", -1).remove(")").trimmed();
+            currentTime = timeStr.toDouble();
+            isDataBlock = false;
+        }
+        else if (line.startsWith("nodal point")) {
+            isDataBlock = true;
+        }
+        else if (line.isEmpty() || line.startsWith("legend")) {
+            isDataBlock = false;
+        }
+
+        if (isDataBlock && !line.isEmpty() && line[0].isDigit()) {
+            QStringList parts = line.split(QRegExp("\\s+"), QString::SkipEmptyParts);
+            if (parts.size() >= 7) {
+                int nodeId = parts[0].toInt();
+                double vx = parts[4].toDouble();
+                double vy = parts[5].toDouble();
+                double vz = parts[6].toDouble();
+                double velMag = std::sqrt(vx * vx + vy * vy + vz * vz);
+
+                timeMap[nodeId].append(currentTime);
+                velMap[nodeId].append(velMag);
+            }
+        }
+    }
+    file.close();
+
+    QCustomPlot* p = m_plotMap["nodout"];
+    if (!p || timeMap.isEmpty()) return false;
+    p->yAxis->setLabel("节点合速度 [cm/us]");
+
+    int colorIdx = 0, count = 0;
+    for (int nid : velMap.keys()) {
+        if (count++ > 4) break; // 最多绘制 5 个节点
+        p->addGraph(); p->graph()->setData(timeMap[nid], velMap[nid]);
+        p->graph()->setName(QString("Node %1 速度").arg(nid));
+        p->graph()->setPen(QPen(m_colorPalette[colorIdx++ % m_colorPalette.size()], 2));
+    }
+    return true;
+}
+
+/**
+ * @brief 解析 ELOUT 文件 (提取关键单元的 Von-Mises 应力)
+ */
+bool PostProcessWidget::processElout(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+
+    QMap<int, QVector<double>> timeMap, stressMap;
+    double currentTime = 0.0;
+    int currentElemId = -1;
+    QTextStream in(&file);
+
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+
+        if (line.contains("e l e m e n t") && line.contains("at time")) {
+            QString timeStr = line.section("time", -1).remove(")").trimmed();
+            currentTime = timeStr.toDouble();
+        }
+        else if (line.contains("-") && line[0].isDigit()) {
+            QStringList parts = line.split("-", QString::SkipEmptyParts);
+            if (!parts.isEmpty()) currentElemId = parts[0].simplified().toInt();
+        }
+        else if ((line.contains("elastic") || line.contains("plastic")) && currentElemId != -1) {
+            QStringList parts = line.split(QRegExp("\\s+"), QString::SkipEmptyParts);
+            if (parts.size() >= 9) {
+                double effectiveStress = parts[8].toDouble(); // yield/effsg 位于第 9 列
+                timeMap[currentElemId].append(currentTime);
+                stressMap[currentElemId].append(effectiveStress);
+            }
+            currentElemId = -1;
+        }
+    }
+    file.close();
+
+    QCustomPlot* p = m_plotMap["elout"];
+    if (!p || timeMap.isEmpty()) return false;
+    p->yAxis->setLabel("应力/接触力 [Mbar]");
+
+    int colorIdx = 0, count = 0;
+    for (int eid : stressMap.keys()) {
+        if (count++ > 3) break; // 最多绘制 4 个单元
+        p->addGraph(); p->graph()->setData(timeMap[eid], stressMap[eid]);
+        p->graph()->setName(QString("Elem %1 V-M应力").arg(eid));
+        p->graph()->setPen(QPen(m_colorPalette[colorIdx++ % m_colorPalette.size()], 2));
+    }
+    return true;
+}
+
+/**
+ * @brief 解析 RCFORC 文件 (提取主从面的接触合力)
+ */
+bool PostProcessWidget::processRcforc(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+
+    QMap<int, QVector<double>> timeMap, forceMap;
+    QTextStream in(&file);
+
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+
+        if (line.startsWith("SURFA", Qt::CaseInsensitive)) {
+            QStringList parts = line.split(QRegExp("\\s+"), QString::SkipEmptyParts);
+            if (parts.size() >= 10) {
+                int interfaceId = parts[1].toInt();
+                double time = parts[3].toDouble();
+                double fx = parts[5].toDouble();
+                double fy = parts[7].toDouble();
+                double fz = parts[9].toDouble();
+
+                double resultantForce = std::sqrt(fx * fx + fy * fy + fz * fz);
+                timeMap[interfaceId].append(time);
+                forceMap[interfaceId].append(resultantForce);
+            }
+        }
+    }
+    file.close();
+
+    // 共享右下角的 elout 图表面板
+    QCustomPlot* p = m_plotMap["elout"];
+    if (!p || timeMap.isEmpty()) return false;
+
+    int colorIdx = 4; // 避开前面应力使用的颜色
+    for (int iid : forceMap.keys()) {
+        p->addGraph(); p->graph()->setData(timeMap[iid], forceMap[iid]);
+        p->graph()->setName(QString("接触界面 %1 合力").arg(iid));
+        p->graph()->setPen(QPen(m_colorPalette[colorIdx++ % m_colorPalette.size()], 2, Qt::DotLine)); // 接触力使用虚线
+    }
+    return true;
 }

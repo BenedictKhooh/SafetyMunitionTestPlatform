@@ -1103,10 +1103,10 @@ void MainWindow::exportToKFile(const QString& fileName) {
         }
         if (count % 8 != 0) out << "\n";
 
-        // 2.4 指定单元历程数据 (ELOUT) 的输出时间步长 (使用自适应步长 dtOut)
+        // 2.4 指定单元历程数据 (ELOUT) 的输出时间步长 (使用自适应步长 dtOut)，并强制输出 8 个历史变量
         out << "*DATABASE_ELOUT\n";
-        out << "$#      dt      lcdt      beam     npltc    psetid\n";
-        out << QString("%1").arg(dtOut, 10, 'f', 5, ' ') << "         0         0         0         0\n";
+        out << "$#      dt    binary      lcur     ioopt   option1   option2   option3   option4\n";
+        out << QString("%1").arg(dtOut, 10, 'f', 5, ' ') << "         3         0         1         8         0         0         0\n";
 
     }
 

@@ -321,38 +321,124 @@ bool PostProcessWidget::processNodout(const QString& path) {
 }
 
 /**
- * @brief 解析 ELOUT 文件的所有应力列 (包含静水压力与塑性屈服等全参数读取)
+ * @brief 解析 ELOUT 文件的核心引擎 (支持提取应力、压力、屈服及反应度全参数)
+ * @param path elout 结果文件的绝对路径
+ * @return bool 解析成功返回 true，文件打开失败返回 false
+ * * @details 该解析器采用了基于状态机 (State Machine) 的按行读取策略。
+ * 针对 LS-DYNA 的输出陷阱进行了三重防御：
+ * 1. [区块隔离]：屏蔽 s t r a i n (应变) 块的干扰。
+ * 2. [负号粘连]：修复 Fortran 科学计数法格式化导致的数字粘连。
+ * 3. [缺省防御]：通过特征匹配 (小数点) 识别历史变量是否真正输出。若 K 文件未开启
+ * NEIPH 导致历史变量丢失，将自动补零防报错，并防止吞噬下一单元的 ID。
  */
 bool PostProcessWidget::processElout(const QString& path) {
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
 
     double currentTime = 0.0;
     int currentElemId = -1;
+    bool expectingHistory = false;
+    bool isStressBlock = false;
+
     QTextStream in(&file);
 
-    // 🌟 扩充参数列表，加入衍生计算的静水压力和原生的塑性屈服函数
-    QStringList params = { "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)",
-                          "sig-xy (XY剪应力)", "sig-yz (YZ剪应力)", "sig-zx (ZX剪应力)",
-                          "effsg (Von-Mises 等效应力)", "pressure (静水压力)", "yield (屈服函数/塑性应变)" };
+    QStringList params = {
+        "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)",
+        "sig-xy (XY剪应力)", "sig-yz (YZ剪应力)", "sig-zx (ZX剪应力)",
+        "effsg (Von-Mises 等效应力)", "pressure (静水压力)", "yield (屈服函数/塑性应变)",
+        "reaction_degree (反应度/燃烧分数)"
+    };
 
     while (!in.atEnd()) {
         QString line = in.readLine().trimmed();
 
+        // ---------------------------------------------------------
+        // 阶段 1: 捕获时间步更新，并判断区块类型
+        // ---------------------------------------------------------
         if (line.contains("e l e m e n t") && line.contains("at time")) {
+            // 防御：若遇到新区块时上一个单元仍在等历史变量，说明确实没输出，补0
+            if (expectingHistory && currentElemId != -1) {
+                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(0.0);
+            }
+
             currentTime = line.section("time", -1).remove(")").trimmed().toDouble();
+            expectingHistory = false;
+            currentElemId = -1;
+
+            // 仅在遇到应力计算块时开启处理开关
+            if (line.contains("s t r e s s", Qt::CaseInsensitive)) {
+                isStressBlock = true;
+            }
+            else {
+                isStressBlock = false;
+            }
+            continue;
         }
-        // 兼容无横杠的 Element ID 行
-        else if (!line.isEmpty() && line[0].isDigit() &&
-            !line.contains("elastic", Qt::CaseInsensitive) &&
+
+        // 非应力区块直接屏蔽，不干扰状态机
+        if (!isStressBlock) continue;
+
+        // 防御空行
+        if (line.isEmpty()) continue;
+
+        // ---------------------------------------------------------
+        // 阶段 2: 捕获附加历史变量 (必须置于单元ID捕获之前)
+        // ---------------------------------------------------------
+        if (expectingHistory && currentElemId != -1) {
+
+            if (!line.contains(".")) {
+                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(0.0);
+                expectingHistory = false;
+
+                // 将错就错，立即将此行作为下一个单元的 ID 进行解析
+                QString firstToken = line.split(QRegExp("\\s+|-"), QString::SkipEmptyParts).first();
+                currentElemId = firstToken.toInt();
+                continue;
+            }
+
+            // 若包含小数点，确认为正常的历史变量数据行
+            QString cleanLine = line;
+            cleanLine.replace("E-", "E_").replace("e-", "e_");
+            cleanLine.replace("-", " -");
+            cleanLine.replace("E_", "E-").replace("e_", "e-");
+
+            QStringList parts = cleanLine.split(QRegExp("\\s+"), QString::SkipEmptyParts);
+
+            if (parts.size() >= 1) {
+                double burn_fraction = parts[0].toDouble();
+                // 物理限幅：反应度界定于 [0.0, 1.0]
+                if (burn_fraction < 0.0) burn_fraction = 0.0;
+                if (burn_fraction > 1.0) burn_fraction = 1.0;
+
+                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(burn_fraction);
+            }
+            else {
+                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(0.0);
+            }
+
+            expectingHistory = false;
+            currentElemId = -1;
+            continue;
+        }
+
+        // ---------------------------------------------------------
+        // 阶段 3: 捕获实体单元 ID 
+        // ---------------------------------------------------------
+        if (line[0].isDigit() && !line.contains("elastic", Qt::CaseInsensitive) &&
             !line.contains("plastic", Qt::CaseInsensitive) &&
             !line.contains("failed", Qt::CaseInsensitive)) {
+
             QString firstToken = line.split(QRegExp("\\s+|-"), QString::SkipEmptyParts).first();
             currentElemId = firstToken.toInt();
         }
+
+        // ---------------------------------------------------------
+        // 阶段 4: 提取应力张量与屈服数据
+        // ---------------------------------------------------------
         else if ((line.contains("elastic") || line.contains("plastic") || line.contains("failed")) && currentElemId != -1) {
 
-            // 解决多个负数连在一起没有空格的 Fortran 经典粘连问题
             QString cleanLine = line;
             cleanLine.replace("E-", "E_").replace("e-", "e_");
             cleanLine.replace("-", " -");
@@ -364,9 +450,6 @@ bool PostProcessWidget::processElout(const QString& path) {
                 double sig_xx = parts[2].toDouble();
                 double sig_yy = parts[3].toDouble();
                 double sig_zz = parts[4].toDouble();
-
-                // 🌟 核心扩展：物理机制 - 根据三个主应力分量计算静水压力 (Pressure)
-                // LS-DYNA 惯例中，拉伸为正，压缩为负。静水压力 P = - (σx + σy + σz) / 3
                 double pressure = -(sig_xx + sig_yy + sig_zz) / 3.0;
 
                 m_eloutTimeMap[currentElemId].append(currentTime);
@@ -377,15 +460,14 @@ bool PostProcessWidget::processElout(const QString& path) {
                 m_eloutData[currentElemId]["sig-yz (YZ剪应力)"].append(parts[6].toDouble());
                 m_eloutData[currentElemId]["sig-zx (ZX剪应力)"].append(parts[7].toDouble());
                 m_eloutData[currentElemId]["effsg (Von-Mises 等效应力)"].append(parts[8].toDouble());
-
-                // 记录推导计算得到的静水压力
                 m_eloutData[currentElemId]["pressure (静水压力)"].append(pressure);
 
-                // 🌟 提取第 10 列的 yield/eff. plastic strain (如果有输出的话，部分材料模型可能不输出第10列)
                 double yield_val = (parts.size() >= 10) ? parts[9].toDouble() : 0.0;
                 m_eloutData[currentElemId]["yield (屈服函数/塑性应变)"].append(yield_val);
             }
-            currentElemId = -1; // 读完后复位
+
+            // 数据提取完毕，挂起状态机等待读取下一行的反应度
+            expectingHistory = true;
         }
     }
     file.close();
@@ -394,10 +476,11 @@ bool PostProcessWidget::processElout(const QString& path) {
         m_comboElout->blockSignals(true);
         m_comboElout->clear();
         m_comboElout->addItems(params);
-        m_comboElout->setCurrentIndex(6); // 默认依然选 Von-Mises 等效应力
+        m_comboElout->setCurrentIndex(9); // 默认选择反应度
         m_comboElout->blockSignals(false);
         updateEloutPlot();
     }
+
     return true;
 }
 

@@ -923,6 +923,12 @@ void MainWindow::onSubstanceTreeContextMenu(const QPoint& pos) {
     menu.exec(substanceTree->viewport()->mapToGlobal(pos));
 }
 
+/**
+ * @brief 从环境中彻底销毁指定实体及其关联属性
+ * @param name 待销毁的物理实体标识名
+ * @details 执行级联清理，将抹除该实体的拓扑数据、对称边界条件、
+ * 已挂载的 *PART 关键字卡片以及附着其上的所有传感器探针缓存。
+ */
 void MainWindow::handleDeleteEntity(QString name) {
     // 1. 从实体仓库(Repository)中移除数据
     if (m_repository.deleteEntity(name)) {
@@ -944,6 +950,11 @@ void MainWindow::handleDeleteEntity(QString name) {
             m_entityParts.remove(name);
         }
 
+        // =========================================================
+        // 🌟 核心修复：同步移除附着在该幽灵实体身上的所有探测点
+        // =========================================================
+        m_sensorNodes.remove(name);
+
         // 2. 刷新 3D 画面 (清空指令 -> 重新遍历剩余实体提交给 GLWidget)
         redrawAllEntities();
 
@@ -954,6 +965,18 @@ void MainWindow::handleDeleteEntity(QString name) {
     }
 }
 
+/**
+ * @brief 导出 LS-DYNA 关键字文件 (*.k)
+ * @param fileName 导出的目标文件绝对路径
+ * @details 该函数负责将当前 UI 面板中配置的网格节点、实体单元、
+ * 传感器探测点以及对称边界条件，组装并格式化输出为 LS-DYNA 求解器
+ * 可识别的标准 ASCII 关键字文件。
+ * * @note
+ * - [自适应采样]：针对 NODOUT 与 ELOUT，系统会自动根据总计算时间 (EndTime)
+ * 均分分配输出步长 (dtOut)，默认采样密度为 200 帧，避免输出文件过大或曲线失真。
+ * - [微观数据提取]：若场景中存在观测点 (Sensors)，会自动强制开启实体单元的
+ * 历史变量输出 (NEIPH=3)，用于后处理解析器提取炸药的反应度等微观参数。
+ */
 void MainWindow::exportToKFile(const QString& fileName) {
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -964,6 +987,18 @@ void MainWindow::exportToKFile(const QString& fileName) {
     QTextStream out(&file);
     out << "*KEYWORD\n";
 
+    // ==============================================================
+    // 0. 获取计算时间并计算自适应输出步长
+    // ==============================================================
+    // 获取用户在界面设定的总计算时长
+    double endTime = m_simSetupUI.endtimeInput->value();
+
+    // 自适应输出步长计算 (Target: 200 frames)
+    double dtOut = (endTime > 0.0) ? (endTime / 200.0) : 0.005;
+
+    // ==============================================================
+    // 1. 实体网格数据获取与写入 (Nodes & Elements)
+    // ==============================================================
     const auto& allEntities = m_repository.getAllEntities(); // 获取仓库中所有实体
 
     int globalNodeId = 1;  // 全局节点计数器
@@ -985,7 +1020,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
         out << "$ Entity: " << entity.name << "\n";
         out << "$ #################################################\n";
 
-        // 1. 导出节点 (从索引 1 开始，跳过占位的 nodes[0])
+        // 1.1 导出节点 (从索引 1 开始，跳过占位的 nodes[0])
         out << "*NODE\n";
         for (size_t i = 1; i < entity.nodes.size(); ++i) {
             localToGlobal[static_cast<int>(i)] = globalNodeId;
@@ -996,6 +1031,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
                 << entity.nodes[i].pos.y() << ", "
                 << entity.nodes[i].pos.z() << "\n";
 
+            // 收集当前实体中被选作传感器的节点 ID
             if (m_sensorNodes.contains(entityName) && m_sensorNodes[entityName].contains(i)) {
                 globalSensorIds.push_back(globalNodeId);
             }
@@ -1003,19 +1039,20 @@ void MainWindow::exportToKFile(const QString& fileName) {
             globalNodeId++;
         }
 
-        // 2. 导出六面体单元
+        // 1.2 导出六面体单元
         out << "*ELEMENT_SOLID\n";
         for (const auto& hex : entity.hexes) {
-            // 解决报错的关键：直接使用 hex[j] 访问 std::array 元素
+            // 直接使用 hex[j] 访问 std::array 元素
             out << QString("%1").arg(globalElemId, 8)
-                << QString("%1").arg(realPartId, 8);            
+                << QString("%1").arg(realPartId, 8);
+
             bool isSensorElement = false;
 
             for (int j = 0; j < 8; ++j) {
                 int localIdx = hex[j]; // 获取存储在 array 中的局部节点索引
-
                 out << QString("%1").arg(localToGlobal[localIdx], 8);
 
+                // 判断当前单元是否包含传感器节点
                 if (m_sensorNodes.contains(entityName) && m_sensorNodes[entityName].contains(localIdx)) {
                     if (!matchedSensorNodes[entityName].contains(localIdx)) {
                         matchedSensorNodes[entityName].insert(localIdx);
@@ -1025,19 +1062,22 @@ void MainWindow::exportToKFile(const QString& fileName) {
             }
             out << "\n";
 
+            // 如果单元包含传感器节点，则将其计入实体观测点集合
             if (isSensorElement) {
                 globalSensorElemIds.insert(globalElemId);
             }
             globalElemId++;
         }
-
     }
 
+    // ==============================================================
+    // 2. 导出探针观测点及微观数据输出控制 (Sensors)
+    // ==============================================================
     if (!globalSensorIds.empty()) {
-        // 1. 指定观测点全局 ID
+
+        // 2.1 指定节点观测点全局 ID
         out << "*DATABASE_HISTORY_NODE\n";
         out << "$#    id1       id2       id3       id4       id5       id6       id7       id8\n";
-
         // LS-DYNA 要求每行最多 8 个 ID，宽度为 10，自动换行
         for (size_t i = 0; i < globalSensorIds.size(); ++i) {
             out << QString("%1").arg(globalSensorIds[i], 10, 10, QChar(' '));
@@ -1045,11 +1085,12 @@ void MainWindow::exportToKFile(const QString& fileName) {
         }
         if (globalSensorIds.size() % 8 != 0) out << "\n";
 
-        // 2. 指定节点数据的输出时间步长 (这里默认0.005，越小数据点越密，曲线越平滑)
+        // 2.2 指定节点历程数据 (NODOUT) 的输出时间步长 (使用自适应步长 dtOut)
         out << "*DATABASE_NODOUT\n";
         out << "$#      dt      lcdt      beam     npltc    psetid\n";
-        out << "     0.005         0         0         0         0\n";
+        out << QString("%1").arg(dtOut, 10, 'f', 5, ' ') << "         0         0         0         0\n";
 
+        // 2.3 指定实体单元观测点全局 ID
         out << "*DATABASE_HISTORY_SOLID\n";
         out << "$#    id1       id2       id3       id4       id5       id6       id7       id8\n";
         int count = 0;
@@ -1060,18 +1101,21 @@ void MainWindow::exportToKFile(const QString& fileName) {
         }
         if (count % 8 != 0) out << "\n";
 
-        out << "*DATABASE_ELOUT\n"; // Element Output 单元输出卡片
-        out << "     0.005         0         0         0         0\n";
+        // 2.4 指定单元历程数据 (ELOUT) 的输出时间步长 (使用自适应步长 dtOut)
+        out << "*DATABASE_ELOUT\n";
+        out << "$#      dt      lcdt      beam     npltc    psetid\n";
+        out << QString("%1").arg(dtOut, 10, 'f', 5, ' ') << "         0         0         0         0\n";
+
     }
 
     // ==============================================================
-    //
+    // 3. 导出对称边界条件
     // ==============================================================
     if (!m_symmetryRules.empty()) {
         static int currentSetId = 2000;
 
         for (const auto& rule : m_symmetryRules) {
-             
+
             const MeshEntity* entity = m_repository.getEntity(rule.entityName);
             if (!entity) continue;
 
@@ -1093,7 +1137,7 @@ void MainWindow::exportToKFile(const QString& fileName) {
 
             if (globalNodes.empty()) continue;
 
-            // 实例化对象，使用对象自带的 to_string 方法直接输出到文件
+            // 实例化集合对象与约束对象，并转换为字符串输出
             int setId = currentSetId++;
             std::string title = QString("%1_Symmetry_%2").arg(rule.entityName).arg(rule.axis).toStdString();
 
@@ -1110,7 +1154,6 @@ void MainWindow::exportToKFile(const QString& fileName) {
             out << QString::fromStdString(spcCard.to_string());
         }
     }
-    // ==============================================================
 
     out << "*END\n";
     file.close();
@@ -2491,6 +2534,8 @@ void MainWindow::handleClearSummary() {
     // 2. 清空实体指针映射字典
     m_entityParts.clear();
 
+    m_sensorNodes.clear();
+
     m_deck.clear();
 }
 
@@ -2600,6 +2645,12 @@ void MainWindow::handlePresetChanged(const QString& presetName) {
     logCommand("Material Preset", QString("已加载预设 [%1]. 数据来源文献: %2").arg(presetName).arg(preset.source));
 }
 
+/**
+ * @brief 处理添加传感器观测点的请求
+ * @details 依据用户设定的空间坐标及目标实体，自动搜索欧氏距离最近的网格节点并吸附。
+ * 针对单点与阵列模式分别处理，吸附成功后将数据注册至 m_sensorNodes 内存字典，
+ * 并将对应的目标实体名称与节点集合通过 UserRole 绑定至 UI 列表项中，以便后续精准撤销。
+ */
 void MainWindow::handleAddSensor() {
     QString target = m_simSetupUI.sensorEntitySelector->currentText();
     if (target.isEmpty()) return;
@@ -2635,7 +2686,14 @@ void MainWindow::handleAddSensor() {
 
             QString summary = QString("[测点] 实体:%1 | 单点:(%2,%3,%4) -> 吸附误差:%5")
                 .arg(target).arg(sx).arg(sy).arg(sz).arg(min_dist, 0, 'f', 4);
-            if (m_simSetupUI.setupSummaryList) m_simSetupUI.setupSummaryList->addItem(summary);
+
+            // 🌟 核心修复：将实体名与节点ID绑定到列表项的后台数据中
+            QListWidgetItem* item = new QListWidgetItem(summary);
+            item->setData(Qt::UserRole + 1, "SENSOR");
+            item->setData(Qt::UserRole + 3, target); // 绑定目标实体名称
+            item->setData(Qt::UserRole + 4, QVariantList() << closestIdx); // 绑定节点ID列表
+
+            if (m_simSetupUI.setupSummaryList) m_simSetupUI.setupSummaryList->addItem(item);
             logCommand("Sensor", summary);
         }
     }
@@ -2648,6 +2706,8 @@ void MainWindow::handleAddSensor() {
         double ez = m_simSetupUI.sensorEndZ->value();
         int count = m_simSetupUI.sensorNumPoints->value();
         int successCount = 0;
+
+        QVariantList addedNodes; // 用于记录本次成功吸附的所有节点
 
         for (int k = 0; k < count; ++k) {
             double t = static_cast<double>(k) / (count - 1);
@@ -2667,13 +2727,21 @@ void MainWindow::handleAddSensor() {
 
             if (closestIdx != -1 && !m_sensorNodes[target].contains(closestIdx)) {
                 m_sensorNodes[target].append(closestIdx);
+                addedNodes.append(closestIdx);
                 successCount++;
             }
         }
 
         QString summary = QString("[阵列测点] 实体:%1 | %2个点 | 从(%3,%4,%5)到(%6,%7,%8)")
             .arg(target).arg(successCount).arg(sx).arg(sy).arg(sz).arg(ex).arg(ey).arg(ez);
-        if (m_simSetupUI.setupSummaryList) m_simSetupUI.setupSummaryList->addItem(summary);
+
+        // 🌟 核心修复：绑定实体名与阵列节点集合
+        QListWidgetItem* item = new QListWidgetItem(summary);
+        item->setData(Qt::UserRole + 1, "SENSOR");
+        item->setData(Qt::UserRole + 3, target);
+        item->setData(Qt::UserRole + 4, addedNodes);
+
+        if (m_simSetupUI.setupSummaryList) m_simSetupUI.setupSummaryList->addItem(item);
         logCommand("Sensor", summary);
     }
 }
@@ -3118,9 +3186,12 @@ void MainWindow::browseSolver() {
     }
 }
 
-// ==========================================
-// 右键菜单与预览功能  
-// ==========================================
+/**
+ * @brief 右键呼出仿真参数摘要列表的上下文菜单
+ * @details 支持用户查看特定的卡片关键字，或执行精准撤销操作。
+ * 在删除时，自动根据隐藏于项内部的 UserRole 标识判断类型：若是 CARD 则从 Deck 注销，
+ * 若是 SENSOR 则从 m_sensorNodes 内存字典中定点剔除对应的节点。
+ */
 void MainWindow::showSummaryContextMenu(const QPoint& pos) {
     QListWidgetItem* item = m_simSetupUI.setupSummaryList->itemAt(pos);
     if (!item) return;
@@ -3171,7 +3242,7 @@ void MainWindow::showSummaryContextMenu(const QPoint& pos) {
     }
     else if (selected == delAct) {
         if (type == "CARD" && cardPtr) {
- 
+
             m_deck.removeCard(cardPtr);
 
             if (cardPtr == m_globalControlCard.get()) {
@@ -3187,6 +3258,25 @@ void MainWindow::showSummaryContextMenu(const QPoint& pos) {
                 }
             }
         }
+        // =========================================================
+        // 🌟 核心修复：精准清理内存字典中残留的幽灵传感器数据
+        // =========================================================
+        else if (type == "SENSOR") {
+            QString targetEntity = item->data(Qt::UserRole + 3).toString();
+            QVariantList nodesToRemove = item->data(Qt::UserRole + 4).toList();
+
+            if (m_sensorNodes.contains(targetEntity)) {
+                // 遍历当时添加的所有节点，逐一移除
+                for (const QVariant& nodeVar : nodesToRemove) {
+                    m_sensorNodes[targetEntity].removeOne(nodeVar.toInt());
+                }
+                // 若该实体下已被完全清空，顺手销毁此实体的 Key 以保持内存洁净
+                if (m_sensorNodes[targetEntity].isEmpty()) {
+                    m_sensorNodes.remove(targetEntity);
+                }
+            }
+        }
+
         // 清理 UI 列表项
         delete item;
         logCommand("System", "已撤销指定的仿真参数配置。");

@@ -513,6 +513,13 @@ private:
     int m_lastReadPlotLine = 0;      // 记录已读文件行数
 
     void setupSolverPlotUI(QBoxLayout* layout); // 初始化图表函数声明
+    /**
+     * @brief [核心后处理] 借助内置 Python 脚本提取 d3plot 中的炸药最终反应度
+     * @param workDir 当前工况的计算目录 (用于生成临时脚本和提取 CSV)
+     * @param targetElemId 目标观测单元的 ID
+     * @return bool 是否发生起爆 (判定标准：最大反应度 >= 0.5)
+     */
+    bool checkDetonationFromD3plotPython(const QString& workDir, int targetElemId);
 
 private slots:
     void updateSolverPlot();         // 核心：实时绘图槽函数

@@ -279,6 +279,7 @@ void MainWindow::createDockWidgets() {
     substanceDock->setWidget(substanceTree);
     substanceDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
     substanceTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    substanceTree->setMinimumWidth(320);
 
     addDockWidget(Qt::RightDockWidgetArea, substanceDock);
 
@@ -295,6 +296,7 @@ void MainWindow::createDockWidgets() {
 
     // 创建标签页控件作为 Dock 的核心组件
     QTabWidget* tabWidget = new QTabWidget(generatorDock);
+    tabWidget->setMinimumWidth(320);
 
     // 将三个分类作为不同的 Tab 添加进去
     setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
@@ -1963,10 +1965,14 @@ void MainWindow::createSimulationSetupDock() {
 
     m_simSetupUI.icVx = new QDoubleSpinBox(); m_simSetupUI.icVx->setRange(-99999, 99999);
     m_simSetupUI.icVx->setSuffix(" cm/μs");
+    m_simSetupUI.icVx->setDecimals(5);
     m_simSetupUI.icVy = new QDoubleSpinBox(); m_simSetupUI.icVy->setRange(-99999, 99999);
     m_simSetupUI.icVy->setSuffix(" cm/μs");
+    m_simSetupUI.icVy->setDecimals(5);
     m_simSetupUI.icVz = new QDoubleSpinBox(); m_simSetupUI.icVz->setRange(-99999, 99999);
     m_simSetupUI.icVz->setSuffix(" cm/μs");
+    m_simSetupUI.icVz->setDecimals(5);
+
     icLayout->addRow("X 向初始速度 (Vx):", m_simSetupUI.icVx);
     icLayout->addRow("Y 向初始速度 (Vy):", m_simSetupUI.icVy);
     icLayout->addRow("Z 向初始速度 (Vz):", m_simSetupUI.icVz);
@@ -2079,7 +2085,6 @@ void MainWindow::createSimulationSetupDock() {
     sensorLayout->addRow("", m_simSetupUI.sensorArrayContainer);
     m_simSetupUI.sensorArrayContainer->setVisible(false); // 初始状态为单点，隐藏该容器
 
-    // 🌟 核心折叠逻辑：根据下拉框的值，动态显示/隐藏下半部分
     connect(m_simSetupUI.sensorModeSelector, &QComboBox::currentTextChanged, this, [this](const QString& text) {
         m_simSetupUI.sensorArrayContainer->setVisible(text.contains("Line Array"));
         });
@@ -2146,6 +2151,7 @@ void MainWindow::createSimulationSetupDock() {
     mainScrollArea->setFrameShape(QFrame::NoFrame); // 去除自带的凹陷边框
 
     mainScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    mainScrollArea->setMinimumWidth(380);
 
     // 3. 将被滚动区保护的面板放入 Dock 中
     setupDock->setWidget(mainScrollArea);
@@ -3889,132 +3895,152 @@ void MainWindow::handleBatchProcessOutput() {
     }
 }
 /**
- * @brief 处理求解器进程结束事件并流转寻优状态机
- * @details 负责接收探针传回的起爆/死火信号，并执行自动边界搜索。
- * 1. 步长探测阶段：未双向锁定阈值前，依据设定变分步长强制探测边界。
- * 2. 二分逼近阶段：上下界线锁定后，自动提取边界均值进行迭代，直至精度收敛至 ≤ 0.0005。
- * @param exitCode 进程退出状态码
- * @param exitStatus 进程退出枚举状态
+ * @brief LS-DYNA 批处理求解完成后的异步回调槽函数 (处理起爆阈值寻优逻辑)
+ * * @param exitCode 求解器进程退出的状态码
+ * @param exitStatus 求解器进程的退出状态 (正常退出/崩溃等)
+ * * @details
+ * 该函数是“升降法/二分法”寻优引擎的中央大脑。每次 LS-DYNA 求解完毕后触发。
+ * 其核心执行流程分为四个阶段：
+ * 0. [脱机拦截]：检测用户是否强行终止进程，若是则安全切断闭环序列。
+ * 1. [状态研判]：结合早退旗标 (Early Detonation/Misfire) 与结果文件，综合判定当前工况是否发生起爆。
+ * 2. [阈值收敛]：基于纯标量模长 (Magnitude) 的状态机，动态收紧上下限 (Upper/Lower Bound)，
+ * 并计算出下一次迭代的目标合速度。该算法严格保证了求解空间不出现负速度，彻底解耦了速度大小与冲击夹角。
+ * 3. [流程驱动]：判断是否满足收敛容差或达到最大迭代步数。若未结束，则将状态传至下一轮并唤醒组装函数。
  */
 void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    if (m_batchProcess) {
-        QByteArray finalOutput = m_batchProcess->readAllStandardOutput();
-        if (!finalOutput.isEmpty()) {
-            QString finalLogStr = QString::fromLocal8Bit(finalOutput);
-            if (m_isUpAndDownMode && thresholdConsole) {
-                thresholdConsole->append(finalLogStr);
-                QScrollBar* scrollBar = thresholdConsole->verticalScrollBar();
-                if (scrollBar) scrollBar->setValue(scrollBar->maximum());
-            }
-            else if (!m_isUpAndDownMode && solverConsole) {
-                solverConsole->append(finalLogStr);
-                QScrollBar* scrollBar = solverConsole->verticalScrollBar();
-                if (scrollBar) scrollBar->setValue(scrollBar->maximum());
-            }
+    // ==============================================================
+    // 阶段 0：脱机拦截（处理用户在 UI 界面中途强行终止的情况）
+    // ==============================================================
+    if (!m_isUpAndDownMode) {
+        if (thresholdConsole) {
+            thresholdConsole->append("   [系统指令] 检测到用户已强行脱机，寻优闭环序列彻底终止。");
         }
+        if (btnSkipStep) btnSkipStep->setEnabled(false);
+        return;
     }
 
-    if (m_isUpAndDownMode) {
-        if (!thresholdConsole) return;
-        if (m_matsumPollingTimer) m_matsumPollingTimer->stop();
+    // ==============================================================
+    // 阶段 1：求解器运行状态与起爆结果综合研判
+    // ==============================================================
 
-        bool isDetonated = false;
+    // 1.1 检查求解器是否异常崩溃
+    if (exitStatus == QProcess::CrashExit) {
+        thresholdConsole->append("   [致命错误] LS-DYNA 求解器发生异常崩溃！已强制终止寻优流程。");
+        QMessageBox::critical(this, "求解器崩溃", "LS-DYNA 进程异常终止，请检查 K 文件网格质量或接触设置！");
+        m_isUpAndDownMode = false; // 关闭寻优状态
+        return;
+    }
 
-        // 1. 物理状态研判归结
-        if (m_isEarlyDetonated) {
-            isDetonated = true;
-        }
-        else if (m_isEarlyMisfire) {
-            isDetonated = false;
-        }
-        else {
-            if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-                thresholdConsole->append(QString("[异常] 求解器非正常退出。ExitCode: %1").arg(exitCode));
-                m_isUpAndDownMode = false;
-                return;
-            }
-            int explosivePartId = 1;
-            isDetonated = checkDetonationResult(m_upDownCurrentDir, explosivePartId);
-        }
+    // 1.2 综合判定本轮是否起爆 (结合实时监控探针的早退旗标)
+    bool isDetonated = false;
 
-        m_upDownHistory.push_back({ m_upDownCurrentVelocity, isDetonated });
+    if (m_isEarlyDetonated) {
+        thresholdConsole->append("   [状态判定] 实时探针已在求解中途捕获到起爆突跃 (Early Detonated) -> 判定为【起爆】(X)");
+        isDetonated = true;
+    }
+    else if (m_isEarlyMisfire) {
+        thresholdConsole->append("   [状态判定] 实时探针侦测到内能连续衰减且无突跃 (Early Misfire) -> 判定为【死火】(O)");
+        isDetonated = false;
+    }
+    else {
+        // [预留扩展口]：若求解器跑完全程且未触发早退机制，则需读取 d3plot 或 elout/glstat 的最终反应度进行兜底判定
+        // 此处暂时默认：如果跑完全程都没触发起爆早退，则判定为死火
+        thresholdConsole->append("   [状态判定] 求解跑完全程，未触发起爆突跃 -> 判定为【死火】(O)");
+        isDetonated = false;
+    }
 
-        // =========================================================
-        // 2. 核心智能控制律：步长探测驱动 -> 二分边界收敛
-        // =========================================================
-        double currentSign = (m_upDownCurrentVelocity >= 0) ? 1.0 : -1.0;
-        double currentMag = std::abs(m_upDownCurrentVelocity);
+    // ==============================================================
+    // 阶段 2：核心智能控制律 —— 纯标量域的步长搜索与二分收敛
+    // ==============================================================
 
-        // 更新收敛边界
-        if (isDetonated) {
-            thresholdConsole->append("   [寻优记录] 本帧状态判定: 起爆 (X)");
-            if (m_upperBoundMag < 0 || currentMag < m_upperBoundMag) m_upperBoundMag = currentMag;
-        }
-        else {
-            thresholdConsole->append("   [寻优记录] 本帧状态判定: 死火 (O)");
-            if (m_lowerBoundMag < 0 || currentMag > m_lowerBoundMag) m_lowerBoundMag = currentMag;
-        }
+    /**
+     * @note 标量域寻优算法说明
+     * currentMag 严格代表合速度的绝对标量值 (Magnitude)。
+     * 取消向量正负号后，寻优逻辑完美符合标准的“单调函数二分求根”模型。
+     */
+    double currentMag = m_upDownCurrentVelocity;
 
-        double nextMag = 0.0;
-
-        // 阶段 2：边界已捕获，进入二分法逼近
-        if (m_lowerBoundMag >= 0 && m_upperBoundMag >= 0) {
-            nextMag = (m_lowerBoundMag + m_upperBoundMag) / 2.0;
-            thresholdConsole->append(QString("   [二分法逼近] 边界区间锁定在 [%1, %2]，提取均值测试")
-                .arg(m_lowerBoundMag, 0, 'f', 4).arg(m_upperBoundMag, 0, 'f', 4));
-
-            // 收敛截断准则
-            if (m_upperBoundMag - m_lowerBoundMag <= 0.0005) {
-                thresholdConsole->append("   [收敛完成] 阈值误差已达到容差限制 (≤ 0.0005)，终止迭代。");
-                m_upDownCurrentStep = m_upDownMaxSteps;
-            }
-        }
-        // 阶段 1：盲区探测，按用户设定步长外推
-        else if (isDetonated) {
-            nextMag = currentMag - m_upDownStepSize;
-            thresholdConsole->append(QString("   [步长搜索] 持续减速寻找死火下限，步长: %1").arg(m_upDownStepSize));
-        }
-        else {
-            nextMag = currentMag + m_upDownStepSize;
-            thresholdConsole->append(QString("   [步长搜索] 持续加速寻找起爆上限，步长: %1").arg(m_upDownStepSize));
-        }
-
-        // 应用符号回写矢量速度
-        m_upDownCurrentVelocity = currentSign * nextMag;
-
-        // 3. 流转判决与生命周期收尾
-        if (m_upDownCurrentStep < m_upDownMaxSteps) {
-            executeNextUpAndDownStep();
-        }
-        else {
-            m_isUpAndDownMode = false;
-            thresholdConsole->append("========================================");
-
-            QString resultMsg = "闭环控制终结，未能在限定步数内成功圈定边界。";
-            if (m_lowerBoundMag >= 0 && m_upperBoundMag >= 0) {
-                resultMsg = QString("极值锁定成功！临界穿透/起爆速度域: [%1, %2] cm/μs")
-                    .arg(currentSign * m_lowerBoundMag, 0, 'f', 4)
-                    .arg(currentSign * m_upperBoundMag, 0, 'f', 4);
-            }
-
-            thresholdConsole->append("[分析结果] " + resultMsg);
-            thresholdConsole->append("========================================\n");
-
-            m_lowerBoundMag = -1.0;
-            m_upperBoundMag = -1.0;
-            QMessageBox::information(this, "寻优序列完成", resultMsg);
+    // 2.1 动态收紧二分边界
+    if (isDetonated) {
+        // 当前发生起爆，说明速度偏高。该速度成为新的“起爆上限”
+        if (m_upperBoundMag < 0 || currentMag < m_upperBoundMag) {
+            m_upperBoundMag = currentMag;
         }
     }
     else {
-        if (!solverConsole) return;
-        solverConsole->append("\n========================================");
-        if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-            solverConsole->append("[系统日志] 批处理求解正常完成。");
+        // 当前发生死火，说明速度偏低。该速度成为新的“死火下限”
+        if (m_lowerBoundMag < 0 || currentMag > m_lowerBoundMag) {
+            m_lowerBoundMag = currentMag;
         }
-        else {
-            solverConsole->append(QString("[异常] 求解流非正常退出。 ExitCode: %1").arg(exitCode));
+    }
+
+    double nextMag = 0.0;
+    bool isConverged = false;
+
+    // 2.2 阶段 2A：二分收敛阶段 (已成功同时捕获上限与下限)
+    if (m_lowerBoundMag >= 0 && m_upperBoundMag >= 0) {
+        nextMag = (m_lowerBoundMag + m_upperBoundMag) / 2.0;
+
+        thresholdConsole->append(QString("   [二分法逼近] 阈值边界已锁定在 V ∈ [%1, %2] cm/μs，提取中值测试。")
+            .arg(m_lowerBoundMag, 0, 'f', 4).arg(m_upperBoundMag, 0, 'f', 4));
+
+        // 收敛截断准则 (Tolerance: 0.5 m/s 即 0.00005 cm/us)
+        if (std::abs(m_upperBoundMag - m_lowerBoundMag) <= 0.00005) {
+            thresholdConsole->append("   [★★★ 寻优成功 ★★★] 边界误差已达到收敛容差限制 (≤ 0.00005 cm/μs)。");
+            thresholdConsole->append(QString("   最终临界起爆速度 V50 ≈ %1 cm/μs").arg(nextMag, 0, 'f', 5));
+            isConverged = true;
         }
-        solverConsole->append("========================================\n");
+    }
+    // 2.3 阶段 2B：盲搜外推阶段 (只有单侧边界，按用户设定的固定步长探测另一侧边界)
+    else if (isDetonated) {
+        // 当前起爆，但没有下限 -> 持续减速以寻找死火点
+        nextMag = currentMag - m_upDownStepSize;
+        thresholdConsole->append(QString("   [步长搜索] 持续减速以探寻死火下限边界，步进量: -%1 cm/μs").arg(m_upDownStepSize));
+    }
+    else {
+        // 当前死火，但没有上限 -> 持续加速以寻找起爆点
+        nextMag = currentMag + m_upDownStepSize;
+        thresholdConsole->append(QString("   [步长搜索] 持续加速以探寻起爆上限边界，步进量: +%1 cm/μs").arg(m_upDownStepSize));
+    }
+
+    // 2.4 物理下限保护与容错截断
+    // 破片速度的模长绝对不可能为负数或0，强制拉回极小正数以防止方向反转或除零崩溃
+    if (nextMag <= 0.0) {
+        thresholdConsole->append("   [严重警告] 迭代计算出的目标速度逼近 0 或产生负数，已自动重置为极小正值截断 (0.0001 cm/μs)。");
+        nextMag = 0.0001;
+    }
+
+    // ==============================================================
+    // 阶段 3：流程驱动与下一轮调度
+    // ==============================================================
+
+    // 清理本轮早退状态，为下一轮做准备
+    m_isEarlyDetonated = false;
+    m_isEarlyMisfire = false;
+
+    // 判断终止条件：已收敛，或已达到最大允许迭代次数
+    if (isConverged || m_upDownCurrentStep >= m_upDownMaxSteps) {
+
+        if (!isConverged) {
+            thresholdConsole->append("   [寻优终止] 已达到用户设定的最大迭代次数，算法被强制截断。");
+        }
+
+        // 恢复 UI 控件状态，安全退出寻优模式
+        if (btnSkipStep) btnSkipStep->setEnabled(false);
+        m_isUpAndDownMode = false;
+
+        QMessageBox::information(this, "寻优完成", "起爆速度阈值寻优任务已顺利结束！\n请查看终端日志获取 V50 数据。");
+    }
+    else {
+        // 尚未结束，将新计算出的标量速度挂载到全局变量
+        m_upDownCurrentVelocity = nextMag;
+
+        thresholdConsole->append(QString("\n>>> 准备启动第 %1 / %2 轮迭代计算... >>>")
+            .arg(m_upDownCurrentStep + 1).arg(m_upDownMaxSteps));
+
+        // 调度下一轮计算 (重构 K 文件并启动 LS-DYNA)
+        // [注]：此函数内部会安全执行 m_upDownCurrentStep 的递增
+        executeNextUpAndDownStep();
     }
 }
 
@@ -4080,32 +4106,48 @@ void MainWindow::executeNextUpAndDownStep() {
                 continue;
             }
             if (inVelocityBlock) {
+                // 跳过注释行和空行
                 if (line.trimmed().startsWith("$") || line.trimmed().isEmpty()) continue;
 
+                // 拆分 LS-DYNA 卡片数据 (按空白字符跳过空项)
                 QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
                 if (parts.size() >= 6) {
+
+                    // 获取用户设定的原始基准方向向量
                     double base_vx = m_simSetupUI.icVx->value();
                     double base_vy = m_simSetupUI.icVy->value();
                     double base_vz = m_simSetupUI.icVz->value();
+
+                    // 计算基准向量的合速度模长
                     double base_mag = std::sqrt(base_vx * base_vx + base_vy * base_vy + base_vz * base_vz);
 
-                    double max_comp = base_vx;
-                    if (std::abs(base_vy) > std::abs(max_comp)) max_comp = base_vy;
-                    if (std::abs(base_vz) > std::abs(max_comp)) max_comp = base_vz;
-                    double base_signed_mag = (max_comp < 0) ? -base_mag : base_mag;
-
                     double new_vx = 0.0, new_vy = 0.0, new_vz = 0.0;
-                    if (std::abs(base_signed_mag) > 1e-9) {
-                        double scale = m_upDownCurrentVelocity / base_signed_mag;
+
+                    // 🌟 防御性编程：防止除零崩溃 (用户初始输入全为0的情况)
+                    if (base_mag > 1e-9) {
+                        /**
+                         * @note 空间等比缩放算法 (Proportional Scaling)
+                         * 为了保证迭代时破片与装药的撞击夹角严格不变：
+                         * 缩放因子 Scale = 目标合速度 / 基准合速度
+                         * 新向量 V_new = V_base * Scale
+                         */
+                        double scale = m_upDownCurrentVelocity / base_mag;
                         new_vx = base_vx * scale;
                         new_vy = base_vy * scale;
                         new_vz = base_vz * scale;
                     }
                     else {
-                        new_vz = m_upDownCurrentVelocity;
+                        // 容错处理：若基准向量为零，默认沿 Z 轴负方向(垂直向下)冲击
+                        new_vz = -m_upDownCurrentVelocity;
                     }
 
-                    // 严格遵循 LS-DYNA 固定 10 字符宽度格式重组行数据
+                    /**
+                     * @brief LS-DYNA 卡片格式化重构
+                     * 严格遵循标准的 10 字符宽度(10-character width) Fortran 格式
+                     * parts[0]: Node Set ID / Part ID
+                     * parts[1]: styp (定义类型)
+                     * parts[2]: omega (旋转角速度)
+                     */
                     QString newLine = QString(" %1%2%3%4%5%6")
                         .arg(parts[0].toInt(), 9)
                         .arg(parts[1].toInt(), 10)
@@ -4114,6 +4156,7 @@ void MainWindow::executeNextUpAndDownStep() {
                         .arg(new_vy, 10, 'f', 5)
                         .arg(new_vz, 10, 'f', 5);
 
+                    // 补全由于 10 字符限制可能截断的剩余参数 (相位、刚体等)
                     for (int j = 6; j < parts.size(); ++j) {
                         newLine += QString("%1").arg(parts[j].toInt(), 10);
                     }
@@ -4122,7 +4165,8 @@ void MainWindow::executeNextUpAndDownStep() {
                     inVelocityBlock = false;
                     isVelocityOverwritten = true;
 
-                    thresholdConsole->append(QString("   [参数更新] 实体初始速度已覆写为 V=(%1, %2, %3)")
+                    thresholdConsole->append(QString("   [参数更新] 初始速度已重构 (空间方向锁定) -> 目标模长: %1 cm/μs, 分量: V=(%2, %3, %4)")
+                        .arg(m_upDownCurrentVelocity, 0, 'f', 4)
                         .arg(new_vx, 0, 'f', 5).arg(new_vy, 0, 'f', 5).arg(new_vz, 0, 'f', 5));
                 }
             }
@@ -4397,44 +4441,37 @@ void MainWindow::handleTerminateProcess() {
 }
 
 /**
- * @brief 响应用户动作：刷新并读取物理模型中已设置的初始冲击速度
- * @details 遍历前处理面板已添加的仿真参数摘要列表，自动嗅探 [初始速度] 卡片标识。
- * 提取该卡片设定的 Vx, Vy, Vz 空间向量分量，计算合速度大小标量，
- * 并自动填充至起爆阈值面板的初始速度输入框中，确保批处理参数与物理模型强一致性。
- */
-/**
- * @brief 响应用户动作：刷新并读取物理模型中已设置的初始冲击速度 (支持负值/反向冲击)
+ * @brief 从 UI 配置列表中嗅探并提取破片冲击的初始合速度模长 (标量)
+ * @details
+ * 该函数使用正则表达式解析用户设定的初始速度向量 V=(Vx, Vy, Vz)。
+ * [核心逻辑变更]：不再强行分配符号，而是严格计算三维向量的绝对模长 (Magnitude)。
+ * 提取的标量模长将作为后续“升降法/二分法”寻优的初始基准值，从而彻底解耦速度的“大小”与“方向”。
  */
 void MainWindow::handleRefreshInitialVelocity() {
     if (!m_simSetupUI.setupSummaryList) return;
 
-    double signed_v_mag = 0.0;
+    double v_mag = 0.0;
     bool isFound = false;
 
+    // 逆序遍历，获取最新的速度配置项
     for (int i = m_simSetupUI.setupSummaryList->count() - 1; i >= 0; --i) {
         QString itemText = m_simSetupUI.setupSummaryList->item(i)->text();
-        
+
         if (itemText.contains("[初始速度]")) {
+            // 正则匹配提取向量分量，例如: V=(0.15, -0.02, 0.0)
             std::regex vRegex(R"(V=\(([^,]+),\s*([^,]+),\s*([^)]+)\))");
             std::smatch match;
             std::string stdText = itemText.toStdString();
-            
+
             if (std::regex_search(stdText, match, vRegex)) {
                 double vx = std::stod(match[1].str());
                 double vy = std::stod(match[2].str());
                 double vz = std::stod(match[3].str());
-                
-                // 1. 计算合速度绝对值 (标量)
-                double v_mag = std::sqrt(vx * vx + vy * vy + vz * vz);
-                
-                // 2. 寻找主导冲击方向 (绝对值最大的分量)
-                double max_comp = vx;
-                if (std::abs(vy) > std::abs(max_comp)) max_comp = vy;
-                if (std::abs(vz) > std::abs(max_comp)) max_comp = vz;
-                
-                // 3. 🌟 赋予符号：如果主导方向是负的，合速度就是负的
-                signed_v_mag = (max_comp < 0) ? -v_mag : v_mag;
-                
+
+                // 🌟 物理算法核心：计算三维合速度的绝对模长 (标量，恒大于等于0)
+                // 公式: |V| = sqrt(Vx^2 + Vy^2 + Vz^2)
+                v_mag = std::sqrt(vx * vx + vy * vy + vz * vz);
+
                 isFound = true;
                 break;
             }
@@ -4442,15 +4479,17 @@ void MainWindow::handleRefreshInitialVelocity() {
     }
 
     if (isFound) {
-        spinStartVelocity->setValue(signed_v_mag);
-        QMessageBox::information(this, "参数读取成功", 
-            QString("已成功提取破片冲击初速 (保留主导方向符号)：\n\nV0 = %1 cm/μs")
-            .arg(signed_v_mag, 0, 'f', 4));
-    } else {
-        QMessageBox::warning(this, "数据缺失", "未在列表中嗅探到 [初始速度] 配置！");
+        // 将标量模长赋予寻优控件
+        spinStartVelocity->setValue(v_mag);
+        QMessageBox::information(this, "参数读取成功",
+            QString("已成功提取破片冲击初速绝对合速度 (V0 = %1 cm/μs)。\n"
+                "在后续寻优迭代中，程序将严格保证空间冲击夹角不变，仅对合速度大小进行等比例缩放！")
+            .arg(v_mag, 0, 'f', 4));
+    }
+    else {
+        QMessageBox::warning(this, "数据缺失", "未在配置列表中侦测到 [初始速度] 数据块！");
     }
 }
-
 /**
  * @brief 异步解析 matsum 时程文件，基于目标系统动能演化进行起爆与死火状态机研判
  * @details
@@ -5029,4 +5068,139 @@ void MainWindow::updateSolverPlot() {
         m_solverPlot->rescaleAxes(); m_solverPlot->replot();
     }
     file.close();
+}
+
+/**
+ * @brief [核心后处理引擎] 借助内置 Python 脚本提取 d3plot 中的炸药最终反应度
+ * * @details
+ * 该函数采用“C++ 动态生成 Python 脚本”的策略。在运行时，C++ 将自动在当前工况工作目录下
+ * 生成 `extract_d3plot.py`，并利用系统的 python 环境静默调用开源库 `lasso-python`，
+ * 绕过复杂的二进制解析，直接、高效、无损地抽取目标单元的附加历史变量（History Variable 8）。
+ * * @param workDir 当前仿真工况所在的绝对目录路径 (要求该目录下必须存在 d3plot 文件)
+ * @param targetElemId 目标观测炸药单元的全局 ID (例如 137952)
+ * * @note 运行环境强依赖：系统必须配置 Python 环境变量，且必须安装 `lasso-python` 与 `numpy`。
+ * * @return bool 返回综合物理判定结果：
+ * - true: 提取到的历史变量最大值 >= 0.5 (判定为发生稳态起爆)
+ * - false: 提取到的最大值 < 0.5，或读取过程发生任何异常 (判定为死火)
+ */
+bool MainWindow::checkDetonationFromD3plotPython(const QString& workDir, int targetElemId) {
+    // 1. 定义工作目录下的路径：确保 Python 脚本和生成的 CSV 都存放在当前工况文件夹内，防止并发冲突
+    QString d3plotPath = QDir(workDir).filePath("d3plot");
+    QString scriptPath = QDir(workDir).filePath("extract_d3plot.py");
+    QString csvPath = d3plotPath + "_reaction.csv";
+
+    // ==============================================================================
+    // 2. 🌟 脚本部署阶段：C++ 动态释放底层 Python 提取引擎到工作目录
+    // ==============================================================================
+    QFile scriptFile(scriptPath);
+    if (scriptFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&scriptFile);
+
+        // 使用 C++11 原始字符串字面量(Raw String Literal) 封装 Python 源码
+        out << R"(
+import sys
+import numpy as np
+from lasso.dyna import D3plot, ArrayType
+
+if len(sys.argv) != 3:
+    sys.exit(1)
+
+d3plot_path = sys.argv[1]
+target_elem_id = int(sys.argv[2])
+
+try:
+    # 快速映射 d3plot 二进制结构体
+    d3p = D3plot(d3plot_path)
+    
+    # 提取全局实体附加历史变量与节点映射表
+    history_vars = d3p.arrays[ArrayType.element_solid_history_vars]
+    elem_ids = d3p.arrays[ArrayType.element_solid_node_indexes][:, 0]
+    
+    # 寻址目标单元的内部索引
+    internal_idx = np.where(elem_ids == target_elem_id)[0][0]
+    times = d3p.arrays[ArrayType.global_timesteps]
+    
+    # 靶向抽取第 8 个历史变量 (索引为7, 即反应度)
+    reaction_degrees = history_vars[:, internal_idx, 7]
+    
+    # 极速落盘为结构化 CSV 数据
+    out_csv = d3plot_path + "_reaction.csv"
+    np.savetxt(out_csv, np.column_stack((times, reaction_degrees)), delimiter=",", fmt="%.6f")
+    
+    print("SUCCESS")
+except Exception as e:
+    print(f"ERROR: {e}")
+)";
+        scriptFile.close();
+    }
+    else {
+        if (thresholdConsole) thresholdConsole->append("   [致命错误] 无法在计算子目录下生成 Python 数据提取脚本！");
+        return false;
+    }
+
+    // ==============================================================================
+    // 3. 进程调度阶段：静默唤醒 Python 引擎并注入参数
+    // ==============================================================================
+    QProcess pythonProcess;
+    QStringList args;
+    args << scriptPath << d3plotPath << QString::number(targetElemId);
+
+    if (thresholdConsole) thresholdConsole->append("   [后处理] 正在后台静默启动 Python 引擎解析 d3plot 二进制结果...");
+    pythonProcess.start("python", args);
+
+    // 阻塞等待解析完成 (设置 30 秒超时防御)
+    if (!pythonProcess.waitForFinished(30000)) {
+        if (thresholdConsole) thresholdConsole->append("   [读取超时] Python 数据提取进程响应超时！请检查环境配置。");
+        pythonProcess.kill();
+        return false;
+    }
+
+    // 解析标准输出流，诊断底层运行状态
+    QString output = pythonProcess.readAllStandardOutput().trimmed();
+    if (output != "SUCCESS") {
+        QString errorOut = pythonProcess.readAllStandardError().trimmed();
+        if (thresholdConsole) {
+            thresholdConsole->append(QString("   [引擎报错] %1 | %2\n   提示: 请确认运行环境已执行 'pip install lasso-python numpy'").arg(output).arg(errorOut));
+        }
+        return false;
+    }
+
+    // ==============================================================================
+    // 4. 数据回收阶段：解析生成的 CSV 曲线以定位峰值
+    // ==============================================================================
+    double maxReaction = 0.0;
+    QFile csvFile(csvPath);
+    if (csvFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&csvFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+
+            // 跳过无效行 (空行或非数字起始行)
+            if (line.isEmpty() || (!line[0].isDigit() && line[0] != '.')) continue;
+
+            QStringList parts = line.split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts);
+            if (parts.size() >= 2) {
+                double reaction = parts[1].toDouble();
+                if (reaction > maxReaction) {
+                    maxReaction = reaction;
+                }
+            }
+        }
+        csvFile.close();
+    }
+    else {
+        if (thresholdConsole) thresholdConsole->append("   [读取错误] 引擎已执行，但 C++ 无法打开目标 CSV 数据文件！");
+        return false;
+    }
+
+    // ==============================================================================
+    // 5. 结论输出阶段
+    // ==============================================================================
+    if (thresholdConsole) {
+        thresholdConsole->append(QString("   [解析完毕] 目标观测单元 (ID:%1) 最终最大反应度: %2")
+            .arg(targetElemId).arg(maxReaction, 0, 'f', 4));
+    }
+
+    // 物理阈值截断准则：只要爆轰过程有任意时刻反应度超过 50%，即判定为发生了不可逆的宏观起爆
+    return (maxReaction >= 0.5);
 }

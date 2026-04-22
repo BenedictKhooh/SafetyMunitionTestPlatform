@@ -331,6 +331,10 @@ bool PostProcessWidget::processNodout(const QString& path) {
  * 3. [缺省防御]：通过特征匹配 (小数点) 识别历史变量是否真正输出。若 K 文件未开启
  * NEIPH 导致历史变量丢失，将自动补零防报错，并防止吞噬下一单元的 ID。
  */
+ /**
+  * @brief 解析 ELOUT 文件的核心引擎 (支持提取应力、压力、屈服及反应度全参数)
+  * @details 适配单元 ID 格式 "ID- PARTID" 及其对应的 stress 和 histry 数据块
+  */
 bool PostProcessWidget::processElout(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -339,11 +343,11 @@ bool PostProcessWidget::processElout(const QString& path) {
 
     double currentTime = 0.0;
     int currentElemId = -1;
-    bool expectingHistory = false;
-    bool isStressBlock = false;
+
+    // 状态定义：NONE-无, STRESS-应力块, HISTORY-历史变量块
+    enum BlockType { NONE, STRESS, HISTORY } currentBlock = NONE;
 
     QTextStream in(&file);
-
     QStringList params = {
         "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)",
         "sig-xy (XY剪应力)", "sig-yz (YZ剪应力)", "sig-zx (ZX剪应力)",
@@ -353,92 +357,39 @@ bool PostProcessWidget::processElout(const QString& path) {
 
     while (!in.atEnd()) {
         QString line = in.readLine().trimmed();
-
-        // ---------------------------------------------------------
-        // 阶段 1: 捕获时间步更新，并判断区块类型
-        // ---------------------------------------------------------
-        if (line.contains("e l e m e n t") && line.contains("at time")) {
-            // 防御：若遇到新区块时上一个单元仍在等历史变量，说明确实没输出，补0
-            if (expectingHistory && currentElemId != -1) {
-                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(0.0);
-            }
-
-            currentTime = line.section("time", -1).remove(")").trimmed().toDouble();
-            expectingHistory = false;
-            currentElemId = -1;
-
-            // 仅在遇到应力计算块时开启处理开关
-            if (line.contains("s t r e s s", Qt::CaseInsensitive)) {
-                isStressBlock = true;
-            }
-            else {
-                isStressBlock = false;
-            }
-            continue;
-        }
-
-        // 非应力区块直接屏蔽，不干扰状态机
-        if (!isStressBlock) continue;
-
-        // 防御空行
         if (line.isEmpty()) continue;
 
-        // ---------------------------------------------------------
-        // 阶段 2: 捕获附加历史变量 (必须置于单元ID捕获之前)
-        // ---------------------------------------------------------
-        if (expectingHistory && currentElemId != -1) {
+        // 1. 捕获时间步更新及数据块类型 (处理带空格的关键字)
+        if (line.contains("e l e m e n t") && line.contains("at time")) {
+            currentTime = line.section("time", -1).remove(")").trimmed().toDouble();
 
-            if (!line.contains(".")) {
-                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(0.0);
-                expectingHistory = false;
-
-                // 将错就错，立即将此行作为下一个单元的 ID 进行解析
-                QString firstToken = line.split(QRegExp("\\s+|-"), QString::SkipEmptyParts).first();
-                currentElemId = firstToken.toInt();
-                continue;
+            if (line.contains("s t r e s s")) {
+                currentBlock = STRESS;
             }
-
-            // 若包含小数点，确认为正常的历史变量数据行
-            QString cleanLine = line;
-            cleanLine.replace("E-", "E_").replace("e-", "e_");
-            cleanLine.replace("-", " -");
-            cleanLine.replace("E_", "E-").replace("e_", "e-");
-
-            QStringList parts = cleanLine.split(QRegExp("\\s+"), QString::SkipEmptyParts);
-
-            if (parts.size() >= 1) {
-                double burn_fraction = parts[0].toDouble();
-                // 物理限幅：反应度界定于 [0.0, 1.0]
-                if (burn_fraction < 0.0) burn_fraction = 0.0;
-                if (burn_fraction > 1.0) burn_fraction = 1.0;
-
-                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(burn_fraction);
+            else if (line.contains("h i s t r y")) {
+                currentBlock = HISTORY;
             }
             else {
-                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(0.0);
+                currentBlock = NONE;
             }
 
-            expectingHistory = false;
-            currentElemId = -1;
+            currentElemId = -1; // 换块时重置单元ID
             continue;
         }
 
-        // ---------------------------------------------------------
-        // 阶段 3: 捕获实体单元 ID 
-        // ---------------------------------------------------------
-        if (line[0].isDigit() && !line.contains("elastic", Qt::CaseInsensitive) &&
-            !line.contains("plastic", Qt::CaseInsensitive) &&
-            !line.contains("failed", Qt::CaseInsensitive)) {
+        if (currentBlock == NONE) continue;
 
-            QString firstToken = line.split(QRegExp("\\s+|-"), QString::SkipEmptyParts).first();
-            currentElemId = firstToken.toInt();
+        // 2. 捕获单元 ID (匹配格式如 "34-       1")
+        if (line.contains("-") && line.indexOf("-") > 0 && line.at(line.indexOf("-") - 1).isDigit()) {
+            QString idStr = line.split("-", QString::SkipEmptyParts).first().trimmed();
+            currentElemId = idStr.toInt();
+            continue;
         }
 
-        // ---------------------------------------------------------
-        // 阶段 4: 提取应力张量与屈服数据
-        // ---------------------------------------------------------
-        else if ((line.contains("elastic") || line.contains("plastic") || line.contains("failed")) && currentElemId != -1) {
+        // 3. 提取数值数据行 (包含 elastic, plastic 或 failed)
+        if (currentElemId != -1 && (line.contains("elastic") || line.contains("plastic") || line.contains("failed"))) {
 
+            // 修复 Fortran 科学计数法格式粘连
             QString cleanLine = line;
             cleanLine.replace("E-", "E_").replace("e-", "e_");
             cleanLine.replace("-", " -");
@@ -446,13 +397,20 @@ bool PostProcessWidget::processElout(const QString& path) {
 
             QStringList parts = cleanLine.split(QRegExp("\\s+"), QString::SkipEmptyParts);
 
-            if (parts.size() >= 9) {
+            // 标准数据行应至少有 10 列 (0:ipt, 1:state, 2-9:data)
+            if (parts.size() < 10) continue;
+
+            if (currentBlock == STRESS) {
                 double sig_xx = parts[2].toDouble();
                 double sig_yy = parts[3].toDouble();
                 double sig_zz = parts[4].toDouble();
                 double pressure = -(sig_xx + sig_yy + sig_zz) / 3.0;
 
-                m_eloutTimeMap[currentElemId].append(currentTime);
+                // 在应力块记录时间步（通常应力块先出现）
+                if (!m_eloutTimeMap[currentElemId].contains(currentTime)) {
+                    m_eloutTimeMap[currentElemId].append(currentTime);
+                }
+
                 m_eloutData[currentElemId]["sig-xx (X正应力)"].append(sig_xx);
                 m_eloutData[currentElemId]["sig-yy (Y正应力)"].append(sig_yy);
                 m_eloutData[currentElemId]["sig-zz (Z正应力)"].append(sig_zz);
@@ -461,17 +419,23 @@ bool PostProcessWidget::processElout(const QString& path) {
                 m_eloutData[currentElemId]["sig-zx (ZX剪应力)"].append(parts[7].toDouble());
                 m_eloutData[currentElemId]["effsg (Von-Mises 等效应力)"].append(parts[8].toDouble());
                 m_eloutData[currentElemId]["pressure (静水压力)"].append(pressure);
-
-                double yield_val = (parts.size() >= 10) ? parts[9].toDouble() : 0.0;
-                m_eloutData[currentElemId]["yield (屈服函数/塑性应变)"].append(yield_val);
+                m_eloutData[currentElemId]["yield (屈服函数/塑性应变)"].append(parts[9].toDouble());
             }
+            else if (currentBlock == HISTORY) {
+                // 提取 history 8 (对应 parts 的第 10 列，索引为 9)
+                double burn_fraction = parts[9].toDouble();
 
-            // 数据提取完毕，挂起状态机等待读取下一行的反应度
-            expectingHistory = true;
+                // 物理限幅：反应度 [0.0, 1.0]
+                if (burn_fraction < 0.0) burn_fraction = 0.0;
+                if (burn_fraction > 1.0) burn_fraction = 1.0;
+
+                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(burn_fraction);
+            }
         }
     }
     file.close();
 
+    // 更新 UI 下拉框
     if (m_comboElout && !m_eloutData.isEmpty()) {
         m_comboElout->blockSignals(true);
         m_comboElout->clear();

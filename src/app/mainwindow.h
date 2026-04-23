@@ -510,9 +510,26 @@ private:
 private:
     QCustomPlot* m_solverPlot;       // 求解监控图表
     QTimer* m_solverPlotTimer;      // 实时解析 glstat 的定时器
-    int m_lastReadPlotLine = 0;      // 记录已读文件行数
-
+    QComboBox* m_solverDataSourceCombo = nullptr; ///< 数据源选择 
+    QComboBox* m_solverIdCombo = nullptr;         ///< 单元/节点 ID 选择
+    QComboBox* m_solverParamCombo = nullptr;      ///< 具体参数选择
     void setupSolverPlotUI(QBoxLayout* layout); // 初始化图表函数声明
+
+    qint64 m_lastSolverGlstatPos = 0;
+    qint64 m_lastSolverNodoutPos = 0;
+    qint64 m_lastSolverEloutPos = 0;
+
+    double m_rtNodoutTime = 0.0;
+    bool m_rtNodoutIsDataBlock = false;
+    double m_rtEloutTime = 0.0;
+    int m_rtEloutId = -1;
+    int m_rtEloutBlock = 0; // 0:NONE, 1:STRESS, 2:HISTOR
+
+    QVector<double> m_rtGlstatTime, m_rtGlstatKe, m_rtGlstatIe;
+    QMap<int, QVector<double>> m_rtNodoutTimeMap;
+    QMap<int, QMap<QString, QVector<double>>> m_rtNodoutData;
+    QMap<int, QVector<double>> m_rtEloutTimeMap;
+    QMap<int, QMap<QString, QVector<double>>> m_rtEloutData;
     /**
      * @brief [核心后处理] 借助内置 Python 脚本提取 d3plot 中的炸药最终反应度
      * @param workDir 当前工况的计算目录 (用于生成临时脚本和提取 CSV)
@@ -522,7 +539,14 @@ private:
     bool checkDetonationFromD3plotPython(const QString& workDir, int targetElemId);
 
 private slots:
-    void updateSolverPlot();         // 核心：实时绘图槽函数
+    void updateSolverPlot();
+    void updateSolverPlotUI();
+    void redrawSolverPlot();
+private:
+    void parseRealTimeGlstat(const QString& filePath);
+    void parseRealTimeNodout(const QString& filePath);
+    void parseRealTimeElout(const QString& filePath);
+
 
 };
 #endif // MAINWINDOW_H

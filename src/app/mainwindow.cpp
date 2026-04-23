@@ -3066,6 +3066,17 @@ void MainWindow::startCalculation() {
 
     QFileInfo kFileInfo(kFile);
 
+    m_lastSolverGlstatPos = 0;
+    m_lastSolverNodoutPos = 0;
+    m_lastSolverEloutPos = 0;
+    m_rtGlstatTime.clear(); m_rtGlstatKe.clear(); m_rtGlstatIe.clear();
+    m_rtNodoutTimeMap.clear(); m_rtNodoutData.clear();
+    m_rtEloutTimeMap.clear(); m_rtEloutData.clear();
+    m_rtNodoutTime = 0.0; m_rtNodoutIsDataBlock = false;
+    m_rtEloutTime = 0.0; m_rtEloutId = -1; m_rtEloutBlock = 0;
+
+    if (m_solverPlotTimer) m_solverPlotTimer->start(1000);
+
     // 1. 配置求解器运行所需的系统环境变量
     // 获取当前系统环境，并将求解器所在目录及用户自定义依赖目录(m_dynaEnvPath)前置追加至 PATH，
     // 以防止求解器因子进程无法定位 Fortran/MPI 等动态链接库而发生异常退出。
@@ -3138,11 +3149,15 @@ void MainWindow::stopCalculation() {
         m_solverProcess->kill(); // 强制终止进程
         solverConsole->append("<b><font color='red'>[系统] 收到用户指令，计算已强行终止！</font></b>");
     }
+    if (m_solverPlotTimer) m_solverPlotTimer->stop();
 }
 
 void MainWindow::handleSolverFinished(int exitCode, QProcess::ExitStatus exitStatus) {
     btnRunSolver->setEnabled(true);
     btnStopSolver->setEnabled(false);
+
+    if (m_solverPlotTimer) m_solverPlotTimer->stop();
+    updateSolverPlot();
 
     if (exitStatus == QProcess::NormalExit && exitCode == 0) {
         solverConsole->append("--------------------------------------------------");
@@ -5020,52 +5035,368 @@ void MainWindow::handleStopMeshBatch() {
     }
 }
 
+/**
+ * @brief 初始化单次求解器右侧的实时监控图表与控制面板
+ * @param layout 传入的布局 (对应 mainHLayout)
+ */
 void MainWindow::setupSolverPlotUI(QBoxLayout* layout) {
+    if (!layout) return;
+
+    // 1. 创建整体容器 Widget 和垂直布局
+    QWidget* plotContainer = new QWidget();
+    QVBoxLayout* containerLayout = new QVBoxLayout(plotContainer);
+    containerLayout->setContentsMargins(0, 0, 0, 0);
+
+    // 2. 创建顶部控制栏水平布局
+    QHBoxLayout* headerLayout = new QHBoxLayout();
+
+    // 数据源选择
+    headerLayout->addWidget(new QLabel("监控源:"));
+    m_solverDataSourceCombo = new QComboBox();
+    m_solverDataSourceCombo->addItems({ "全局能量 (GLSTAT)", "节点历程 (NODOUT)", "单元历程 (ELOUT)" });
+    headerLayout->addWidget(m_solverDataSourceCombo);
+
+    // ID 选择
+    headerLayout->addWidget(new QLabel(" ID:"));
+    m_solverIdCombo = new QComboBox();
+    m_solverIdCombo->setMinimumWidth(80);
+    headerLayout->addWidget(m_solverIdCombo);
+
+    // 参数选择
+    headerLayout->addWidget(new QLabel(" 参数:"));
+    m_solverParamCombo = new QComboBox();
+    m_solverParamCombo->setMinimumWidth(120);
+    headerLayout->addWidget(m_solverParamCombo);
+
+    headerLayout->addStretch();
+
+    containerLayout->addLayout(headerLayout);
+
+    // 3. 初始化图表并加到垂直布局里
     m_solverPlot = new QCustomPlot();
-    m_solverPlot->setMinimumHeight(300);
-    // 这里建议设置一个合理的最小宽度，防止在左右布局下被挤压得太小
-    m_solverPlot->setMinimumWidth(400);
-
-    m_solverPlot->addGraph();
-    m_solverPlot->graph(0)->setName("动能(KE)");
-    m_solverPlot->graph(0)->setPen(QPen(Qt::blue));
-
-    m_solverPlot->addGraph();
-    m_solverPlot->graph(1)->setName("内能(IE)");
-    m_solverPlot->graph(1)->setPen(QPen(Qt::red));
-
-    m_solverPlot->xAxis->setLabel("时间 (ms)");
-    m_solverPlot->yAxis->setLabel("能量");
+    m_solverPlot->setMinimumHeight(350);
     m_solverPlot->legend->setVisible(true);
+    m_solverPlot->xAxis->setLabel("时间 (Time) [μs]");
 
-    layout->addWidget(m_solverPlot, 1); // 这里的 1 是拉伸系数
+    containerLayout->addWidget(m_solverPlot, 1);
 
+    // 4. 将整体容器加到主界面的 layout 中
+    layout->addWidget(plotContainer);
+
+    // 5. 信号绑定
+    connect(m_solverDataSourceCombo, &QComboBox::currentTextChanged, this, &MainWindow::updateSolverPlotUI);
+    connect(m_solverIdCombo, &QComboBox::currentTextChanged, this, &MainWindow::redrawSolverPlot);
+    connect(m_solverParamCombo, &QComboBox::currentTextChanged, this, &MainWindow::redrawSolverPlot);
+
+    // 定时器初始化
     m_solverPlotTimer = new QTimer(this);
     connect(m_solverPlotTimer, &QTimer::timeout, this, &MainWindow::updateSolverPlot);
+
+    // 初始化一次 UI
+    updateSolverPlotUI();
 }
 
+/**
+ * @brief 定时器触发的槽函数：执行解析并更新求解监控图表
+ */
 void MainWindow::updateSolverPlot() {
-    QString workDir = QFileInfo(kFilePathEdit->text()).absolutePath();
-    QFile file(workDir + "/glstat");
+    // 获取正在求解的 K 文件路径
+    QString currentKFilePath = kFilePathEdit->text();
+    if (currentKFilePath.isEmpty()) return;
+
+    // 获取工作目录
+    QString workDir = QFileInfo(currentKFilePath).absolutePath();
+    if (workDir.isEmpty() || !QDir(workDir).exists()) return;
+
+    QString glstatPath = QDir(workDir).filePath("glstat");
+    QString nodoutPath = QDir(workDir).filePath("nodout");
+    QString eloutPath = QDir(workDir).filePath("elout");
+
+    // 清空缓存，防内存累积和曲线重复
+    m_rtGlstatTime.clear(); m_rtGlstatKe.clear(); m_rtGlstatIe.clear();
+    m_rtNodoutTimeMap.clear(); m_rtNodoutData.clear();
+    m_rtEloutTimeMap.clear(); m_rtEloutData.clear();
+
+    m_rtNodoutTime = 0.0; m_rtNodoutIsDataBlock = false;
+    m_rtEloutTime = 0.0; m_rtEloutId = -1; m_rtEloutBlock = 0;
+
+    // 直接从头读取最新的文件进度
+    parseRealTimeGlstat(glstatPath);
+    parseRealTimeNodout(nodoutPath);
+    parseRealTimeElout(eloutPath);
+
+    // 刷新下拉菜单 (内部有防闪烁机制)
+    updateSolverPlotUI();
+    // 重绘曲线
+    redrawSolverPlot();
+}
+
+/**
+ * @brief 动态更新下拉框面板的可见性与级联内容
+ */
+void MainWindow::updateSolverPlotUI() {
+    if (!m_solverDataSourceCombo || !m_solverIdCombo || !m_solverParamCombo) return;
+
+    QString source = m_solverDataSourceCombo->currentText();
+    m_solverIdCombo->blockSignals(true);
+    m_solverParamCombo->blockSignals(true);
+
+    if (source.contains("GLSTAT")) {
+        m_solverIdCombo->setVisible(false);
+        m_solverParamCombo->setVisible(false);
+    }
+    else if (source.contains("NODOUT")) {
+        m_solverIdCombo->setVisible(true);
+        m_solverParamCombo->setVisible(true);
+
+        if (m_solverParamCombo->count() == 0 || !m_solverParamCombo->currentText().contains("速度")) {
+            m_solverParamCombo->clear();
+            m_solverParamCombo->addItems({ "res-vel (合速度)", "x-disp (X位移)", "y-disp (Y位移)", "z-disp (Z位移)",
+                                          "x-vel (X速度)", "y-vel (Y速度)", "z-vel (Z速度)",
+                                          "x-accl (X加速度)", "y-accl (Y加速度)", "z-accl (Z加速度)" });
+        }
+
+        QList<int> ids = m_rtNodoutData.keys();
+        if (m_solverIdCombo->count() - 1 != ids.size()) {
+            QString currentSel = m_solverIdCombo->currentText();
+            m_solverIdCombo->clear();
+            m_solverIdCombo->addItem("全画 (All)");
+            std::sort(ids.begin(), ids.end());
+            for (int id : ids) m_solverIdCombo->addItem(QString::number(id));
+
+            int idx = m_solverIdCombo->findText(currentSel);
+            m_solverIdCombo->setCurrentIndex(idx != -1 ? idx : 0);
+        }
+    }
+    else if (source.contains("ELOUT")) {
+        m_solverIdCombo->setVisible(true);
+        m_solverParamCombo->setVisible(true);
+
+        if (m_solverParamCombo->count() == 0 || !m_solverParamCombo->currentText().contains("反应度")) {
+            m_solverParamCombo->clear();
+            m_solverParamCombo->addItems({ "reaction_degree (反应度)", "effsg (等效应力)", "yield (屈服函数/塑性应变)",
+                                          "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)" });
+        }
+
+        QList<int> ids = m_rtEloutData.keys();
+        if (m_solverIdCombo->count() - 1 != ids.size()) {
+            QString currentSel = m_solverIdCombo->currentText();
+            m_solverIdCombo->clear();
+            m_solverIdCombo->addItem("全画 (All)");
+            std::sort(ids.begin(), ids.end());
+            for (int id : ids) m_solverIdCombo->addItem(QString::number(id));
+
+            int idx = m_solverIdCombo->findText(currentSel);
+            m_solverIdCombo->setCurrentIndex(idx != -1 ? idx : 0);
+        }
+    }
+
+    m_solverIdCombo->blockSignals(false);
+    m_solverParamCombo->blockSignals(false);
+}
+
+/**
+ * @brief 根据当前下拉框设定执行核心画布重绘
+ */
+void MainWindow::redrawSolverPlot() {
+    if (!m_solverPlot) return;
+    QString source = m_solverDataSourceCombo->currentText();
+    QString param = m_solverParamCombo->currentText();
+    QString idStr = m_solverIdCombo->currentText();
+
+    m_solverPlot->clearGraphs();
+
+    if (source.contains("GLSTAT")) {
+        m_solverPlot->yAxis->setLabel("能量");
+        if (!m_rtGlstatTime.isEmpty()) {
+            m_solverPlot->addGraph();
+            m_solverPlot->graph(0)->setData(m_rtGlstatTime, m_rtGlstatKe);
+            m_solverPlot->graph(0)->setName("动能 (KE)");
+            m_solverPlot->graph(0)->setPen(QPen(Qt::blue, 2));
+
+            m_solverPlot->addGraph();
+            m_solverPlot->graph(1)->setData(m_rtGlstatTime, m_rtGlstatIe);
+            m_solverPlot->graph(1)->setName("内能 (IE)");
+            m_solverPlot->graph(1)->setPen(QPen(Qt::red, 2));
+        }
+    }
+    else if (source.contains("NODOUT")) {
+        m_solverPlot->yAxis->setLabel(param);
+        if (idStr == "全画 (All)") {
+            int c = 0;
+            for (int id : m_rtNodoutData.keys()) {
+                if (!m_rtNodoutData[id].contains(param)) continue;
+                m_solverPlot->addGraph();
+                m_solverPlot->graph()->setData(m_rtNodoutTimeMap[id], m_rtNodoutData[id][param]);
+                m_solverPlot->graph()->setName(QString("Node %1").arg(id));
+                QColor col = QColor::fromHsv((c++ * 50) % 360, 200, 200);
+                m_solverPlot->graph()->setPen(QPen(col, 2));
+            }
+        }
+        else {
+            int id = idStr.toInt();
+            if (m_rtNodoutData.contains(id) && m_rtNodoutData[id].contains(param)) {
+                m_solverPlot->addGraph();
+                m_solverPlot->graph()->setData(m_rtNodoutTimeMap[id], m_rtNodoutData[id][param]);
+                m_solverPlot->graph()->setName(QString("Node %1").arg(id));
+                m_solverPlot->graph()->setPen(QPen(Qt::darkBlue, 2.5));
+            }
+        }
+    }
+    else if (source.contains("ELOUT")) {
+        m_solverPlot->yAxis->setLabel(param);
+        if (idStr == "全画 (All)") {
+            int c = 0;
+            for (int id : m_rtEloutData.keys()) {
+                if (!m_rtEloutData[id].contains(param)) continue;
+                m_solverPlot->addGraph();
+                m_solverPlot->graph()->setData(m_rtEloutTimeMap[id], m_rtEloutData[id][param]);
+                m_solverPlot->graph()->setName(QString("Elem %1").arg(id));
+                QColor col = QColor::fromHsv((c++ * 50) % 360, 200, 200);
+                m_solverPlot->graph()->setPen(QPen(col, 2));
+            }
+        }
+        else {
+            int id = idStr.toInt();
+            if (m_rtEloutData.contains(id) && m_rtEloutData[id].contains(param)) {
+                m_solverPlot->addGraph();
+                m_solverPlot->graph()->setData(m_rtEloutTimeMap[id], m_rtEloutData[id][param]);
+                m_solverPlot->graph()->setName(QString("Elem %1").arg(id));
+                m_solverPlot->graph()->setPen(QPen(Qt::darkRed, 2.5));
+            }
+        }
+    }
+
+    m_solverPlot->rescaleAxes();
+    m_solverPlot->replot();
+}
+
+/**
+ * @brief GLSTAT 断点续读解析引擎
+ */
+void MainWindow::parseRealTimeGlstat(const QString& path) {
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
 
     QTextStream in(&file);
-    int currentLine = 0; double time = 0; bool hasNew = false;
-    while (!in.atEnd()) {
-        QString line = in.readLine().trimmed(); currentLine++;
-        if (currentLine <= m_lastReadPlotLine) continue;
+    double currentTime = 0.0;
 
-        if (line.startsWith("time", Qt::CaseInsensitive)) time = line.section(' ', -1).toDouble();
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (line.startsWith("time", Qt::CaseInsensitive)) {
+            currentTime = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).last().toDouble();
+        }
         else if (line.startsWith("kinetic energy", Qt::CaseInsensitive)) {
-            m_solverPlot->graph(0)->addData(time, line.section(' ', -1).toDouble()); hasNew = true;
+            m_rtGlstatTime.append(currentTime);
+            m_rtGlstatKe.append(line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).last().toDouble());
         }
         else if (line.startsWith("internal energy", Qt::CaseInsensitive)) {
-            m_solverPlot->graph(1)->addData(time, line.section(' ', -1).toDouble()); hasNew = true;
+            m_rtGlstatIe.append(line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).last().toDouble());
         }
     }
-    if (hasNew) {
-        m_lastReadPlotLine = currentLine;
-        m_solverPlot->rescaleAxes(); m_solverPlot->replot();
+    file.close();
+}
+
+/**
+ * @brief NODOUT 断点续读解析引擎 (防粘连格式处理)
+ */
+void MainWindow::parseRealTimeNodout(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+
+        if (line.contains("n o d a l") && line.contains("at time")) {
+            m_rtNodoutTime = line.section("time", -1).remove(")").trimmed().toDouble();
+            m_rtNodoutIsDataBlock = false;
+        }
+        else if (line.startsWith("nodal point")) m_rtNodoutIsDataBlock = true;
+        else if (line.isEmpty() || line.startsWith("legend")) m_rtNodoutIsDataBlock = false;
+
+        if (m_rtNodoutIsDataBlock && !line.isEmpty() && line[0].isDigit()) {
+            QString cleanLine = line;
+            cleanLine.replace("E-", "E_").replace("e-", "e_").replace("-", " -").replace("E_", "E-").replace("e_", "e-");
+            QStringList parts = cleanLine.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+
+            if (parts.size() >= 10) {
+                int nodeId = parts[0].toInt();
+                m_rtNodoutTimeMap[nodeId].append(m_rtNodoutTime);
+                m_rtNodoutData[nodeId]["x-disp (X位移)"].append(parts[1].toDouble());
+                m_rtNodoutData[nodeId]["y-disp (Y位移)"].append(parts[2].toDouble());
+                m_rtNodoutData[nodeId]["z-disp (Z位移)"].append(parts[3].toDouble());
+
+                double vx = parts[4].toDouble(), vy = parts[5].toDouble(), vz = parts[6].toDouble();
+                m_rtNodoutData[nodeId]["x-vel (X速度)"].append(vx);
+                m_rtNodoutData[nodeId]["y-vel (Y速度)"].append(vy);
+                m_rtNodoutData[nodeId]["z-vel (Z速度)"].append(vz);
+                m_rtNodoutData[nodeId]["res-vel (合速度)"].append(std::sqrt(vx * vx + vy * vy + vz * vz));
+
+                m_rtNodoutData[nodeId]["x-accl (X加速度)"].append(parts[7].toDouble());
+                m_rtNodoutData[nodeId]["y-accl (Y加速度)"].append(parts[8].toDouble());
+                m_rtNodoutData[nodeId]["z-accl (Z加速度)"].append(parts[9].toDouble());
+            }
+        }
+    }
+    file.close();
+}
+
+/**
+ * @brief ELOUT 断点续读解析引擎 (带多区块记忆与状态机处理)
+ */
+void MainWindow::parseRealTimeElout(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (line.isEmpty()) continue;
+
+        if (line.contains("e l e m e n t") && line.contains("at time")) {
+            QRegularExpression timeRegex("at time\\s+([\\d\\.\\+\\-E]+)");
+            auto match = timeRegex.match(line);
+            if (match.hasMatch()) m_rtEloutTime = match.captured(1).toDouble();
+
+            if (line.contains("s t r e s s")) m_rtEloutBlock = 1;
+            else if (line.contains("h i s t r y") || line.contains("h i s t o r y")) m_rtEloutBlock = 2;
+            else m_rtEloutBlock = 0;
+            m_rtEloutId = -1;
+            continue;
+        }
+
+        if (m_rtEloutBlock == 0) continue;
+
+        if (line.contains("-")) {
+            QString firstToken = line.split("-").first().trimmed();
+            bool ok; int id = firstToken.toInt(&ok);
+            if (ok) { m_rtEloutId = id; continue; }
+        }
+
+        if (m_rtEloutId != -1 && (line.contains("elastic") || line.contains("plastic") || line.contains("failed"))) {
+            QString cleanLine = line;
+            cleanLine.replace("E-", "E_").replace("e-", "e_").replace("-", " -").replace("E_", "E-").replace("e_", "e-");
+            QStringList parts = cleanLine.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+            if (parts.size() < 10) continue;
+
+            if (m_rtEloutBlock == 1) { // STRESS 块
+                if (!m_rtEloutTimeMap[m_rtEloutId].contains(m_rtEloutTime)) {
+                    m_rtEloutTimeMap[m_rtEloutId].append(m_rtEloutTime);
+                }
+                m_rtEloutData[m_rtEloutId]["sig-xx (X正应力)"].append(parts[2].toDouble());
+                m_rtEloutData[m_rtEloutId]["sig-yy (Y正应力)"].append(parts[3].toDouble());
+                m_rtEloutData[m_rtEloutId]["sig-zz (Z正应力)"].append(parts[4].toDouble());
+                m_rtEloutData[m_rtEloutId]["effsg (等效应力)"].append(parts[8].toDouble());
+                m_rtEloutData[m_rtEloutId]["yield (屈服函数/塑性应变)"].append(parts[9].toDouble());
+            }
+            else if (m_rtEloutBlock == 2) { // HISTORY 块
+                double reaction = parts[9].toDouble();
+                if (reaction < 0.0) reaction = 0.0;
+                if (reaction > 1.0) reaction = 1.0;
+                m_rtEloutData[m_rtEloutId]["reaction_degree (反应度)"].append(reaction);
+            }
+        }
     }
     file.close();
 }

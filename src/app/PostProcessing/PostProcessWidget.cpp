@@ -33,7 +33,7 @@ PostProcessWidget::PostProcessWidget(QWidget* parent) : QWidget(parent) {
  * - 2. 中央网格区 (QGridLayout)：
  * - [0,0] GLSTAT：展示全局系统能量（动能、内能）。
  * - [0,1] MATSUM：展示不同材料部件的能量分布。
- * - [1,0] NODOUT：展示节点运动历程，含参数切换下拉框。
+ * - [1,0] NODOUT：展示节点运动历程，定制化实现“节点ID”与“参数”双联动控制。
  * - [1,1] ELOUT ：展示单元反应度及力学历程，定制化实现“单元ID”与“参数”双联动控制。
  */
 void PostProcessWidget::setupUI() {
@@ -66,22 +66,58 @@ void PostProcessWidget::setupUI() {
     m_gridLayout = new QGridLayout(gridContainer);
     m_gridLayout->setSpacing(15);
 
-    // 初始化前三个标准图表 (使用通用工厂函数创建)
-    // GLSTAT 和 MATSUM 通常不需要标题栏交互控件
+    // 初始化前两个标准图表 (全局能量与部件能量)
     createGridPlot("glstat", "全局系统能量 (GLSTAT)", 0, 0);
     createGridPlot("matsum", "部件能量分布 (MATSUM)", 0, 1);
 
-    // NODOUT 需要一个参数切换下拉框
-    createGridPlot("nodout", "节点运动历程 (NODOUT)", 1, 0, &m_comboNodout);
+    // ---------------------------------------------------------
+    // 3. NODOUT 节点历程定制布局 (双下拉框控制)
+    // ---------------------------------------------------------
+    QWidget* nodoutCell = new QWidget();
+    QVBoxLayout* nodoutLayout = new QVBoxLayout(nodoutCell);
+    nodoutLayout->setContentsMargins(0, 0, 0, 0);
+
+    QHBoxLayout* nodoutHeader = new QHBoxLayout();
+    QLabel* lblNodout = new QLabel("节点运动历程 (NODOUT)");
+    lblNodout->setFont(QFont("Microsoft YaHei", 10, QFont::Bold));
+    nodoutHeader->addWidget(lblNodout);
+    nodoutHeader->addStretch();
+
+    // 创建节点 ID 选择下拉框
+    nodoutHeader->addWidget(new QLabel("节点ID:"));
+    m_comboNodoutId = new QComboBox();
+    m_comboNodoutId->setMinimumWidth(100);
+    m_comboNodoutId->setToolTip("选择特定节点ID或全选");
+    nodoutHeader->addWidget(m_comboNodoutId);
+
+    // 创建节点参数选择下拉框
+    nodoutHeader->addWidget(new QLabel(" 参数:"));
+    m_comboNodoutParam = new QComboBox();
+    m_comboNodoutParam->setMinimumWidth(150);
+    nodoutHeader->addWidget(m_comboNodoutParam);
+
+    nodoutLayout->addLayout(nodoutHeader);
+
+    QCustomPlot* nodoutPlot = new QCustomPlot();
+    nodoutPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+    nodoutPlot->xAxis->setLabel("时间 (Time) [us]");
+    nodoutPlot->legend->setVisible(true);
+    nodoutPlot->legend->setFont(QFont("Consolas", 8));
+    nodoutPlot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
+    nodoutPlot->xAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
+    nodoutPlot->yAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
+
+    nodoutLayout->addWidget(nodoutPlot, 1);
+    m_plotMap["nodout"] = nodoutPlot;
+    m_gridLayout->addWidget(nodoutCell, 1, 0);
 
     // ---------------------------------------------------------
-    // 3. ELOUT 单元历程定制布局 (双下拉框控制)
+    // 4. ELOUT 单元历程定制布局 (双下拉框控制)
     // ---------------------------------------------------------
     QWidget* eloutCell = new QWidget();
     QVBoxLayout* eloutLayout = new QVBoxLayout(eloutCell);
     eloutLayout->setContentsMargins(0, 0, 0, 0);
 
-    // --- 定制 ELOUT 标题栏：[标题] [单元ID下拉框] [参数下拉框] ---
     QHBoxLayout* eloutHeader = new QHBoxLayout();
     QLabel* lblElout = new QLabel("单元反应度/历程 (ELOUT)");
     lblElout->setFont(QFont("Microsoft YaHei", 10, QFont::Bold));
@@ -95,7 +131,7 @@ void PostProcessWidget::setupUI() {
     m_comboEloutId->setToolTip("选择特定单元ID或全选");
     eloutHeader->addWidget(m_comboEloutId);
 
-    // 创建参数选择下拉框
+    // 创建单元参数选择下拉框
     eloutHeader->addWidget(new QLabel(" 参数:"));
     m_comboEloutParam = new QComboBox();
     m_comboEloutParam->setMinimumWidth(150);
@@ -103,52 +139,44 @@ void PostProcessWidget::setupUI() {
 
     eloutLayout->addLayout(eloutHeader);
 
-    // --- 创建 ELOUT 图表实例 ---
     QCustomPlot* eloutPlot = new QCustomPlot();
-    // 启用基本的交互功能（拖拽、缩放）
     eloutPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
     eloutPlot->xAxis->setLabel("时间 (Time) [us]");
     eloutPlot->legend->setVisible(true);
     eloutPlot->legend->setFont(QFont("Consolas", 8));
     eloutPlot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
-
-    // 设置网格线样式
     eloutPlot->xAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
     eloutPlot->yAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
 
     eloutLayout->addWidget(eloutPlot, 1);
-
-    // 注册到映射表并加入网格布局
     m_plotMap["elout"] = eloutPlot;
     m_gridLayout->addWidget(eloutCell, 1, 1);
 
     mainLayout->addWidget(gridContainer);
 
     // ---------------------------------------------------------
-    // 4. 信号槽绑定
+    // 5. 信号槽绑定
     // ---------------------------------------------------------
     // 目录扫描按钮
     connect(btnManualLoad, &QPushButton::clicked, this, &PostProcessWidget::handleManualDirSelect);
 
-    // NODOUT 参数切换更新
-    if (m_comboNodout) {
-        connect(m_comboNodout, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateNodoutPlot);
-    }
+    // NODOUT 双联动控制 (ID 改变或参数改变均触发重绘)
+    connect(m_comboNodoutId, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateNodoutPlot);
+    connect(m_comboNodoutParam, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateNodoutPlot);
 
-    // ELOUT 双联动控制 (无论 ID 改变还是 参数改变，均触发重绘)
+    // ELOUT 双联动控制 (ID 改变或参数改变均触发重绘)
     connect(m_comboEloutId, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
     connect(m_comboEloutParam, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
 }
 
 /**
- * @brief 采用 Widget 嵌套布局，将标题、下拉框和图表优雅组合
+ * @brief 采用 Widget 嵌套布局，将标题、下拉框和图表优雅组合 (仅用于基础图表)
  */
 void PostProcessWidget::createGridPlot(const QString& id, const QString& title, int row, int col, QComboBox** comboOut) {
     QWidget* cellWidget = new QWidget();
     QVBoxLayout* cellLayout = new QVBoxLayout(cellWidget);
     cellLayout->setContentsMargins(0, 0, 0, 0);
 
-    // 顶部标题与下拉框区域
     QHBoxLayout* headerLayout = new QHBoxLayout();
     QLabel* lblTitle = new QLabel(title);
     lblTitle->setFont(QFont("Microsoft YaHei", 10, QFont::Bold));
@@ -162,7 +190,6 @@ void PostProcessWidget::createGridPlot(const QString& id, const QString& title, 
     }
     cellLayout->addLayout(headerLayout);
 
-    // QCustomPlot 图表区域
     QCustomPlot* plot = new QCustomPlot();
     plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
     plot->xAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
@@ -190,11 +217,6 @@ void PostProcessWidget::handleManualDirSelect() {
 
 /**
  * @brief 清除仪表盘所有图表、内存缓存及 UI 控件状态
- * @details 执行流程：
- * - 1. 图表重置：遍历所有 QCustomPlot 实例，清除曲线并重绘空画布。
- * - 2. 内存释放：清空 NODOUT 和 ELOUT 的时间轴映射表及数据映射表。
- * - 3. UI 复位：清空所有关联的下拉框内容。
- * - 4. 信号防御：在清理下拉框时临时阻塞信号，防止触发不必要的绘图函数报错。
  */
 void PostProcessWidget::clearDashboard() {
     // 1. 重置所有图表显示
@@ -205,27 +227,30 @@ void PostProcessWidget::clearDashboard() {
         }
     }
 
-    // 2. 清空底层内存缓存 (QMap/QVector)
+    // 2. 清空底层内存缓存
     m_nodoutData.clear();
     m_nodoutTimeMap.clear();
     m_eloutData.clear();
     m_eloutTimeMap.clear();
 
-    // 3. 重置 NODOUT 下拉框
-    if (m_comboNodout) {
-        m_comboNodout->blockSignals(true);
-        m_comboNodout->clear();
-        m_comboNodout->blockSignals(false);
+    // 3. 重置 NODOUT 相关的双下拉框
+    if (m_comboNodoutId) {
+        m_comboNodoutId->blockSignals(true);
+        m_comboNodoutId->clear();
+        m_comboNodoutId->blockSignals(false);
+    }
+    if (m_comboNodoutParam) {
+        m_comboNodoutParam->blockSignals(true);
+        m_comboNodoutParam->clear();
+        m_comboNodoutParam->blockSignals(false);
     }
 
-    // 4. 重置 ELOUT 单元 ID 下拉框
+    // 4. 重置 ELOUT 相关的双下拉框
     if (m_comboEloutId) {
         m_comboEloutId->blockSignals(true);
         m_comboEloutId->clear();
         m_comboEloutId->blockSignals(false);
     }
-
-    // 5. 重置 ELOUT 参数下拉框
     if (m_comboEloutParam) {
         m_comboEloutParam->blockSignals(true);
         m_comboEloutParam->clear();
@@ -364,6 +389,9 @@ bool PostProcessWidget::processNodout(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
 
+    m_nodoutData.clear();
+    m_nodoutTimeMap.clear();
+
     double currentTime = 0.0;
     bool isDataBlock = false;
     QTextStream in(&file);
@@ -415,13 +443,33 @@ bool PostProcessWidget::processNodout(const QString& path) {
     }
     file.close();
 
-    // 解析完毕，初始化下拉框并触发初次绘图
-    if (m_comboNodout && !m_nodoutData.isEmpty()) {
-        m_comboNodout->blockSignals(true);
-        m_comboNodout->clear();
-        m_comboNodout->addItems(params);
-        m_comboNodout->setCurrentIndex(9); // 默认选合速度
-        m_comboNodout->blockSignals(false);
+    // ---------------------------------------------------------
+    // 解析完毕，UI 联动与下拉框刷新 (NODOUT)
+    // ---------------------------------------------------------
+    // 1. 刷新节点 ID 下拉框
+    if (m_comboNodoutId) {
+        m_comboNodoutId->blockSignals(true);
+        m_comboNodoutId->clear();
+        m_comboNodoutId->addItem("全画 (All)");
+
+        QList<int> ids = m_nodoutData.keys();
+        qSort(ids.begin(), ids.end());
+
+        for (int id : ids) {
+            m_comboNodoutId->addItem(QString::number(id));
+        }
+        m_comboNodoutId->setCurrentIndex(0);
+        m_comboNodoutId->blockSignals(false);
+    }
+
+    // 2. 刷新节点参数下拉框
+    if (m_comboNodoutParam) {
+        m_comboNodoutParam->blockSignals(true);
+        m_comboNodoutParam->clear();
+        m_comboNodoutParam->addItems(params);
+        m_comboNodoutParam->setCurrentIndex(9); // 默认选合速度
+        m_comboNodoutParam->blockSignals(false);
+
         updateNodoutPlot();
     }
     return true;
@@ -560,10 +608,10 @@ bool PostProcessWidget::processElout(const QString& path) {
     file.close();
 
     // ---------------------------------------------------------
-    // 阶段 4: UI 联动与下拉框刷新
+    // 阶段 4: UI 联动与下拉框刷新 (ELOUT)
     // ---------------------------------------------------------
 
-    // 1. 刷新单元 ID 下拉框 (m_comboEloutId)
+    // 1. 刷新单元 ID 下拉框
     if (m_comboEloutId) {
         m_comboEloutId->blockSignals(true);
         m_comboEloutId->clear();
@@ -579,7 +627,7 @@ bool PostProcessWidget::processElout(const QString& path) {
         m_comboEloutId->blockSignals(false);
     }
 
-    // 2. 刷新参数下拉框 (m_comboEloutParam)
+    // 2. 刷新参数下拉框
     if (m_comboEloutParam) {
         m_comboEloutParam->blockSignals(true);
         m_comboEloutParam->clear();
@@ -587,7 +635,6 @@ bool PostProcessWidget::processElout(const QString& path) {
         m_comboEloutParam->setCurrentIndex(0); // 默认选中反应度
         m_comboEloutParam->blockSignals(false);
 
-        // 触发初始绘图
         updateEloutPlot();
     }
 
@@ -644,12 +691,25 @@ bool PostProcessWidget::processRcforc(const QString& path) {
 
 /**
  * @brief 根据用户在下拉框的选择，动态重绘 NODOUT 曲线
+ * @details 绘图逻辑分支：
+ * - 1. 全量模式 (All)：遍历全部有效节点绘制历史曲线。
+ * - 2. 单选模式：提取所选指定节点绘制历史曲线。
  */
 void PostProcessWidget::updateNodoutPlot() {
-    if (!m_comboNodout || m_nodoutData.isEmpty()) return;
-    QString selectedParam = m_comboNodout->currentText();
+    // 基础有效性校验
+    if (!m_comboNodoutParam || !m_comboNodoutId || m_nodoutData.isEmpty()) {
+        return;
+    }
 
+    // 获取当前 UI 选择状态
+    QString selectedParam = m_comboNodoutParam->currentText();
+    QString selectedIdStr = m_comboNodoutId->currentText();
+
+    // 定位目标图表
     QCustomPlot* p = m_plotMap["nodout"];
+    if (!p) return;
+
+    // 清除已有曲线
     p->clearGraphs();
 
     // 动态调整 Y 轴单位标签
@@ -658,14 +718,35 @@ void PostProcessWidget::updateNodoutPlot() {
     else if (selectedParam.contains("加速度")) p->yAxis->setLabel(selectedParam + " [cm/us^2]");
     else p->yAxis->setLabel(selectedParam);
 
-    int colorIdx = 0, count = 0;
-    for (int nid : m_nodoutData.keys()) {
-        if (count++ > 4) break; // 最多画 5 个节点以保持界面流畅
-        p->addGraph();
-        p->graph()->setData(m_nodoutTimeMap[nid], m_nodoutData[nid][selectedParam]);
-        p->graph()->setName(QString("Node %1").arg(nid));
-        p->graph()->setPen(QPen(m_colorPalette[colorIdx++ % m_colorPalette.size()], 2));
+    int colorIdx = 0;
+
+    // 分支 A: 全量绘图模式 (All)
+    if (selectedIdStr == "全画 (All)") {
+        for (int nid : m_nodoutData.keys()) {
+            if (!m_nodoutData[nid].contains(selectedParam)) continue;
+
+            p->addGraph();
+            p->graph()->setData(m_nodoutTimeMap[nid], m_nodoutData[nid][selectedParam]);
+            p->graph()->setName(QString("Node %1").arg(nid));
+
+            QColor lineColor = m_colorPalette[colorIdx % m_colorPalette.size()];
+            p->graph()->setPen(QPen(lineColor, 2));
+            colorIdx++;
+        }
     }
+    // 分支 B: 单节点查看模式
+    else {
+        int targetId = selectedIdStr.toInt();
+        if (m_nodoutData.contains(targetId) && m_nodoutData[targetId].contains(selectedParam)) {
+            p->addGraph();
+            p->graph()->setData(m_nodoutTimeMap[targetId], m_nodoutData[targetId][selectedParam]);
+            p->graph()->setName(QString("Node %1").arg(targetId));
+
+            p->graph()->setPen(QPen(m_colorPalette[0], 2.5));
+        }
+    }
+
+    // 执行坐标轴自适应并刷新
     p->rescaleAxes();
     p->replot();
 }
@@ -673,11 +754,8 @@ void PostProcessWidget::updateNodoutPlot() {
 /**
  * @brief 根据用户在下拉框的选择，动态重绘 ELOUT 曲线
  * @details 绘图逻辑分支：
- * - 1. 检查数据有效性：若缓存为空或 UI 控件未初始化则直接返回。
- * - 2. 获取 UI 状态：读取当前选中的参数名及单元 ID 字符串。
- * - 3. 全量模式 (All)：遍历 m_eloutData 中的所有单元，为每个单元创建一个 QCPGraph。
- * - 4. 单选模式：根据转换后的 targetId 提取特定单元的数据进行绘制。
- * - 5. 视图自适应：自动调整坐标轴范围并执行绘图刷新。
+ * - 1. 全量模式 (All)：遍历全部有效单元绘制历史曲线。
+ * - 2. 单选模式：提取所选指定单元绘制历史曲线。
  */
 void PostProcessWidget::updateEloutPlot() {
     // 基础有效性校验
@@ -693,36 +771,27 @@ void PostProcessWidget::updateEloutPlot() {
     QCustomPlot* p = m_plotMap["elout"];
     if (!p) return;
 
-    // 清除画布上已有的所有曲线
+    // 清除已有曲线
     p->clearGraphs();
     p->yAxis->setLabel(selectedParam);
 
     int colorIdx = 0;
 
-    // ---------------------------------------------------------
     // 分支 A: 全量绘图模式 (All)
-    // ---------------------------------------------------------
     if (selectedIdStr == "全画 (All)") {
-        // 遍历内存中解析出的所有单元 ID
         for (int eid : m_eloutData.keys()) {
-            // 安全检查：该单元是否包含当前选中的参数
-            if (!m_eloutData[eid].contains(selectedParam)) {
-                continue;
-            }
+            if (!m_eloutData[eid].contains(selectedParam)) continue;
 
             p->addGraph();
             p->graph()->setData(m_eloutTimeMap[eid], m_eloutData[eid][selectedParam]);
             p->graph()->setName(QString("Elem %1").arg(eid));
 
-            // 循环使用专业色盘
             QColor lineColor = m_colorPalette[colorIdx % m_colorPalette.size()];
             p->graph()->setPen(QPen(lineColor, 2));
             colorIdx++;
         }
     }
-    // ---------------------------------------------------------
     // 分支 B: 单单元查看模式
-    // ---------------------------------------------------------
     else {
         int targetId = selectedIdStr.toInt();
         if (m_eloutData.contains(targetId) && m_eloutData[targetId].contains(selectedParam)) {
@@ -730,7 +799,6 @@ void PostProcessWidget::updateEloutPlot() {
             p->graph()->setData(m_eloutTimeMap[targetId], m_eloutData[targetId][selectedParam]);
             p->graph()->setName(QString("Elem %1").arg(targetId));
 
-            // 单选时默认使用色盘第一个颜色（深蓝色）
             p->graph()->setPen(QPen(m_colorPalette[0], 2.5));
         }
     }

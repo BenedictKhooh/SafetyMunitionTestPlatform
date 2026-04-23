@@ -33,10 +33,10 @@ private slots:
     /** @brief 响应手动选择文件夹按钮 */
     void handleManualDirSelect();
 
-    /** @brief 响应 NODOUT 节点参数下拉框切换事件，重绘图表 */
+    /** @brief 响应 NODOUT 节点 ID 或参数下拉框切换事件，重绘图表 */
     void updateNodoutPlot();
 
-    /** @brief 响应 ELOUT 单元参数下拉框切换事件，重绘图表 */
+    /** @brief 响应 ELOUT 单元 ID 或参数下拉框切换事件，重绘图表 */
     void updateEloutPlot();
 
 private:
@@ -44,7 +44,7 @@ private:
     void setupUI();
 
     /**
-     * @brief 创建并配置单个带有可选下拉框的 QCustomPlot 实例
+     * @brief 创建并配置基础的带有可选单一下拉框的 QCustomPlot 实例 (用于 glstat, matsum 等)
      * @param id 内部映射 ID
      * @param title 图表显示的中文标题
      * @param row 网格行索引
@@ -62,7 +62,7 @@ private:
     bool processGlstat(const QString& path); // 全局能量 (动能、内能)
     bool processMatsum(const QString& path); // 部件能量 (各 Part 动能、内能)
     bool processNodout(const QString& path); // 节点历程 (全参数：位移、速度、加速度)
-    bool processElout(const QString& path);  // 单元历程 (全参数：应力张量、等效应力)
+    bool processElout(const QString& path);  // 单元历程 (全参数：应力张量、反应度等)
     bool processRcforc(const QString& path); // 接触反力 (界面合力)
 
 private:
@@ -70,9 +70,13 @@ private:
     QGridLayout* m_gridLayout;
     QMap<QString, QCustomPlot*> m_plotMap;  ///< ID 到图表控件的映射
 
-    // 专属下拉框控件
-    QComboBox* m_comboNodout = nullptr;
-    QComboBox* m_comboElout = nullptr;
+    // NODOUT 专属下拉框控件 (双联动)
+    QComboBox* m_comboNodoutId = nullptr;    ///< 节点 ID 选择下拉框
+    QComboBox* m_comboNodoutParam = nullptr; ///< 节点参数选择下拉框
+
+    // ELOUT 专属下拉框控件 (双联动)
+    QComboBox* m_comboEloutId = nullptr;     ///< 单元 ID 选择下拉框
+    QComboBox* m_comboEloutParam = nullptr;  ///< 单元参数选择下拉框
 
     // ==========================================
     // 全参数内存数据缓存
@@ -86,9 +90,7 @@ private:
     QMap<int, QMap<QString, QVector<double>>> m_eloutData;
 
     QString m_currentWorkDir;
-    QList<QColor> m_colorPalette;
-    QComboBox* m_comboEloutId = nullptr;// 单元ID选择下拉框
-    QComboBox* m_comboEloutParam = nullptr; // 参数选择
+    QList<QColor> m_colorPalette;            ///< 预设的专业色盘
 };
 
 #endif // POSTPROCESSWIDGET_H

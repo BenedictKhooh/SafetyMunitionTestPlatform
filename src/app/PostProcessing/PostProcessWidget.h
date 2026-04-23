@@ -86,7 +86,9 @@ private:
     QMap<int, QMap<QString, QVector<double>>> m_eloutData;
 
     QString m_currentWorkDir;
-    QList<QColor> m_colorPalette;           ///< 预设的专业色盘
+    QList<QColor> m_colorPalette;
+    QComboBox* m_comboEloutId = nullptr;// 单元ID选择下拉框
+    QComboBox* m_comboEloutParam = nullptr; // 参数选择
 };
 
 #endif // POSTPROCESSWIDGET_H

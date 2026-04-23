@@ -28,39 +28,116 @@ PostProcessWidget::PostProcessWidget(QWidget* parent) : QWidget(parent) {
 
 /**
  * @brief 构建 UI 界面，采用 2x2 网格化布局实现全景监控
+ * @details 布局逻辑如下：
+ * - 1. 顶部工具栏：提供手动选择工作目录并触发全量分析的按钮。
+ * - 2. 中央网格区 (QGridLayout)：
+ * - [0,0] GLSTAT：展示全局系统能量（动能、内能）。
+ * - [0,1] MATSUM：展示不同材料部件的能量分布。
+ * - [1,0] NODOUT：展示节点运动历程，含参数切换下拉框。
+ * - [1,1] ELOUT ：展示单元反应度及力学历程，定制化实现“单元ID”与“参数”双联动控制。
  */
 void PostProcessWidget::setupUI() {
+    // 创建主垂直布局
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
+    // ---------------------------------------------------------
     // 1. 顶部自动化工具栏
+    // ---------------------------------------------------------
     QHBoxLayout* toolBar = new QHBoxLayout();
     QPushButton* btnManualLoad = new QPushButton("手动扫描工作目录并自动分析");
     btnManualLoad->setMinimumHeight(35);
-    btnManualLoad->setStyleSheet("font-weight: bold; background-color: #34495E; color: white;");
+    // 设置专业深色调风格
+    btnManualLoad->setStyleSheet(
+        "QPushButton {"
+        "   font-weight: bold; background-color: #34495E; color: white; "
+        "   border-radius: 4px; padding: 0 15px;"
+        "}"
+        "QPushButton:hover { background-color: #2C3E50; }"
+    );
 
     toolBar->addWidget(btnManualLoad);
     toolBar->addStretch();
     mainLayout->addLayout(toolBar);
 
+    // ---------------------------------------------------------
     // 2. 核心网格监控区 (2x2 Grid)
+    // ---------------------------------------------------------
     QWidget* gridContainer = new QWidget();
     m_gridLayout = new QGridLayout(gridContainer);
     m_gridLayout->setSpacing(15);
 
-    // 初始化四个核心维度的图表 (附带对应的参数切换下拉框)
+    // 初始化前三个标准图表 (使用通用工厂函数创建)
+    // GLSTAT 和 MATSUM 通常不需要标题栏交互控件
     createGridPlot("glstat", "全局系统能量 (GLSTAT)", 0, 0);
     createGridPlot("matsum", "部件能量分布 (MATSUM)", 0, 1);
+
+    // NODOUT 需要一个参数切换下拉框
     createGridPlot("nodout", "节点运动历程 (NODOUT)", 1, 0, &m_comboNodout);
-    createGridPlot("elout", "单元与接触历程 (ELOUT/RCFORC)", 1, 1, &m_comboElout);
+
+    // ---------------------------------------------------------
+    // 3. ELOUT 单元历程定制布局 (双下拉框控制)
+    // ---------------------------------------------------------
+    QWidget* eloutCell = new QWidget();
+    QVBoxLayout* eloutLayout = new QVBoxLayout(eloutCell);
+    eloutLayout->setContentsMargins(0, 0, 0, 0);
+
+    // --- 定制 ELOUT 标题栏：[标题] [单元ID下拉框] [参数下拉框] ---
+    QHBoxLayout* eloutHeader = new QHBoxLayout();
+    QLabel* lblElout = new QLabel("单元反应度/历程 (ELOUT)");
+    lblElout->setFont(QFont("Microsoft YaHei", 10, QFont::Bold));
+    eloutHeader->addWidget(lblElout);
+    eloutHeader->addStretch();
+
+    // 创建单元 ID 选择下拉框
+    eloutHeader->addWidget(new QLabel("单元ID:"));
+    m_comboEloutId = new QComboBox();
+    m_comboEloutId->setMinimumWidth(100);
+    m_comboEloutId->setToolTip("选择特定单元ID或全选");
+    eloutHeader->addWidget(m_comboEloutId);
+
+    // 创建参数选择下拉框
+    eloutHeader->addWidget(new QLabel(" 参数:"));
+    m_comboEloutParam = new QComboBox();
+    m_comboEloutParam->setMinimumWidth(150);
+    eloutHeader->addWidget(m_comboEloutParam);
+
+    eloutLayout->addLayout(eloutHeader);
+
+    // --- 创建 ELOUT 图表实例 ---
+    QCustomPlot* eloutPlot = new QCustomPlot();
+    // 启用基本的交互功能（拖拽、缩放）
+    eloutPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+    eloutPlot->xAxis->setLabel("时间 (Time) [us]");
+    eloutPlot->legend->setVisible(true);
+    eloutPlot->legend->setFont(QFont("Consolas", 8));
+    eloutPlot->legend->setBrush(QBrush(QColor(255, 255, 255, 150)));
+
+    // 设置网格线样式
+    eloutPlot->xAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
+    eloutPlot->yAxis->grid()->setPen(QPen(QColor(200, 200, 200), 1, Qt::DotLine));
+
+    eloutLayout->addWidget(eloutPlot, 1);
+
+    // 注册到映射表并加入网格布局
+    m_plotMap["elout"] = eloutPlot;
+    m_gridLayout->addWidget(eloutCell, 1, 1);
 
     mainLayout->addWidget(gridContainer);
 
-    // 3. 信号槽绑定
+    // ---------------------------------------------------------
+    // 4. 信号槽绑定
+    // ---------------------------------------------------------
+    // 目录扫描按钮
     connect(btnManualLoad, &QPushButton::clicked, this, &PostProcessWidget::handleManualDirSelect);
 
-    // 绑定下拉框切换事件重绘图表
-    if (m_comboNodout) connect(m_comboNodout, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateNodoutPlot);
-    if (m_comboElout)  connect(m_comboElout, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
+    // NODOUT 参数切换更新
+    if (m_comboNodout) {
+        connect(m_comboNodout, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateNodoutPlot);
+    }
+
+    // ELOUT 双联动控制 (无论 ID 改变还是 参数改变，均触发重绘)
+    connect(m_comboEloutId, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
+    connect(m_comboEloutParam, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
 }
 
 /**
@@ -112,20 +189,50 @@ void PostProcessWidget::handleManualDirSelect() {
 }
 
 /**
- * @brief 清空仪表盘所有图表及内存缓存
+ * @brief 清除仪表盘所有图表、内存缓存及 UI 控件状态
+ * @details 执行流程：
+ * - 1. 图表重置：遍历所有 QCustomPlot 实例，清除曲线并重绘空画布。
+ * - 2. 内存释放：清空 NODOUT 和 ELOUT 的时间轴映射表及数据映射表。
+ * - 3. UI 复位：清空所有关联的下拉框内容。
+ * - 4. 信号防御：在清理下拉框时临时阻塞信号，防止触发不必要的绘图函数报错。
  */
 void PostProcessWidget::clearDashboard() {
+    // 1. 重置所有图表显示
     for (QCustomPlot* p : m_plotMap.values()) {
-        p->clearGraphs();
-        p->replot();
+        if (p) {
+            p->clearGraphs();
+            p->replot();
+        }
     }
-    // 清空字典内存缓存
-    m_nodoutData.clear(); m_nodoutTimeMap.clear();
-    m_eloutData.clear();  m_eloutTimeMap.clear();
 
-    // 静默清空下拉框
-    if (m_comboNodout) { m_comboNodout->blockSignals(true); m_comboNodout->clear(); m_comboNodout->blockSignals(false); }
-    if (m_comboElout) { m_comboElout->blockSignals(true); m_comboElout->clear(); m_comboElout->blockSignals(false); }
+    // 2. 清空底层内存缓存 (QMap/QVector)
+    m_nodoutData.clear();
+    m_nodoutTimeMap.clear();
+    m_eloutData.clear();
+    m_eloutTimeMap.clear();
+
+    // 3. 重置 NODOUT 下拉框
+    if (m_comboNodout) {
+        m_comboNodout->blockSignals(true);
+        m_comboNodout->clear();
+        m_comboNodout->blockSignals(false);
+    }
+
+    // 4. 重置 ELOUT 单元 ID 下拉框
+    if (m_comboEloutId) {
+        m_comboEloutId->blockSignals(true);
+        m_comboEloutId->clear();
+        m_comboEloutId->blockSignals(false);
+    }
+
+    // 5. 重置 ELOUT 参数下拉框
+    if (m_comboEloutParam) {
+        m_comboEloutParam->blockSignals(true);
+        m_comboEloutParam->clear();
+        m_comboEloutParam->blockSignals(false);
+    }
+
+    qDebug() << "[清理完毕] 后处理仪表盘已完成重置。";
 }
 
 /**
@@ -321,130 +428,170 @@ bool PostProcessWidget::processNodout(const QString& path) {
 }
 
 /**
- * @brief 解析 ELOUT 文件的核心引擎 (支持提取应力、压力、屈服及反应度全参数)
- * @param path elout 结果文件的绝对路径
+ * @brief 解析 ELOUT 文件的核心引擎
+ * @param path elout 文件的绝对路径
  * @return bool 解析成功返回 true，文件打开失败返回 false
- * * @details 该解析器采用了基于状态机 (State Machine) 的按行读取策略。
- * 针对 LS-DYNA 的输出陷阱进行了三重防御：
- * 1. [区块隔离]：屏蔽 s t r a i n (应变) 块的干扰。
- * 2. [负号粘连]：修复 Fortran 科学计数法格式化导致的数字粘连。
- * 3. [缺省防御]：通过特征匹配 (小数点) 识别历史变量是否真正输出。若 K 文件未开启
- * NEIPH 导致历史变量丢失，将自动补零防报错，并防止吞噬下一单元的 ID。
+ * * @details 算法特性：
+ * 1. 状态机：自动切换 STRESS (应力) 和 HISTORY (历史变量) 解析模式。
+ * 2. 鲁棒性：支持 "ID- PartID" 格式的单元识别，并修复 Fortran 负号粘连问题。
+ * 3. 反应度提取：精准定位 History Block 中的第 10 列（索引 9）作为炸药反应度。
+ * 4. UI 联动：解析完成后自动刷新单元 ID 下拉框，支持“全画(All)”与单选模式。
  */
- /**
-  * @brief 解析 ELOUT 文件的核心引擎 (支持提取应力、压力、屈服及反应度全参数)
-  * @details 适配单元 ID 格式 "ID- PARTID" 及其对应的 stress 和 histry 数据块
-  */
 bool PostProcessWidget::processElout(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "[ELOUT解析失败] 无法打开文件:" << path;
         return false;
     }
 
+    // 内存数据预清理
+    m_eloutData.clear();
+    m_eloutTimeMap.clear();
+
+    QTextStream in(&file);
     double currentTime = 0.0;
     int currentElemId = -1;
 
-    // 状态定义：NONE-无, STRESS-应力块, HISTORY-历史变量块
+    // 定义解析状态机状态
     enum BlockType { NONE, STRESS, HISTORY } currentBlock = NONE;
 
-    QTextStream in(&file);
+    // 参数列表定义 (与下拉框对应)
     QStringList params = {
-        "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)",
-        "sig-xy (XY剪应力)", "sig-yz (YZ剪应力)", "sig-zx (ZX剪应力)",
-        "effsg (Von-Mises 等效应力)", "pressure (静水压力)", "yield (屈服函数/塑性应变)",
-        "reaction_degree (反应度/燃烧分数)"
+        "reaction_degree (反应度)",
+        "effsg (等效应力)",
+        "yield (屈服函数/塑性应变)",
+        "sig-xx (X正应力)",
+        "sig-yy (Y正应力)",
+        "sig-zz (Z正应力)"
     };
 
     while (!in.atEnd()) {
         QString line = in.readLine().trimmed();
         if (line.isEmpty()) continue;
 
-        // 1. 捕获时间步更新及数据块类型 (处理带空格的关键字)
+        // ---------------------------------------------------------
+        // 阶段 1: 块头识别 (Time Step & Block Type)
+        // 适配格式: e l e m e n t  s t r e s s / h i s t r y ...
+        // ---------------------------------------------------------
         if (line.contains("e l e m e n t") && line.contains("at time")) {
-            currentTime = line.section("time", -1).remove(")").trimmed().toDouble();
+            // 使用正则表达式提取科学计数法时间
+            QRegExp timeRegex("at time\\s+([\\d\\.\\+\\-E]+)");
+            if (timeRegex.indexIn(line) != -1) {
+                currentTime = timeRegex.cap(1).toDouble();
+            }
 
+            // 判断当前进入的是应力块还是历史变量块
             if (line.contains("s t r e s s")) {
                 currentBlock = STRESS;
             }
-            else if (line.contains("h i s t r y")) {
+            else if (line.contains("h i s t r y") || line.contains("h i s t o r y")) {
                 currentBlock = HISTORY;
             }
             else {
                 currentBlock = NONE;
             }
 
-            currentElemId = -1; // 换块时重置单元ID
+            currentElemId = -1; // 每个时间步/块开始时重置当前单元
             continue;
         }
 
         if (currentBlock == NONE) continue;
 
-        // 2. 捕获单元 ID (匹配格式如 "34-       1")
-        if (line.contains("-") && line.indexOf("-") > 0 && line.at(line.indexOf("-") - 1).isDigit()) {
-            QString idStr = line.split("-", QString::SkipEmptyParts).first().trimmed();
-            currentElemId = idStr.toInt();
-            continue;
+        // ---------------------------------------------------------
+        // 阶段 2: 单元 ID 识别
+        // 适配格式: "34-      1" 或 "230556-      1"
+        // ---------------------------------------------------------
+        if (line.contains("-")) {
+            QString firstToken = line.split("-").first().trimmed();
+            bool ok;
+            int id = firstToken.toInt(&ok);
+            if (ok) {
+                currentElemId = id;
+                continue;
+            }
         }
 
-        // 3. 提取数值数据行 (包含 elastic, plastic 或 failed)
+        // ---------------------------------------------------------
+        // 阶段 3: 数值数据行解析 (包含状态关键字: elastic, plastic, failed)
+        // ---------------------------------------------------------
         if (currentElemId != -1 && (line.contains("elastic") || line.contains("plastic") || line.contains("failed"))) {
 
-            // 修复 Fortran 科学计数法格式粘连
+            // 解决 Fortran 格式下的数字粘连问题 (例如: -1.234-5.678)
             QString cleanLine = line;
-            cleanLine.replace("E-", "E_").replace("e-", "e_");
-            cleanLine.replace("-", " -");
-            cleanLine.replace("E_", "E-").replace("e_", "e-");
+            cleanLine.replace("E-", "E_").replace("e-", "e_"); // 保护指数项
+            cleanLine.replace("-", " -");                      // 强制在负号前加空格
+            cleanLine.replace("E_", "E-").replace("e_", "e-"); // 还原指数项
 
+            // 按空格分割字符串
             QStringList parts = cleanLine.split(QRegExp("\\s+"), QString::SkipEmptyParts);
 
-            // 标准数据行应至少有 10 列 (0:ipt, 1:state, 2-9:data)
+            // 标准行格式：[0]ipt [1]state [2]data1 ... [9]data8
             if (parts.size() < 10) continue;
 
+            // 根据当前状态分流数据
             if (currentBlock == STRESS) {
-                double sig_xx = parts[2].toDouble();
-                double sig_yy = parts[3].toDouble();
-                double sig_zz = parts[4].toDouble();
-                double pressure = -(sig_xx + sig_yy + sig_zz) / 3.0;
-
-                // 在应力块记录时间步（通常应力块先出现）
+                // 在应力块中记录时间戳 (作为基准)
                 if (!m_eloutTimeMap[currentElemId].contains(currentTime)) {
                     m_eloutTimeMap[currentElemId].append(currentTime);
                 }
 
-                m_eloutData[currentElemId]["sig-xx (X正应力)"].append(sig_xx);
-                m_eloutData[currentElemId]["sig-yy (Y正应力)"].append(sig_yy);
-                m_eloutData[currentElemId]["sig-zz (Z正应力)"].append(sig_zz);
-                m_eloutData[currentElemId]["sig-xy (XY剪应力)"].append(parts[5].toDouble());
-                m_eloutData[currentElemId]["sig-yz (YZ剪应力)"].append(parts[6].toDouble());
-                m_eloutData[currentElemId]["sig-zx (ZX剪应力)"].append(parts[7].toDouble());
-                m_eloutData[currentElemId]["effsg (Von-Mises 等效应力)"].append(parts[8].toDouble());
-                m_eloutData[currentElemId]["pressure (静水压力)"].append(pressure);
+                m_eloutData[currentElemId]["sig-xx (X正应力)"].append(parts[2].toDouble());
+                m_eloutData[currentElemId]["sig-yy (Y正应力)"].append(parts[3].toDouble());
+                m_eloutData[currentElemId]["sig-zz (Z正应力)"].append(parts[4].toDouble());
+
+                // 索引 8 对应 effsg (等效应力)
+                m_eloutData[currentElemId]["effsg (等效应力)"].append(parts[8].toDouble());
+
+                // 索引 9 对应 yield function (屈服函数)
                 m_eloutData[currentElemId]["yield (屈服函数/塑性应变)"].append(parts[9].toDouble());
             }
             else if (currentBlock == HISTORY) {
-                // 提取 history 8 (对应 parts 的第 10 列，索引为 9)
-                double burn_fraction = parts[9].toDouble();
+                // 核心需求：提取第 8 个历史变量 (对应索引 9)
+                double reaction = parts[9].toDouble();
 
-                // 物理限幅：反应度 [0.0, 1.0]
-                if (burn_fraction < 0.0) burn_fraction = 0.0;
-                if (burn_fraction > 1.0) burn_fraction = 1.0;
+                // 反应度物理限幅 [0, 1]
+                if (reaction < 0.0) reaction = 0.0;
+                if (reaction > 1.0) reaction = 1.0;
 
-                m_eloutData[currentElemId]["reaction_degree (反应度/燃烧分数)"].append(burn_fraction);
+                m_eloutData[currentElemId]["reaction_degree (反应度)"].append(reaction);
             }
         }
     }
     file.close();
 
-    // 更新 UI 下拉框
-    if (m_comboElout && !m_eloutData.isEmpty()) {
-        m_comboElout->blockSignals(true);
-        m_comboElout->clear();
-        m_comboElout->addItems(params);
-        m_comboElout->setCurrentIndex(9); // 默认选择反应度
-        m_comboElout->blockSignals(false);
+    // ---------------------------------------------------------
+    // 阶段 4: UI 联动与下拉框刷新
+    // ---------------------------------------------------------
+
+    // 1. 刷新单元 ID 下拉框 (m_comboEloutId)
+    if (m_comboEloutId) {
+        m_comboEloutId->blockSignals(true);
+        m_comboEloutId->clear();
+        m_comboEloutId->addItem("全画 (All)"); // 添加默认全选选项
+
+        QList<int> ids = m_eloutData.keys();
+        qSort(ids.begin(), ids.end()); // ID 升序排列
+
+        for (int id : ids) {
+            m_comboEloutId->addItem(QString::number(id));
+        }
+        m_comboEloutId->setCurrentIndex(0); // 默认选中"全画"
+        m_comboEloutId->blockSignals(false);
+    }
+
+    // 2. 刷新参数下拉框 (m_comboEloutParam)
+    if (m_comboEloutParam) {
+        m_comboEloutParam->blockSignals(true);
+        m_comboEloutParam->clear();
+        m_comboEloutParam->addItems(params);
+        m_comboEloutParam->setCurrentIndex(0); // 默认选中反应度
+        m_comboEloutParam->blockSignals(false);
+
+        // 触发初始绘图
         updateEloutPlot();
     }
 
+    qDebug() << "[ELOUT解析完成] 共发现单元数量:" << m_eloutData.size();
     return true;
 }
 
@@ -525,27 +672,70 @@ void PostProcessWidget::updateNodoutPlot() {
 
 /**
  * @brief 根据用户在下拉框的选择，动态重绘 ELOUT 曲线
+ * @details 绘图逻辑分支：
+ * - 1. 检查数据有效性：若缓存为空或 UI 控件未初始化则直接返回。
+ * - 2. 获取 UI 状态：读取当前选中的参数名及单元 ID 字符串。
+ * - 3. 全量模式 (All)：遍历 m_eloutData 中的所有单元，为每个单元创建一个 QCPGraph。
+ * - 4. 单选模式：根据转换后的 targetId 提取特定单元的数据进行绘制。
+ * - 5. 视图自适应：自动调整坐标轴范围并执行绘图刷新。
  */
 void PostProcessWidget::updateEloutPlot() {
-    if (!m_comboElout || m_eloutData.isEmpty()) return;
-    QString selectedParam = m_comboElout->currentText();
-
-    QCustomPlot* p = m_plotMap["elout"];
-    p->clearGraphs();
-    p->yAxis->setLabel(selectedParam + " [Mbar]");
-
-    int colorIdx = 0, count = 0;
-    for (int eid : m_eloutData.keys()) {
-        if (count++ > 4) break; // 最多画 5 个单元以保持界面流畅
-        p->addGraph();
-        p->graph()->setData(m_eloutTimeMap[eid], m_eloutData[eid][selectedParam]);
-        p->graph()->setName(QString("Elem %1").arg(eid));
-        p->graph()->setPen(QPen(m_colorPalette[colorIdx++ % m_colorPalette.size()], 2));
+    // 基础有效性校验
+    if (!m_comboEloutParam || !m_comboEloutId || m_eloutData.isEmpty()) {
+        return;
     }
 
-    // 由于 elout 图表与 rcforc 共享，重绘参数时可能需要把 rcforc 曲线重新加回来
-    // 这里为了逻辑纯粹，切换应力时仅绘制应力数据
+    // 获取当前 UI 选择状态
+    QString selectedParam = m_comboEloutParam->currentText();
+    QString selectedIdStr = m_comboEloutId->currentText();
 
+    // 定位目标图表
+    QCustomPlot* p = m_plotMap["elout"];
+    if (!p) return;
+
+    // 清除画布上已有的所有曲线
+    p->clearGraphs();
+    p->yAxis->setLabel(selectedParam);
+
+    int colorIdx = 0;
+
+    // ---------------------------------------------------------
+    // 分支 A: 全量绘图模式 (All)
+    // ---------------------------------------------------------
+    if (selectedIdStr == "全画 (All)") {
+        // 遍历内存中解析出的所有单元 ID
+        for (int eid : m_eloutData.keys()) {
+            // 安全检查：该单元是否包含当前选中的参数
+            if (!m_eloutData[eid].contains(selectedParam)) {
+                continue;
+            }
+
+            p->addGraph();
+            p->graph()->setData(m_eloutTimeMap[eid], m_eloutData[eid][selectedParam]);
+            p->graph()->setName(QString("Elem %1").arg(eid));
+
+            // 循环使用专业色盘
+            QColor lineColor = m_colorPalette[colorIdx % m_colorPalette.size()];
+            p->graph()->setPen(QPen(lineColor, 2));
+            colorIdx++;
+        }
+    }
+    // ---------------------------------------------------------
+    // 分支 B: 单单元查看模式
+    // ---------------------------------------------------------
+    else {
+        int targetId = selectedIdStr.toInt();
+        if (m_eloutData.contains(targetId) && m_eloutData[targetId].contains(selectedParam)) {
+            p->addGraph();
+            p->graph()->setData(m_eloutTimeMap[targetId], m_eloutData[targetId][selectedParam]);
+            p->graph()->setName(QString("Elem %1").arg(targetId));
+
+            // 单选时默认使用色盘第一个颜色（深蓝色）
+            p->graph()->setPen(QPen(m_colorPalette[0], 2.5));
+        }
+    }
+
+    // 执行坐标轴自适应并刷新
     p->rescaleAxes();
     p->replot();
 }

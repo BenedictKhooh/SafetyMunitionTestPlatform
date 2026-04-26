@@ -421,6 +421,8 @@ private:
 
     /** @brief 最大有效测试总次数输入控件 */
     QSpinBox* spinMaxSteps;
+    QTableWidget* tableThresholdResults = nullptr;      //工况历史记录表
+    QDoubleSpinBox* spinAcceptableVelocityThreshold = nullptr; //临界判定速度阈值
 
     /** @brief 动作按钮：仅生成基础共享文件，不唤醒求解器 */
     QPushButton* btnGenerateThreshold;
@@ -547,6 +549,28 @@ private:
     void parseRealTimeNodout(const QString& filePath);
     void parseRealTimeElout(const QString& filePath);
 
+    // ==========================================
+    // 新增：升降法专属独立页面组件
+    // ==========================================
+    QWidget* upDownSolverWidget = nullptr;       // 升降法独立 Tab 页面
+    void setupUpDownSolverTab();                 // 升降法页面初始化函数
 
+    QCustomPlot* thresholdPlot = nullptr;             
+    QComboBox* m_thresholdDataSourceCombo = nullptr; 
+    QComboBox* m_thresholdIdCombo = nullptr;
+    QComboBox* m_thresholdParamCombo = nullptr; 
+
+    QTimer* m_thresholdPlotTimer = nullptr;
+
+    qint64 m_lastThresholdGlstatPos = 0;
+    qint64 m_lastThresholdNodoutPos = 0;
+    qint64 m_lastThresholdEloutPos = 0;
+
+private slots:
+    void updateThresholdPlotUI(); // 更新下拉框内容
+    void redrawThresholdPlot();   // 重绘右侧图窗
+    void updateThresholdPlot();   // 定时器调用的文件解析
+    // 用于记录图表的读取位置
+    
 };
 #endif // MAINWINDOW_H

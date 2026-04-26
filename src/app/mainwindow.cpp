@@ -2754,11 +2754,6 @@ void MainWindow::handleAddSensor() {
 
 /**
  * @brief 初始化“求解与仿真试验方案设计”工作区界面 (自动化综合控制台)
- * @details 该函数负责构建后处理模块的 UI 布局，主要包含三个核心部分：
- * 1. 单次求解与控制台监控面板
- * 2. 基于实体级别的网格收敛性智能批处理与研判面板
- * 3. 基于升降法的起爆阈值寻优批处理及序列预览面板
- * 注：自动化批处理界面的表格控件被设置为垂直方向自动扩展，以充分利用屏幕高度。
  */
 void MainWindow::setupPostProcessUI() {
     // 1. 清理遗留布局，防止多次调用时发生控件重叠与内存泄漏
@@ -2782,8 +2777,8 @@ void MainWindow::setupPostProcessUI() {
     mainLayout->addWidget(solveTaskTabs);
 
     // =========================================================
-// Tab 1: 单次工况求解与监控面板
-// =========================================================
+    // Tab 1: 单次工况求解与监控面板
+    // =========================================================
     QWidget* singleRunWidget = new QWidget();
 
     QHBoxLayout* mainHLayout = new QHBoxLayout(singleRunWidget);
@@ -2838,7 +2833,7 @@ void MainWindow::setupPostProcessUI() {
 
     leftVLayout->addWidget(monitorGroup, 1); // 把控制台塞入左侧垂直布局，系数1表示让它撑满下方所有空间
 
-    
+
     mainHLayout->addLayout(leftVLayout, 1);
 
     // ---------------------------------------------------------
@@ -2853,7 +2848,7 @@ void MainWindow::setupPostProcessUI() {
     solveTaskTabs->addTab(singleRunWidget, "单次求解与监控");
 
     // =========================================================
-    // Tab 2: 自动化批处理与分析面板 (左右自适应铺满布局)
+    // Tab 2: 自动化批处理与分析面板 (剥离升降法后，让网格收敛独占页面)
     // =========================================================
     QScrollArea* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
@@ -2862,12 +2857,7 @@ void MainWindow::setupPostProcessUI() {
     QWidget* batchWidget = new QWidget();
     QVBoxLayout* batchMainLayout = new QVBoxLayout(batchWidget);
 
-    // 创建水平分割布局，实现 6:4 黄金比例排布
-    QHBoxLayout* hSplitLayout = new QHBoxLayout();
-
-    // ---------------------------------------------------------
     // 左半区 (模块 A): 实体级网格收敛性智能分析
-    // ---------------------------------------------------------
     QGroupBox* meshConvergenceGroup = new QGroupBox("实体级网格收敛性分析");
     QVBoxLayout* meshConvLayout = new QVBoxLayout(meshConvergenceGroup);
 
@@ -2918,8 +2908,6 @@ void MainWindow::setupPostProcessUI() {
     meshBtnLayout->addWidget(btnStopMeshBatch);
     meshConvLayout->addLayout(meshBtnLayout);
 
-    hSplitLayout->addWidget(meshConvergenceGroup, 6);
-
     meshMonitorConsole = new QTextEdit();
     meshMonitorConsole->setReadOnly(true);
     meshMonitorConsole->setPlaceholderText("等待任务提交... 实时输出将显示在此");
@@ -2941,82 +2929,18 @@ void MainWindow::setupPostProcessUI() {
 
     meshConvLayout->addWidget(meshMonitorGroup);
 
-    // ---------------------------------------------------------
-    // 右半区 (模块 B): 起爆阈值闭环寻优操作面板
-    // ---------------------------------------------------------
-    QGroupBox* velSetupGroup = new QGroupBox("起爆阈值升降法批处理分析");
-    QVBoxLayout* velContainerLayout = new QVBoxLayout(velSetupGroup);
-
-    // B.1 实体级初速读取控制区
-    QHBoxLayout* velHeaderLayout = new QHBoxLayout();
-    velHeaderLayout->addWidget(new QLabel("当前物理模型预设初速："));
-    btnRefreshVelocity = new QPushButton("刷新读取初速");
-    btnRefreshVelocity->setStyleSheet("background-color: #f0f0f0; font-weight: bold; padding: 4px; min-height: 25px;");
-    velHeaderLayout->addStretch();
-    velHeaderLayout->addWidget(btnRefreshVelocity);
-    velContainerLayout->addLayout(velHeaderLayout);
-
-    // B.2 参数配置表单布局 
-    QFormLayout* formLayout = new QFormLayout();
-
-    spinStartVelocity = new QDoubleSpinBox();
-    spinStartVelocity->setRange(-10.0, 10.0);
-    spinStartVelocity->setDecimals(4);
-    spinStartVelocity->setValue(0.08);
-    spinStartVelocity->setSuffix(" cm/μs");
-
-    spinVelocityStep = new QDoubleSpinBox();
-    spinVelocityStep->setRange(0.0001, 1.0);
-    spinVelocityStep->setDecimals(4);
-    spinVelocityStep->setValue(0.005);
-    spinVelocityStep->setSuffix(" cm/μs");
-
-    spinMaxSteps = new QSpinBox();
-    spinMaxSteps->setRange(1, 100);
-    spinMaxSteps->setValue(20);
-
-    formLayout->addRow("初始测试撞击速度 (V0):", spinStartVelocity);
-    formLayout->addRow("升降法速度变分步长 (ΔV):", spinVelocityStep);
-    formLayout->addRow("最大有效测试总次数 (N):", spinMaxSteps);
-
-    velContainerLayout->addLayout(formLayout);
-
-    // B.3 动作控制总线布局 
-    QHBoxLayout* thresholdBtnLayout = new QHBoxLayout();
-
-    btnGenerateThreshold = new QPushButton("生成基础模型");
-    btnSubmitThreshold = new QPushButton("提交并启动");
-    btnTerminateProcess = new QPushButton("终止进程");
-    btnSkipStep = new QPushButton("跳过当前计算工况");
-
-    btnGenerateThreshold->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 35px;");
-    btnSubmitThreshold->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 35px;");
-    btnTerminateProcess->setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; min-height: 35px;");
-    btnSkipStep->setStyleSheet("background-color: #f0ad4e; color: white; font-weight: bold; min-height: 35px;");
-
-    thresholdBtnLayout->addWidget(btnGenerateThreshold);
-    thresholdBtnLayout->addWidget(btnSubmitThreshold);
-    thresholdBtnLayout->addWidget(btnSkipStep);
-    thresholdBtnLayout->addWidget(btnTerminateProcess);
-
-    velContainerLayout->addLayout(thresholdBtnLayout);
-
-    // B.4 专属集成式控制台 (Console)
-    QLabel* consoleLabel = new QLabel("当前寻优工况实时监控:");
-    consoleLabel->setStyleSheet("font-weight: bold; color: #555; margin-top: 10px;");
-    velContainerLayout->addWidget(consoleLabel);
-
-    thresholdConsole = new QTextEdit();
-    thresholdConsole->setReadOnly(true);
-    thresholdConsole->setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', 'Monaco', monospace; font-size: 10pt;");
-    velContainerLayout->addWidget(thresholdConsole, 1);
-
-    hSplitLayout->addWidget(velSetupGroup, 4);
-
-    batchMainLayout->addLayout(hSplitLayout);
+    // 直接放入主布局
+    batchMainLayout->addWidget(meshConvergenceGroup);
 
     scrollArea->setWidget(batchWidget);
-    solveTaskTabs->addTab(scrollArea, "自动化批处理与分析");
+    solveTaskTabs->addTab(scrollArea, "网格收敛性分析");
+
+    // =========================================================
+    // Tab 3: 升降法求解 (新增的独立 Tab)
+    // =========================================================
+    setupUpDownSolverTab();
+    solveTaskTabs->addTab(upDownSolverWidget, "升降法求解");
+
 
     // =========================================================
     // 统一信号与槽绑定
@@ -3028,18 +2952,10 @@ void MainWindow::setupPostProcessUI() {
     connect(btnRunSolver, &QPushButton::clicked, this, &MainWindow::startCalculation);
     connect(btnStopSolver, &QPushButton::clicked, this, &MainWindow::stopCalculation);
 
-    // 自动化批处理专属信号
+    // 网格收敛专属信号
     connect(btnRefreshTable, &QPushButton::clicked, this, &MainWindow::handleRefreshEntityTable);
     connect(btnGenerateMeshBatch, &QPushButton::clicked, this, &MainWindow::handleGenerateMeshConvergenceBatch);
     connect(btnAnalyzeConvergence, &QPushButton::clicked, this, &MainWindow::handleAnalyzeConvergence);
-
-    connect(btnGenerateThreshold, &QPushButton::clicked, this, &MainWindow::handleGenerateThresholdFiles);
-    connect(btnSubmitThreshold, &QPushButton::clicked, this, &MainWindow::handleSubmitThresholdTask);
-    connect(btnTerminateProcess, &QPushButton::clicked, this, &MainWindow::handleTerminateProcess);
-    connect(btnRefreshVelocity, &QPushButton::clicked, this, &MainWindow::handleRefreshInitialVelocity);
-
-    //绑定跳过按钮的槽函数
-    connect(btnSkipStep, &QPushButton::clicked, this, &MainWindow::handleSkipCurrentStep);
 
     connect(btnSubmitExistingBat, &QPushButton::clicked, this, &MainWindow::handleRunExistingBat);
     connect(comboTargetMetric, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onMeshMonitorMetricChanged);
@@ -5534,4 +5450,311 @@ except Exception as e:
 
     // 物理阈值截断准则：只要爆轰过程有任意时刻反应度超过 50%，即判定为发生了不可逆的宏观起爆
     return (maxReaction >= 0.5);
+}
+
+/**
+ * @brief 初始化独立选项卡：起爆阈值升降法寻优 (更新版：左右结构布局)
+ */
+void MainWindow::setupUpDownSolverTab() {
+    upDownSolverWidget = new QWidget();
+    QHBoxLayout* mainLayout = new QHBoxLayout(upDownSolverWidget);
+
+    // =========================================================
+    // 左侧面板
+    // =========================================================
+    QWidget* leftPanel = new QWidget();
+    QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+
+    QGroupBox* velSetupGroup = new QGroupBox("起爆阈值升降法设置");
+    velSetupGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; border: 1px solid #C0C0C0; margin-top: 10px; padding-top: 15px; }");
+    QVBoxLayout* velContainerLayout = new QVBoxLayout(velSetupGroup);
+
+    QHBoxLayout* velHeaderLayout = new QHBoxLayout();
+    velHeaderLayout->addWidget(new QLabel("当前物理模型预设初速："));
+    btnRefreshVelocity = new QPushButton("刷新读取初速");
+    btnRefreshVelocity->setStyleSheet("background-color: #f0f0f0; font-weight: bold; padding: 4px; min-height: 25px;");
+    velHeaderLayout->addStretch();
+    velHeaderLayout->addWidget(btnRefreshVelocity);
+    velContainerLayout->addLayout(velHeaderLayout);
+
+    QFormLayout* formLayout = new QFormLayout();
+
+    spinStartVelocity = new QDoubleSpinBox();
+    spinStartVelocity->setRange(-10.0, 10.0); spinStartVelocity->setDecimals(4);
+    spinStartVelocity->setValue(0.08); spinStartVelocity->setSuffix(" cm/μs");
+
+    spinVelocityStep = new QDoubleSpinBox();
+    spinVelocityStep->setRange(0.0001, 1.0); spinVelocityStep->setDecimals(4);
+    spinVelocityStep->setValue(0.005); spinVelocityStep->setSuffix(" cm/μs");
+
+    spinMaxSteps = new QSpinBox();
+    spinMaxSteps->setRange(1, 100); spinMaxSteps->setValue(20);
+
+    spinAcceptableVelocityThreshold = new QDoubleSpinBox();
+    spinAcceptableVelocityThreshold->setRange(0.0, 10.0); spinAcceptableVelocityThreshold->setDecimals(4);
+    spinAcceptableVelocityThreshold->setValue(0.0650); spinAcceptableVelocityThreshold->setSuffix(" cm/μs");
+
+    formLayout->addRow("初始测试速度 (V0):", spinStartVelocity);
+    formLayout->addRow("速度变分步长 (ΔV):", spinVelocityStep);
+    formLayout->addRow("最大测试次数 (N):", spinMaxSteps);
+    formLayout->addRow("判定接受阈值 (Vc):", spinAcceptableVelocityThreshold);
+    velContainerLayout->addLayout(formLayout);
+
+    velContainerLayout->addWidget(new QLabel("寻优工况历史记录序列:"));
+    tableThresholdResults = new QTableWidget(0, 4);
+    tableThresholdResults->setHorizontalHeaderLabels({ "序号", "测试速度", "判定结果", "状态" });
+    tableThresholdResults->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableThresholdResults->setMinimumHeight(200);
+    velContainerLayout->addWidget(tableThresholdResults);
+
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    btnGenerateThreshold = new QPushButton("生成基础模型");
+    btnSubmitThreshold = new QPushButton("提交并启动");
+    btnTerminateProcess = new QPushButton("终止进程");
+    btnSkipStep = new QPushButton("跳过工况");
+
+    btnGenerateThreshold->setStyleSheet("background-color: #008CBA; color: white; font-weight: bold; min-height: 30px;");
+    btnSubmitThreshold->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; min-height: 30px;");
+    btnTerminateProcess->setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; min-height: 30px;");
+    btnSkipStep->setStyleSheet("background-color: #f0ad4e; color: white; font-weight: bold; min-height: 30px;");
+
+    btnLayout->addWidget(btnGenerateThreshold);
+    btnLayout->addWidget(btnSubmitThreshold);
+    btnLayout->addWidget(btnSkipStep);
+    btnLayout->addWidget(btnTerminateProcess);
+    velContainerLayout->addLayout(btnLayout);
+
+    leftLayout->addWidget(velSetupGroup);
+    mainLayout->addWidget(leftPanel, 1);
+
+    // =========================================================
+    // 右侧面板
+    // =========================================================
+    QWidget* rightPanel = new QWidget();
+    QVBoxLayout* rightLayout = new QVBoxLayout(rightPanel);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+
+    QHBoxLayout* plotHeader = new QHBoxLayout();
+    plotHeader->addWidget(new QLabel("监控源:"));
+    m_thresholdDataSourceCombo = new QComboBox();
+    m_thresholdDataSourceCombo->addItems({ "全局能量 (GLSTAT)", "节点历程 (NODOUT)", "单元历程 (ELOUT)" });
+    plotHeader->addWidget(m_thresholdDataSourceCombo);
+
+    plotHeader->addWidget(new QLabel(" ID:"));
+    m_thresholdIdCombo = new QComboBox();
+    m_thresholdIdCombo->setMinimumWidth(80);
+    plotHeader->addWidget(m_thresholdIdCombo);
+
+    plotHeader->addWidget(new QLabel(" 参数:"));
+    m_thresholdParamCombo = new QComboBox();
+    m_thresholdParamCombo->setMinimumWidth(120);
+    plotHeader->addWidget(m_thresholdParamCombo);
+    plotHeader->addStretch();
+    rightLayout->addLayout(plotHeader);
+
+    thresholdPlot = new QCustomPlot();
+    thresholdPlot->setMinimumHeight(350);
+    thresholdPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+    thresholdPlot->legend->setVisible(true);
+    thresholdPlot->xAxis->setLabel("时间 (Time) [μs]");
+    rightLayout->addWidget(thresholdPlot, 2);
+
+    rightLayout->addWidget(new QLabel("寻优工况实时监控日志:"));
+    thresholdConsole = new QTextEdit();
+    thresholdConsole->setReadOnly(true);
+    thresholdConsole->setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas';");
+    thresholdConsole->setMinimumHeight(150);
+    rightLayout->addWidget(thresholdConsole, 1);
+
+    mainLayout->addWidget(rightPanel, 2);
+
+    // 绑定信号
+    connect(btnGenerateThreshold, &QPushButton::clicked, this, &MainWindow::handleGenerateThresholdFiles);
+    connect(btnSubmitThreshold, &QPushButton::clicked, this, &MainWindow::handleSubmitThresholdTask);
+    connect(btnTerminateProcess, &QPushButton::clicked, this, &MainWindow::handleTerminateProcess);
+    connect(btnRefreshVelocity, &QPushButton::clicked, this, &MainWindow::handleRefreshInitialVelocity);
+    connect(btnSkipStep, &QPushButton::clicked, this, &MainWindow::handleSkipCurrentStep);
+
+    connect(m_thresholdDataSourceCombo, &QComboBox::currentTextChanged, this, &MainWindow::updateThresholdPlotUI);
+    connect(m_thresholdIdCombo, &QComboBox::currentTextChanged, this, &MainWindow::redrawThresholdPlot);
+    connect(m_thresholdParamCombo, &QComboBox::currentTextChanged, this, &MainWindow::redrawThresholdPlot);
+
+    m_thresholdPlotTimer = new QTimer(this);
+    connect(m_thresholdPlotTimer, &QTimer::timeout, this, &MainWindow::updateThresholdPlot);
+
+    updateThresholdPlotUI();
+}
+
+// ============================================================================
+// 升降法选项卡 - 实时监控图窗后台逻辑补全
+// ============================================================================
+
+/**
+ * @brief 升降法：动态更新下拉框内容
+ */
+void MainWindow::updateThresholdPlotUI() {
+    if (!m_thresholdDataSourceCombo || !m_thresholdIdCombo || !m_thresholdParamCombo) return;
+
+    QString source = m_thresholdDataSourceCombo->currentText();
+    m_thresholdIdCombo->blockSignals(true);
+    m_thresholdParamCombo->blockSignals(true);
+
+    if (source.contains("GLSTAT")) {
+        m_thresholdIdCombo->setVisible(false);
+        m_thresholdParamCombo->setVisible(false);
+    }
+    else if (source.contains("NODOUT")) {
+        m_thresholdIdCombo->setVisible(true);
+        m_thresholdParamCombo->setVisible(true);
+
+        if (m_thresholdParamCombo->count() == 0 || !m_thresholdParamCombo->currentText().contains("速度")) {
+            m_thresholdParamCombo->clear();
+            m_thresholdParamCombo->addItems({ "res-vel (合速度)", "x-disp (X位移)", "y-disp (Y位移)", "z-disp (Z位移)",
+                                          "x-vel (X速度)", "y-vel (Y速度)", "z-vel (Z速度)",
+                                          "x-accl (X加速度)", "y-accl (Y加速度)", "z-accl (Z加速度)" });
+        }
+
+        QList<int> ids = m_rtNodoutData.keys();
+        if (m_thresholdIdCombo->count() - 1 != ids.size()) {
+            QString currentSel = m_thresholdIdCombo->currentText();
+            m_thresholdIdCombo->clear();
+            m_thresholdIdCombo->addItem("全画 (All)");
+            std::sort(ids.begin(), ids.end());
+            for (int id : ids) m_thresholdIdCombo->addItem(QString::number(id));
+            int idx = m_thresholdIdCombo->findText(currentSel);
+            m_thresholdIdCombo->setCurrentIndex(idx != -1 ? idx : 0);
+        }
+    }
+    else if (source.contains("ELOUT")) {
+        m_thresholdIdCombo->setVisible(true);
+        m_thresholdParamCombo->setVisible(true);
+
+        if (m_thresholdParamCombo->count() == 0 || !m_thresholdParamCombo->currentText().contains("反应度")) {
+            m_thresholdParamCombo->clear();
+            m_thresholdParamCombo->addItems({ "reaction_degree (反应度)", "effsg (等效应力)", "yield (屈服函数/塑性应变)",
+                                          "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)" });
+        }
+
+        QList<int> ids = m_rtEloutData.keys();
+        if (m_thresholdIdCombo->count() - 1 != ids.size()) {
+            QString currentSel = m_thresholdIdCombo->currentText();
+            m_thresholdIdCombo->clear();
+            m_thresholdIdCombo->addItem("全画 (All)");
+            std::sort(ids.begin(), ids.end());
+            for (int id : ids) m_thresholdIdCombo->addItem(QString::number(id));
+            int idx = m_thresholdIdCombo->findText(currentSel);
+            m_thresholdIdCombo->setCurrentIndex(idx != -1 ? idx : 0);
+        }
+    }
+
+    m_thresholdIdCombo->blockSignals(false);
+    m_thresholdParamCombo->blockSignals(false);
+    redrawThresholdPlot();
+}
+
+/**
+ * @brief 升降法：执行右侧 QCustomPlot 核心重绘
+ */
+void MainWindow::redrawThresholdPlot() {
+    // 🌟 增加对所有下拉框是否存在的严格判空验证，防闪退
+    if (!thresholdPlot || !m_thresholdDataSourceCombo || !m_thresholdIdCombo || !m_thresholdParamCombo) return;
+
+    QString source = m_thresholdDataSourceCombo->currentText();
+    QString param = m_thresholdParamCombo->currentText();
+    QString idStr = m_thresholdIdCombo->currentText();
+
+    thresholdPlot->clearGraphs();
+
+    if (source.contains("GLSTAT")) {
+        thresholdPlot->yAxis->setLabel("能量");
+        if (!m_rtGlstatTime.isEmpty() && m_rtGlstatTime.size() == m_rtGlstatKe.size()) {
+            QCPGraph* g0 = thresholdPlot->addGraph(); // 安全捕获指针
+            g0->setData(m_rtGlstatTime, m_rtGlstatKe);
+            g0->setName("动能 (KE)");
+            g0->setPen(QPen(Qt::blue, 2));
+
+            QCPGraph* g1 = thresholdPlot->addGraph(); // 安全捕获指针
+            g1->setData(m_rtGlstatTime, m_rtGlstatIe);
+            g1->setName("内能 (IE)");
+            g1->setPen(QPen(Qt::red, 2));
+        }
+    }
+    else if (source.contains("NODOUT")) {
+        thresholdPlot->yAxis->setLabel(param);
+        if (idStr == "全画 (All)") {
+            int c = 0;
+            for (int id : m_rtNodoutData.keys()) {
+                if (!m_rtNodoutData[id].contains(param)) continue;
+                QCPGraph* g = thresholdPlot->addGraph();
+                g->setData(m_rtNodoutTimeMap[id], m_rtNodoutData[id][param]);
+                g->setName(QString("Node %1").arg(id));
+                g->setPen(QPen(QColor::fromHsv((c++ * 50) % 360, 200, 200), 2));
+            }
+        }
+        else {
+            int id = idStr.toInt();
+            if (m_rtNodoutData.contains(id) && m_rtNodoutData[id].contains(param)) {
+                QCPGraph* g = thresholdPlot->addGraph();
+                g->setData(m_rtNodoutTimeMap[id], m_rtNodoutData[id][param]);
+                g->setName(QString("Node %1").arg(id));
+                g->setPen(QPen(Qt::darkBlue, 2.5));
+            }
+        }
+    }
+    else if (source.contains("ELOUT")) {
+        thresholdPlot->yAxis->setLabel(param);
+        if (idStr == "全画 (All)") {
+            int c = 0;
+            for (int id : m_rtEloutData.keys()) {
+                if (!m_rtEloutData[id].contains(param)) continue;
+                QCPGraph* g = thresholdPlot->addGraph();
+                g->setData(m_rtEloutTimeMap[id], m_rtEloutData[id][param]);
+                g->setName(QString("Elem %1").arg(id));
+                g->setPen(QPen(QColor::fromHsv((c++ * 50) % 360, 200, 200), 2));
+            }
+        }
+        else {
+            int id = idStr.toInt();
+            if (m_rtEloutData.contains(id) && m_rtEloutData[id].contains(param)) {
+                QCPGraph* g = thresholdPlot->addGraph();
+                g->setData(m_rtEloutTimeMap[id], m_rtEloutData[id][param]);
+                g->setName(QString("Elem %1").arg(id));
+                g->setPen(QPen(Qt::darkRed, 2.5));
+            }
+        }
+    }
+
+    thresholdPlot->rescaleAxes();
+    thresholdPlot->replot();
+}
+
+/**
+ * @brief 升降法：定时器触发，闪电抓取文件并刷新UI
+ */
+void MainWindow::updateThresholdPlot() {
+    // 定位您的工作目录 (复用原本 kFilePathEdit 的路径逻辑)
+    QString currentKFilePath = kFilePathEdit->text();
+    if (currentKFilePath.isEmpty()) return;
+    QString workDir = QFileInfo(currentKFilePath).absolutePath();
+    if (workDir.isEmpty() || !QDir(workDir).exists()) return;
+
+    QString glstatPath = QDir(workDir).filePath("glstat");
+    QString nodoutPath = QDir(workDir).filePath("nodout");
+    QString eloutPath = QDir(workDir).filePath("elout");
+
+    // 清空缓存防堆积
+    m_rtGlstatTime.clear(); m_rtGlstatKe.clear(); m_rtGlstatIe.clear();
+    m_rtNodoutTimeMap.clear(); m_rtNodoutData.clear();
+    m_rtEloutTimeMap.clear(); m_rtEloutData.clear();
+    m_rtNodoutTime = 0.0; m_rtNodoutIsDataBlock = false;
+    m_rtEloutTime = 0.0; m_rtEloutId = -1; m_rtEloutBlock = 0;
+
+    // 复用之前写好的高性能解析函数
+    parseRealTimeGlstat(glstatPath);
+    parseRealTimeNodout(nodoutPath);
+    parseRealTimeElout(eloutPath);
+
+    updateThresholdPlotUI();
+    redrawThresholdPlot();
 }

@@ -2039,7 +2039,7 @@ void MainWindow::createSimulationSetupDock() {
     ctrlLayout->insertRow(1, "时间步缩放 (TSSFAC):", m_simSetupUI.tssfacInput);
 
     // ==========================================
-    // [重写] Tab: 传感器与观测点 (Sensors) - 统一界面
+    // Tab: 传感器与观测点 (Sensors) - 统一界面
     // ==========================================
     QWidget* sensorTab = new QWidget();
     QVBoxLayout* sensorMainLayout = new QVBoxLayout(sensorTab);
@@ -2056,9 +2056,9 @@ void MainWindow::createSimulationSetupDock() {
     sensorLayout->addRow("观测模式 (Mode):", m_simSetupUI.sensorModeSelector);
 
     // 3. 起点 / 单点坐标
-    m_simSetupUI.sensorStartX = new QDoubleSpinBox(); m_simSetupUI.sensorStartX->setRange(-99999, 99999);
-    m_simSetupUI.sensorStartY = new QDoubleSpinBox(); m_simSetupUI.sensorStartY->setRange(-99999, 99999);
-    m_simSetupUI.sensorStartZ = new QDoubleSpinBox(); m_simSetupUI.sensorStartZ->setRange(-99999, 99999);
+    m_simSetupUI.sensorStartX = new QDoubleSpinBox(); m_simSetupUI.sensorStartX->setRange(-99999, 99999); m_simSetupUI.sensorStartX->setDecimals(3);
+    m_simSetupUI.sensorStartY = new QDoubleSpinBox(); m_simSetupUI.sensorStartY->setRange(-99999, 99999); m_simSetupUI.sensorStartY->setDecimals(3);
+    m_simSetupUI.sensorStartZ = new QDoubleSpinBox(); m_simSetupUI.sensorStartZ->setRange(-99999, 99999); m_simSetupUI.sensorStartZ->setDecimals(3);
 
     QHBoxLayout* startLayout = new QHBoxLayout();
     startLayout->addWidget(m_simSetupUI.sensorStartX); startLayout->addWidget(m_simSetupUI.sensorStartY); startLayout->addWidget(m_simSetupUI.sensorStartZ);
@@ -2069,9 +2069,9 @@ void MainWindow::createSimulationSetupDock() {
     QFormLayout* arrayLayout = new QFormLayout(m_simSetupUI.sensorArrayContainer);
     arrayLayout->setContentsMargins(0, 0, 0, 0); // 取消边距让它看起来无缝衔接
 
-    m_simSetupUI.sensorEndX = new QDoubleSpinBox(); m_simSetupUI.sensorEndX->setRange(-99999, 99999);
-    m_simSetupUI.sensorEndY = new QDoubleSpinBox(); m_simSetupUI.sensorEndY->setRange(-99999, 99999);
-    m_simSetupUI.sensorEndZ = new QDoubleSpinBox(); m_simSetupUI.sensorEndZ->setRange(-99999, 99999);
+    m_simSetupUI.sensorEndX = new QDoubleSpinBox(); m_simSetupUI.sensorEndX->setRange(-99999, 99999); m_simSetupUI.sensorEndX->setDecimals(3);
+    m_simSetupUI.sensorEndY = new QDoubleSpinBox(); m_simSetupUI.sensorEndY->setRange(-99999, 99999); m_simSetupUI.sensorEndY->setDecimals(3);
+    m_simSetupUI.sensorEndZ = new QDoubleSpinBox(); m_simSetupUI.sensorEndZ->setRange(-99999, 99999); m_simSetupUI.sensorEndZ->setDecimals(3);
 
     QHBoxLayout* endLayout = new QHBoxLayout();
     endLayout->addWidget(m_simSetupUI.sensorEndX); endLayout->addWidget(m_simSetupUI.sensorEndY); endLayout->addWidget(m_simSetupUI.sensorEndZ);
@@ -2082,7 +2082,7 @@ void MainWindow::createSimulationSetupDock() {
     m_simSetupUI.sensorNumPoints->setValue(10);
     arrayLayout->addRow("测点数量 (N):", m_simSetupUI.sensorNumPoints);
 
-    sensorLayout->addRow("", m_simSetupUI.sensorArrayContainer);
+    sensorLayout->addRow(m_simSetupUI.sensorArrayContainer);
     m_simSetupUI.sensorArrayContainer->setVisible(false); // 初始状态为单点，隐藏该容器
 
     connect(m_simSetupUI.sensorModeSelector, &QComboBox::currentTextChanged, this, [this](const QString& text) {

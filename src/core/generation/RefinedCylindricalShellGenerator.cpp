@@ -107,9 +107,17 @@ For k In {0 : idx-1}
     mid_z = (Z_unique[k] + Z_unique[k+1]) / 2.0;
     dz = Z_unique[k+1] - Z_unique[k];
 
-    If (mid_z > Z_start - 1e-4 && mid_z < Z_end + 1e-4)
+    // 判断当前正在划分的 Z 轴切片是否属于底部端盖或顶部端盖
+    is_cap = (mid_z < H_cap + 1e-4 || mid_z > H_cap + H_void - 1e-4);
+
+    If (is_cap)
+        // ★ 修改点：上下端盖区域（垂直方向的壁厚）强制使用局部的 ms_wall 进行精细划分
+        nH = Max(1, Round(dz / ms_wall));
+    ElseIf (mid_z > Z_start - 1e-4 && mid_z < Z_end + 1e-4)
+        // 外部指定的 Z 轴局部加密区
         nH = Max(1, Round(dz / ms_local_z));
     Else
+        // 其他常规空腔区域使用全局尺寸 ms_z
         nH = Max(1, Round(dz / ms_z));
     EndIf
 

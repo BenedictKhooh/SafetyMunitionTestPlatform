@@ -3866,11 +3866,11 @@ void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus e
         isDetonated = true;
     }
     else if (m_isEarlyMisfire) {
-        thresholdConsole->append("   [状态判定] 实时探针侦测到内能连续衰减且无突跃 (Early Misfire) -> 判定为【死火】(O)");
+        thresholdConsole->append("   [状态判定] 实时探针侦测到内能连续衰减且无突跃 (Early Misfire) -> 判定为【未起爆】(O)");
         isDetonated = false;
     }
     else {
-        thresholdConsole->append("   [状态判定] 求解跑完全程，未触发起爆突跃 -> 判定为【死火】(O)");
+        thresholdConsole->append("   [状态判定] 求解跑完全程，未触发起爆突跃 -> 判定为【未起爆】(O)");
         isDetonated = false;
     }
 
@@ -3884,7 +3884,7 @@ void MainWindow::handleBatchProcessFinished(int exitCode, QProcess::ExitStatus e
         tableThresholdResults->setItem(rowCount, 0, new QTableWidgetItem(QString::number(m_upDownCurrentStep)));
         tableThresholdResults->setItem(rowCount, 1, new QTableWidgetItem(QString::number(m_upDownCurrentVelocity, 'f', 4)));
 
-        QTableWidgetItem* resItem = new QTableWidgetItem(isDetonated ? "起爆 (GO)" : "死火 (NO-GO)");
+        QTableWidgetItem* resItem = new QTableWidgetItem(isDetonated ? "起爆 (GO)" : "未起爆 (NO-GO)");
         resItem->setForeground(isDetonated ? Qt::red : Qt::darkGreen);
         tableThresholdResults->setItem(rowCount, 2, resItem);
         tableThresholdResults->setItem(rowCount, 3, new QTableWidgetItem("已完成"));
@@ -4579,7 +4579,7 @@ void MainWindow::handleMatsumPolling() {
                 .arg(currentTime, 0, 'f', 2)
                 .arg(peakTargetKE, 0, 'e', 4)
                 .arg(currentTargetKinetic, 0, 'e', 4));
-            thresholdConsole->append("[状态研判] 能量行为符合阻尼耗散规律，判定为：死火 (O)。");
+            thresholdConsole->append("[状态研判] 能量行为符合阻尼耗散规律，判定为：未起爆 (O)。");
         }
 
         qint64 rootPid = m_batchProcess->processId();
@@ -4623,11 +4623,11 @@ void MainWindow::handleSkipCurrentStep() {
     // 2. 根据用户人工判定，注入虚假状态标记
     if (msgBox.clickedButton() == btnDetonate) {
         m_isEarlyDetonated = true;
-        if (thresholdConsole) thresholdConsole->append("   [人工干预] 用户强行截断当前工况，并指定结果为：起爆 (X)！");
+        if (thresholdConsole) thresholdConsole->append("   [人工干预] 用户强行截断当前工况，并指定结果为：起爆 (X)");
     }
     else if (msgBox.clickedButton() == btnMisfire) {
         m_isEarlyMisfire = true;
-        if (thresholdConsole) thresholdConsole->append("   [人工干预] 用户强行截断当前工况，并指定结果为：死火 (O)！");
+        if (thresholdConsole) thresholdConsole->append("   [人工干预] 用户强行截断当前工况，并指定结果为：未起爆 (O)");
     }
     qint64 rootPid = m_batchProcess->processId();
     QProcess::execute("taskkill", QStringList() << "/F" << "/T" << "/PID" << QString::number(rootPid));

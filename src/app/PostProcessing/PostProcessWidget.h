@@ -39,10 +39,15 @@ private slots:
     /** @brief 响应 ELOUT 单元 ID 或参数下拉框切换事件，重绘图表 */
     void updateEloutPlot();
 
+    void showPlotContextMenu(const QPoint& pos);
+    void exportPlotToCSV();
+    void exportPlotToImage();
+
 private:
     /** @brief 初始化 UI 布局与 2x2 网格图表 */
     void setupUI();
 
+    QCustomPlot* m_contextMenuPlot = nullptr;
     /**
      * @brief 创建并配置基础的带有可选单一下拉框的 QCustomPlot 实例 (用于 glstat, matsum 等)
      * @param id 内部映射 ID

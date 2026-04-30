@@ -14,6 +14,7 @@
 #include <QDebug>
 #include <cmath>
 #include <QRegExp>
+#include <QMenu>
 
  /**
   * @brief 构造函数：初始化色盘并构建界面
@@ -24,6 +25,44 @@ PostProcessWidget::PostProcessWidget(QWidget* parent) : QWidget(parent) {
         << QColor(237, 177, 32) << QColor(126, 47, 142)
         << QColor(119, 172, 48) << QColor(77, 190, 238);
     setupUI();
+}
+
+static void applyScientificStyle(QCustomPlot* plot) {
+    QFont serifFont("Times New Roman", 10);
+    plot->setFont(serifFont);
+    plot->xAxis->setLabelFont(serifFont);
+    plot->yAxis->setLabelFont(serifFont);
+    plot->xAxis->setTickLabelFont(serifFont);
+    plot->yAxis->setTickLabelFont(serifFont);
+
+    QPen axisPen(Qt::black, 1.5);
+    plot->xAxis->setBasePen(axisPen);
+    plot->yAxis->setBasePen(axisPen);
+    plot->xAxis->setTickPen(axisPen);
+    plot->yAxis->setTickPen(axisPen);
+    plot->xAxis->setSubTickPen(axisPen);
+    plot->yAxis->setSubTickPen(axisPen);
+
+    plot->xAxis->setTickLengthIn(6);
+    plot->xAxis->setTickLengthOut(0);
+    plot->yAxis->setTickLengthIn(6);
+    plot->yAxis->setTickLengthOut(0);
+
+    plot->xAxis->setSubTickLengthIn(3);
+    plot->xAxis->setSubTickLengthOut(0);
+    plot->yAxis->setSubTickLengthIn(3);
+    plot->yAxis->setSubTickLengthOut(0);
+
+    plot->xAxis->grid()->setVisible(false);
+    plot->yAxis->grid()->setVisible(true);
+    plot->yAxis->grid()->setPen(QPen(QColor(230, 230, 230), 1, Qt::DotLine));
+
+    plot->legend->setVisible(true);
+    plot->legend->setFont(serifFont);
+    plot->legend->setBrush(QBrush(Qt::transparent));
+    plot->legend->setBorderPen(Qt::NoPen);
+
+    plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
 }
 
 /**
@@ -167,6 +206,12 @@ void PostProcessWidget::setupUI() {
     // ELOUT 双联动控制 (ID 改变或参数改变均触发重绘)
     connect(m_comboEloutId, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
     connect(m_comboEloutParam, &QComboBox::currentTextChanged, this, &PostProcessWidget::updateEloutPlot);
+
+    for (QCustomPlot* plot : m_plotMap.values()) {
+        applyScientificStyle(plot);
+        plot->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(plot, &QCustomPlot::customContextMenuRequested, this, &PostProcessWidget::showPlotContextMenu);
+    }
 }
 
 /**
@@ -810,4 +855,65 @@ void PostProcessWidget::updateEloutPlot() {
     // 执行坐标轴自适应并刷新
     p->rescaleAxes();
     p->replot();
+}
+
+void PostProcessWidget::showPlotContextMenu(const QPoint& pos) {
+    m_contextMenuPlot = qobject_cast<QCustomPlot*>(sender());
+    if (!m_contextMenuPlot) return;
+
+    QMenu menu(this);
+    menu.addAction("导出为 CSV 数据文件", this, &PostProcessWidget::exportPlotToCSV);
+    menu.addAction("保存为 高清图片 (PDF/PNG)", this, &PostProcessWidget::exportPlotToImage);
+    menu.exec(m_contextMenuPlot->mapToGlobal(pos));
+}
+
+void PostProcessWidget::exportPlotToCSV() {
+    if (!m_contextMenuPlot || m_contextMenuPlot->graphCount() == 0) return;
+
+    QString fileName = QFileDialog::getSaveFileName(this, "导出 CSV 数据", "", "CSV 文件 (*.csv)");
+    if (fileName.isEmpty()) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return;
+
+    QTextStream out(&file);
+
+    // 写入表头
+    out << "Time";
+    for (int i = 0; i < m_contextMenuPlot->graphCount(); ++i) {
+        out << "," << m_contextMenuPlot->graph(i)->name();
+    }
+    out << "\n";
+
+    // 遍历写入数据
+    int dataSize = m_contextMenuPlot->graph(0)->data()->size();
+    for (int j = 0; j < dataSize; ++j) {
+        out << QString::number(m_contextMenuPlot->graph(0)->data()->at(j)->mainKey(), 'f', 6);
+        for (int i = 0; i < m_contextMenuPlot->graphCount(); ++i) {
+            if (j < m_contextMenuPlot->graph(i)->data()->size()) {
+                out << "," << QString::number(m_contextMenuPlot->graph(i)->data()->at(j)->mainValue(), 'e', 6);
+            }
+            else {
+                out << ","; // 数据缺省容错
+            }
+        }
+        out << "\n";
+    }
+    file.close();
+}
+
+void PostProcessWidget::exportPlotToImage() {
+    if (!m_contextMenuPlot) return;
+
+    QString fileName = QFileDialog::getSaveFileName(this, "保存高清图", "", "PDF 矢量图 (*.pdf);;PNG 高清图 (*.png)");
+    if (fileName.isEmpty()) return;
+
+    if (fileName.endsWith(".pdf")) {
+        // PDF 格式无限放大不失真，最适合发论文
+        m_contextMenuPlot->savePdf(fileName);
+    }
+    else {
+        // PNG 格式强制 3000x2000 超高分辨率输出
+        m_contextMenuPlot->savePng(fileName, 3000, 2000, 2.0, 100);
+    }
 }

@@ -5542,7 +5542,7 @@ void MainWindow::setupUpDownSolverTab() {
     thresholdPlot->xAxis->setLabel("时间 (Time) [μs]");
     rightLayout->addWidget(thresholdPlot, 2);
 
-    rightLayout->addWidget(new QLabel("寻优工况实时监控日志:"));
+    rightLayout->addWidget(new QLabel("冲击起爆工况计算实时监控:"));
     thresholdConsole = new QTextEdit();
     thresholdConsole->setReadOnly(true);
     thresholdConsole->setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas';");

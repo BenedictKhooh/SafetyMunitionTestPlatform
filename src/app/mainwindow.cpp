@@ -5292,6 +5292,8 @@ void MainWindow::parseRealTimeElout(const QString& path) {
                 m_rtEloutData[m_rtEloutId]["sig-zz (Z正应力)"].append(parts[4].toDouble());
                 m_rtEloutData[m_rtEloutId]["effsg (等效应力)"].append(parts[8].toDouble());
                 m_rtEloutData[m_rtEloutId]["yield (屈服函数/塑性应变)"].append(parts[9].toDouble());
+                double pressure = -(parts[2].toDouble() + parts[3].toDouble() + parts[4].toDouble()) / 3.0;
+                m_rtEloutData[m_rtEloutId]["pressure (压力)"].append(pressure);
             }
             else if (m_rtEloutBlock == 2) { // HISTORY 块
                 double reaction = parts[9].toDouble();
@@ -5620,7 +5622,7 @@ void MainWindow::updateThresholdPlotUI() {
         if (m_thresholdParamCombo->count() == 0 || !m_thresholdParamCombo->currentText().contains("反应度")) {
             m_thresholdParamCombo->clear();
             m_thresholdParamCombo->addItems({ "reaction_degree (反应度)", "effsg (等效应力)", "yield (屈服函数/塑性应变)",
-                                          "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)" });
+                                          "sig-xx (X正应力)", "sig-yy (Y正应力)", "sig-zz (Z正应力)", "pressure (压力)" });
         }
 
         QList<int> ids = m_rtEloutData.keys();

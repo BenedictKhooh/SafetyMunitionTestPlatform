@@ -510,7 +510,8 @@ bool PostProcessWidget::processElout(const QString& path) {
         "yield (屈服函数/塑性应变)",
         "sig-xx (X正应力)",
         "sig-yy (Y正应力)",
-        "sig-zz (Z正应力)"
+        "sig-zz (Z正应力)",
+        "pressure (压力)"
     };
 
     while (!in.atEnd()) {
@@ -578,7 +579,7 @@ bool PostProcessWidget::processElout(const QString& path) {
 
             // 根据当前状态分流数据
             if (currentBlock == STRESS) {
-                // 在应力块中记录时间戳 (作为基准)
+
                 if (!m_eloutTimeMap[currentElemId].contains(currentTime)) {
                     m_eloutTimeMap[currentElemId].append(currentTime);
                 }
@@ -592,6 +593,9 @@ bool PostProcessWidget::processElout(const QString& path) {
 
                 // 索引 9 对应 yield function (屈服函数)
                 m_eloutData[currentElemId]["yield (屈服函数/塑性应变)"].append(parts[9].toDouble());
+
+                double pressure = -(parts[2].toDouble() + parts[3].toDouble() + parts[4].toDouble()) / 3.0;
+                m_eloutData[currentElemId]["pressure (压力)"].append(pressure);
             }
             else if (currentBlock == HISTORY) {
                 // 核心需求：提取第 8 个历史变量 (对应索引 9)

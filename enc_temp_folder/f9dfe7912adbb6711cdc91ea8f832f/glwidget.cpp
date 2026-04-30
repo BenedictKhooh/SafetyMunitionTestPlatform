@@ -97,6 +97,7 @@ void GLWidget::paintGL() {
         {0.9f, 0.5f, 0.7f}  // 粉色
     };
 
+    // 开启深度测试，确保前面的不透明面能遮挡后面的面
     glEnable(GL_DEPTH_TEST);
 
     int entityIndex = 0;
@@ -134,8 +135,14 @@ void GLWidget::paintGL() {
         }
         glEnd();
         glDisable(GL_POLYGON_OFFSET_FILL);
+
+
+        // ====================================================
+        // 画线 (Wireframe Lines)：描出深色边框增强立体感
+        // ====================================================
         glLineWidth(1.5f);
         glBegin(GL_LINES);
+        // 使用深灰色画线，而不是纯色，否则和面混在一起看不清网格结构
         glColor3f(0.15f, 0.15f, 0.15f);
 
         for (const auto& linePos : entity.wireLines) {

@@ -571,6 +571,8 @@ private slots:
     void redrawThresholdPlot();   // 重绘右侧图窗
     void updateThresholdPlot();   // 定时器调用的文件解析
     // 用于记录图表的读取位置
+
+    void updateVelocityVisuals();
     
 };
 #endif // MAINWINDOW_H

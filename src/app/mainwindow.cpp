@@ -2160,6 +2160,11 @@ void MainWindow::createSimulationSetupDock() {
 
     // 触发一次初始化
     handleMaterialTypeChanged(m_simSetupUI.materialSelector->currentText());
+
+    connect(m_simSetupUI.icVx, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::updateVelocityVisuals);
+    connect(m_simSetupUI.icVy, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::updateVelocityVisuals);
+    connect(m_simSetupUI.icVz, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::updateVelocityVisuals);
+    connect(m_simSetupUI.icEntitySelector, &QComboBox::currentTextChanged, this, &MainWindow::updateVelocityVisuals);
 }
 
 void MainWindow::handleMaterialTypeChanged(const QString& matType) {
@@ -5745,4 +5750,39 @@ void MainWindow::updateThresholdPlot() {
     // 驱动 UI 下拉框并重绘坐标系曲线
     updateThresholdPlotUI();
     redrawThresholdPlot();
+}
+
+void MainWindow::updateVelocityVisuals() {
+    double vx = m_simSetupUI.icVx->value();
+    double vy = m_simSetupUI.icVy->value();
+    double vz = m_simSetupUI.icVz->value();
+    QVector3D vel(vx, vy, vz);
+
+    std::vector<VelocityArrow> arrows;
+
+    if (vel.lengthSquared() > 1e-6) {
+        QString targetName = m_simSetupUI.icEntitySelector->currentText();
+
+        if (m_repository.hasEntity(targetName)) {
+
+            const MeshEntity* entity = m_repository.getEntity(targetName);
+
+            if (entity) {
+                QVector3D center(0, 0, 0);
+
+                if (!entity->nodes.empty()) {
+                    for (const auto& node : entity->nodes) {
+                        center += node.pos;
+                    }
+                    center /= entity->nodes.size();
+
+                    VelocityArrow arrow;
+                    arrow.center = center;
+                    arrow.velocity = vel;
+                    arrows.push_back(arrow);
+                }
+            }
+        }
+    }
+    glWidget->setVelocityArrows(arrows);
 }

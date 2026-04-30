@@ -13,6 +13,11 @@
 #include "src/core/common/EntityRepository.h"
 #include "Drawable.h"
 
+struct VelocityArrow {
+    QVector3D center;
+    QVector3D velocity;
+};
+
 class GLWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
     Q_OBJECT
@@ -43,6 +48,11 @@ public:
 
     QOpenGLBuffer m_pointVBO;
     QOpenGLShaderProgram m_shaderProgram;
+
+    void setVelocityArrows(const std::vector<VelocityArrow>& arrows) {
+        m_velocityArrows = arrows;
+        update();
+    }
 
 protected:
     // --- OpenGL Event Handlers ---
@@ -95,6 +105,7 @@ private:
 
     EntityRepository* m_repository = nullptr;
     void drawCornerAxes();
+    std::vector<VelocityArrow> m_velocityArrows;
 
 signals:
     void drawingComplete();

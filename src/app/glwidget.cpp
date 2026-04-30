@@ -146,7 +146,77 @@ void GLWidget::paintGL() {
         entityIndex++;
     }
 
+    for (const auto& arrow : m_velocityArrows) {
+        QVector3D center = arrow.center;
+        QVector3D velocity = arrow.velocity;
+        if (velocity.lengthSquared() < 1e-6) continue;
+
+        QVector3D dir = velocity.normalized();
+        float mag = velocity.length();
+        float visualLength = qBound(1.0f, mag * 0.5f, 5.0f);
+        QVector3D head = center + dir * visualLength;
+
+        glLineWidth(4.0f);
+        glColor3f(1.0f, 1.0f, 0.0f);
+        glBegin(GL_LINES);
+        glVertex3f(center.x(), center.y(), center.z());
+        glVertex3f(head.x(), head.y(), head.z());
+        glEnd();
+
+        QVector3D u = QVector3D::crossProduct(dir, QVector3D(1.0f, 0.0f, 0.0f));
+        if (u.lengthSquared() < 1e-6) u = QVector3D::crossProduct(dir, QVector3D(0.0f, 1.0f, 0.0f));
+        u.normalize();
+        QVector3D v = QVector3D::crossProduct(dir, u).normalized();
+
+        float headLen = visualLength * 0.2f;
+        float headRad = visualLength * 0.1f;
+
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex3f(head.x(), head.y(), head.z());
+        for (int i = 0; i <= 16; ++i) {
+            float angle = (float)i / 16.0f * 2.0f * 3.14159265f;
+            QVector3D p = head - dir * headLen + u * cos(angle) * headRad + v * sin(angle) * headRad;
+            glVertex3f(p.x(), p.y(), p.z());
+        }
+        glEnd();
+    }
+
     drawCornerAxes();
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing); // 开启文字抗锯齿
+    painter.setPen(Qt::yellow);                    // 文字颜色与箭头保持一致
+    painter.setFont(QFont("Microsoft YaHei", 10, QFont::Bold)); // 设置字体和大小
+
+    
+    QMatrix4x4 mvp = m_projMatrix * m_viewMatrix * modelMatrix;
+
+    for (const auto& arrow : m_velocityArrows) {
+        if (arrow.velocity.lengthSquared() < 1e-6) continue;
+
+        QVector3D dir = arrow.velocity.normalized();
+        float mag = arrow.velocity.length();
+        float visualLength = qBound(1.0f, mag * 0.5f, 5.0f);
+
+        // 算出箭头顶端的 3D 坐标
+        QVector3D head = arrow.center + dir * visualLength;
+
+        // 调用您的 project 函数，将 3D 坐标转换为屏幕上的 2D 像素坐标
+        QPoint screenPos = project(mvp, head);
+
+        // 1. 速度模长
+        QString textMag = QString("|V|: %1 cm/us").arg(mag, 0, 'f', 2);
+        // 2. 空间向量分量 (代表了方向)
+        QString textComp = QString("Dir: (%1, %2, %3)")
+            .arg(arrow.velocity.x(), 0, 'f', 1)
+            .arg(arrow.velocity.y(), 0, 'f', 1)
+            .arg(arrow.velocity.z(), 0, 'f', 1);
+
+        painter.drawText(screenPos.x() + 15, screenPos.y() - 10, textMag);
+        painter.drawText(screenPos.x() + 15, screenPos.y() + 10, textComp);
+    }
+
+    painter.end();
 }
 
 void GLWidget::drawPoints( std::vector<MeshPoint> points ) {

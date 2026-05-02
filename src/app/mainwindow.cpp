@@ -33,8 +33,47 @@
 #include <QEventLoop>
 #include <regex>
 #include <QTimer>
+#include <QMenu>
 
 #include "src/app/PostProcessing/qcustomplot.h"
+
+static void applyScientificStyle(QCustomPlot* plot) {
+    QFont serifFont("Times New Roman", 10);
+    plot->setFont(serifFont);
+    plot->xAxis->setLabelFont(serifFont);
+    plot->yAxis->setLabelFont(serifFont);
+    plot->xAxis->setTickLabelFont(serifFont);
+    plot->yAxis->setTickLabelFont(serifFont);
+
+    QPen axisPen(Qt::black, 1.5);
+    plot->xAxis->setBasePen(axisPen);
+    plot->yAxis->setBasePen(axisPen);
+    plot->xAxis->setTickPen(axisPen);
+    plot->yAxis->setTickPen(axisPen);
+    plot->xAxis->setSubTickPen(axisPen);
+    plot->yAxis->setSubTickPen(axisPen);
+
+    plot->xAxis->setTickLengthIn(6);
+    plot->xAxis->setTickLengthOut(0);
+    plot->yAxis->setTickLengthIn(6);
+    plot->yAxis->setTickLengthOut(0);
+
+    plot->xAxis->setSubTickLengthIn(3);
+    plot->xAxis->setSubTickLengthOut(0);
+    plot->yAxis->setSubTickLengthIn(3);
+    plot->yAxis->setSubTickLengthOut(0);
+
+    plot->xAxis->grid()->setVisible(false);
+    plot->yAxis->grid()->setVisible(true);
+    plot->yAxis->grid()->setPen(QPen(QColor(230, 230, 230), 1, Qt::DotLine));
+
+    plot->legend->setVisible(true);
+    plot->legend->setFont(serifFont);
+    plot->legend->setBrush(QBrush(Qt::transparent));
+    plot->legend->setBorderPen(Qt::NoPen);
+
+    plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+}
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // ==========================================
@@ -300,7 +339,7 @@ void MainWindow::createDockWidgets() {
 
     // 将三个分类作为不同的 Tab 添加进去
     setupGeneratorTab(tabWidget, tr("破片 (Fragment)"),
-        { "Cube", "Sphere", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism","Frustum", "Fragment Simulating Projectile", "Bullet" }, m_fragmentUI);
+        { "Cube", "Sphere","Cylinder", "HalfCylinder", "Hemisphere", "TriangularPrism", "PentagonalPrism", "HexagonalPrism","Frustum", "Fragment Simulating Projectile", "Bullet" }, m_fragmentUI);
 
     setupGeneratorTab(tabWidget, tr("壳体 (Shell)"),
         { "CylindricalShell", "OpenCylindricalShell", "HalfCylindricalShell","FrustumShell"}, m_shellUI);
@@ -312,7 +351,6 @@ void MainWindow::createDockWidgets() {
     generatorDock->setWidget(tabWidget);
     addDockWidget(Qt::RightDockWidgetArea, generatorDock);
 
-    // 🌟 核心修改 2：把右侧的 Substance Tree 和 Entity Generator 合并成标签页组！
     tabifyDockWidget(substanceDock, generatorDock);
     substanceDock->raise(); // 默认让 Substance Tree 显示在前面
 }
@@ -4978,6 +5016,9 @@ void MainWindow::setupSolverPlotUI(QBoxLayout* layout) {
     // 3. 初始化图表并加到垂直布局里
     m_solverPlot = new QCustomPlot();
     m_solverPlot->setMinimumHeight(350);
+    applyScientificStyle(m_solverPlot);
+    m_solverPlot->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_solverPlot, &QCustomPlot::customContextMenuRequested, this, &MainWindow::showSolverPlotContextMenu);
     m_solverPlot->legend->setVisible(true);
     m_solverPlot->xAxis->setLabel("时间 (Time) [μs]");
 
@@ -5544,6 +5585,9 @@ void MainWindow::setupUpDownSolverTab() {
 
     thresholdPlot = new QCustomPlot();
     thresholdPlot->setMinimumHeight(350);
+    applyScientificStyle(thresholdPlot);
+    thresholdPlot->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(thresholdPlot, &QCustomPlot::customContextMenuRequested, this, &MainWindow::showThresholdPlotContextMenu);
     thresholdPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
     thresholdPlot->legend->setVisible(true);
     thresholdPlot->xAxis->setLabel("时间 (Time) [μs]");
@@ -5787,4 +5831,113 @@ void MainWindow::updateVelocityVisuals() {
         }
     }
     glWidget->setVelocityArrows(arrows);
+}
+
+// ====================================================================
+// 🌟 新增：MainWindow 阈值图表的右键与导出
+// ====================================================================
+void MainWindow::showThresholdPlotContextMenu(const QPoint& pos) {
+    if (!thresholdPlot) return;
+    QMenu menu(this);
+    menu.addAction("导出为 CSV 数据文件", this, &MainWindow::exportThresholdPlotCSV);
+    menu.addAction("保存为 高清图片 (PDF/PNG)", this, &MainWindow::exportThresholdPlotImage);
+    menu.exec(thresholdPlot->mapToGlobal(pos));
+}
+
+void MainWindow::exportThresholdPlotCSV() {
+    if (!thresholdPlot || thresholdPlot->graphCount() == 0) return;
+
+    QString fileName = QFileDialog::getSaveFileName(this, "导出 CSV 数据", "", "CSV 文件 (*.csv)");
+    if (fileName.isEmpty()) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return;
+    QTextStream out(&file);
+
+    out << "Time";
+    for (int i = 0; i < thresholdPlot->graphCount(); ++i) {
+        out << "," << thresholdPlot->graph(i)->name();
+    }
+    out << "\n";
+
+    int dataSize = thresholdPlot->graph(0)->data()->size();
+    for (int j = 0; j < dataSize; ++j) {
+        out << QString::number(thresholdPlot->graph(0)->data()->at(j)->mainKey(), 'f', 6);
+        for (int i = 0; i < thresholdPlot->graphCount(); ++i) {
+            if (j < thresholdPlot->graph(i)->data()->size()) {
+                out << "," << QString::number(thresholdPlot->graph(i)->data()->at(j)->mainValue(), 'e', 6);
+            }
+            else {
+                out << ",";
+            }
+        }
+        out << "\n";
+    }
+    file.close();
+}
+
+void MainWindow::exportThresholdPlotImage() {
+    if (!thresholdPlot) return;
+    QString fileName = QFileDialog::getSaveFileName(this, "保存高清图", "", "PDF 矢量图 (*.pdf);;PNG 高清图 (*.png)");
+    if (fileName.isEmpty()) return;
+
+    if (fileName.endsWith(".pdf")) {
+        thresholdPlot->savePdf(fileName);
+    }
+    else {
+        thresholdPlot->savePng(fileName, 3000, 2000, 2.0, 100);
+    }
+}
+
+void MainWindow::showSolverPlotContextMenu(const QPoint& pos) {
+    if (!m_solverPlot) return;
+    QMenu menu(this);
+    menu.addAction("导出为 CSV 数据文件", this, &MainWindow::exportSolverPlotCSV);
+    menu.addAction("保存为 高清图片 (PDF/PNG)", this, &MainWindow::exportSolverPlotImage);
+    menu.exec(m_solverPlot->mapToGlobal(pos));
+}
+
+void MainWindow::exportSolverPlotCSV() {
+    if (!m_solverPlot || m_solverPlot->graphCount() == 0) return;
+
+    QString fileName = QFileDialog::getSaveFileName(this, "导出 CSV 数据", "", "CSV 文件 (*.csv)");
+    if (fileName.isEmpty()) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return;
+    QTextStream out(&file);
+
+    out << "Time";
+    for (int i = 0; i < m_solverPlot->graphCount(); ++i) {
+        out << "," << m_solverPlot->graph(i)->name();
+    }
+    out << "\n";
+
+    int dataSize = m_solverPlot->graph(0)->data()->size();
+    for (int j = 0; j < dataSize; ++j) {
+        out << QString::number(m_solverPlot->graph(0)->data()->at(j)->mainKey(), 'f', 6);
+        for (int i = 0; i < m_solverPlot->graphCount(); ++i) {
+            if (j < m_solverPlot->graph(i)->data()->size()) {
+                out << "," << QString::number(m_solverPlot->graph(i)->data()->at(j)->mainValue(), 'e', 6);
+            }
+            else {
+                out << ",";
+            }
+        }
+        out << "\n";
+    }
+    file.close();
+}
+
+void MainWindow::exportSolverPlotImage() {
+    if (!m_solverPlot) return;
+    QString fileName = QFileDialog::getSaveFileName(this, "保存高清图", "", "PDF 矢量图 (*.pdf);;PNG 高清图 (*.png)");
+    if (fileName.isEmpty()) return;
+
+    if (fileName.endsWith(".pdf")) {
+        m_solverPlot->savePdf(fileName);
+    }
+    else {
+        m_solverPlot->savePng(fileName, 3000, 2000, 2.0, 100);
+    }
 }

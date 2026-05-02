@@ -566,6 +566,16 @@ private:
     qint64 m_lastThresholdNodoutPos = 0;
     qint64 m_lastThresholdEloutPos = 0;
 
+    //升降法阈值图表的右键菜单
+    void showThresholdPlotContextMenu(const QPoint& pos);
+    void exportThresholdPlotCSV();
+    void exportThresholdPlotImage();
+
+    //单次求解图表的右键菜单
+    void showSolverPlotContextMenu(const QPoint& pos);
+    void exportSolverPlotCSV();
+    void exportSolverPlotImage();
+
 private slots:
     void updateThresholdPlotUI(); // 更新下拉框内容
     void redrawThresholdPlot();   // 重绘右侧图窗

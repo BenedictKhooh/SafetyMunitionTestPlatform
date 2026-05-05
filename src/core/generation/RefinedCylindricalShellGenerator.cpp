@@ -15,7 +15,7 @@ CX = %6; CY = %7; CZ = %8;
 Z_start = %9;
 Z_end   = %10;
 ms_local_z = %11;
-ms_wall = %12; // ★ 新增：壁厚局部网格尺寸
+ms_wall = %12; 
 
 If (ms_local_z <= 1e-5)
     ms_local_z = ms_z;

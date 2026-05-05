@@ -1840,6 +1840,7 @@ void MainWindow::applyTransformation(const QString& entityName, const QMatrix4x4
     MeshEntity* entity = m_repository.getMutableEntity(entityName);
     if (!entity) return;
 
+    entity->transformMatrix = mat * entity->transformMatrix;
     // 1. 变换所有节点的坐标
     for (auto& node : entity->nodes) {
         QVector3D oldPos(node.pos.x(), node.pos.y(), node.pos.z());
@@ -3387,6 +3388,8 @@ void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize)
     QString category = entity->category;
     QMap<QString, double> p = entity->geoParams;
 
+    QMatrix4x4 accumMat = entity->transformMatrix;
+
     // 2. 创建局部事件循环，用于挂起当前作用域，等待底层异步网格生成完毕
     QEventLoop loop;
     QMetaObject::Connection conn1 = connect(m_meshManager, &MeshManager::meshReady, &loop, &QEventLoop::quit);
@@ -3492,6 +3495,24 @@ void MainWindow::remeshEntityWithNewSize(MeshEntity* entity, double newMeshSize)
         newEntity->type = type;
         newEntity->category = category;
         newEntity->geoParams = p;
+
+        newEntity->transformMatrix = accumMat;
+
+        if (!accumMat.isIdentity()) {
+            for (auto& node : newEntity->nodes) {
+                QVector3D oldPos(node.pos.x(), node.pos.y(), node.pos.z());
+                QVector3D newPos = accumMat * oldPos; // 一次性完成所有的平移和旋转
+                // 请确认这里的赋值语法与你 applyTransformation 中保持一致
+                node.pos = QVector3D(newPos.x(), newPos.y(), newPos.z());
+            }
+
+            // 如果你用 wireLines 画了线框，也顺便变换过去
+            for (auto& linePos : newEntity->wireLines) {
+                QVector3D oldPos(linePos.x(), linePos.y(), linePos.z());
+                QVector3D newPos = accumMat * oldPos;
+                linePos = QVector3D(newPos.x(), newPos.y(), newPos.z());
+            }
+        }
     }
 }
 

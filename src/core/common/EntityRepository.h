@@ -10,6 +10,7 @@
 
 #include <QMap>
 #include <QString>
+#include <QMatrix4x4>
 
 struct Boundary {
     std::string name;               // 边界的名称 (例如 "Top_Surface", "Impact_Face")
@@ -28,6 +29,7 @@ struct MeshEntity {
     QMap<QString, double> geoParams;// 保存实体生成时的纯几何尺寸（例如：长宽高、半径、坐标）
 
     QString category;
+    QMatrix4x4 transformMatrix;
 };
 
 // --- 2. 实体仓库管理类 储存所有的实体---
